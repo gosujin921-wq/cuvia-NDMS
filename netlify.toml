@@ -1,0 +1,27 @@
+# ─────────────────────────────────────────────
+# Netlify 빌드 설정
+#
+# 앱은 저장소 루트가 아니라 designs/ 안에 있다. base 를 지정하지 않으면 Netlify 가
+# 루트에서 package.json 을 찾다가 "빌드할 것이 없다"로 끝난다.
+#
+# @cuvia/* 는 사내 Gitea 레지스트리에서 받는다(designs/.npmrc). 레지스트리가 내려가면
+# 빌드도 같이 실패하므로, 배포가 갑자기 깨지면 그쪽부터 확인한다.
+# ─────────────────────────────────────────────
+
+[build]
+  base = "designs"
+  command = "pnpm build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # 이 앱은 pnpm-workspace.yaml 로 독립 워크스페이스를 선언한다. Netlify 가 상위를
+  # 훑지 않도록 lockfile 이 있는 base 기준으로만 설치하게 둔다.
+  PNPM_FLAGS = "--frozen-lockfile"
+
+# SPA — react-router 가 경로를 client 에서 처리한다. 이 규칙이 없으면 /scr-01 같은
+# 딥링크나 새로고침이 전부 404 로 떨어진다(첫 화면만 뜨고 나머지가 "안 나오는" 증상).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

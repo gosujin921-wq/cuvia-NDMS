@@ -1,0 +1,7 @@
+# 이 앱을 독립 워크스페이스 루트로 고정한다(상위 폴더 워크스페이스에 딸려 들어가지 않도록).
+#
+# verifyDepsBeforeRun: pnpm 11 은 스크립트 실행 전 의존성 최신 여부를 검사하면서 `pnpm install` 을
+# 새로 spawn 하는데, 이 환경은 corepack 경유(`corepack pnpm`)만 있고 PATH 에 standalone `pnpm` 이
+# 없어 ENOENT 로 죽는다. 검사를 끄면 dev/build/type-check 가 정상 동작한다.
+# 의존성이 바뀌면 `corepack pnpm install` 을 직접 실행한다.
+verifyDepsBeforeRun: false

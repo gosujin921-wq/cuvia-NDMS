@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../CUVIA_IDC"
+		},
+		{
+			"path": "../cuvia_platform_design"
+		}
+	],
+	"settings": {}
+}
