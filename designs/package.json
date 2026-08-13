@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@cuvia/assets": "^0.1.0",
-    "@cuvia/components": "^0.11.0",
+    "@cuvia/components": "^0.14.0",
     "@cuvia/tokens": "^0.7.0",
     "@iconify/react": "^6.0.2",
     "maplibre-gl": "^5.24.0",
