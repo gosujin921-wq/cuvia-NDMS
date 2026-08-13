@@ -26,12 +26,19 @@ import {
 import { DISTRICTS, findDistrict, type District } from "../../demo/districts";
 import { devicesOf, type DeviceKind } from "../../demo/devices";
 import { WATER_THRESHOLDS } from "../../demo/levels";
+import { activeEventOfAt } from "../../demo/events";
+import { scenarioOfDistrictAt } from "../../demo/forecast";
+import { hazardLayersOf } from "../../demo/hazard-layers";
+import { HazardLayers } from "../../components/HazardLayers";
+import { FloodImpactCard } from "./widgets/FloodImpactCard";
+import { Button } from "@ds";
 import { DistrictEventList } from "./widgets/DistrictEventList";
 import { FloodSlider } from "./widgets/FloodSlider";
 import { LayerPanel, type LayerState } from "./widgets/LayerPanel";
 import { MiniMap } from "./widgets/MiniMap";
 import { TwinDeviceMarkers } from "./widgets/TwinDeviceMarkers";
 import { TwinWeather } from "./widgets/TwinWeather";
+import { useScenario } from "../../state/ScenarioProvider";
 
 /**
  * 마을과 건물이 함께 잡히는 배율. 베이스맵 3D 건물이 15부터 나온다.
@@ -60,18 +67,37 @@ const DEFAULT_LAYERS: LayerState = {
 export function DigitalTwinPage() {
   const navigate = useNavigate();
   const { districtId } = useParams();
-  /* 04 §9 — 기본 지구는 봉암지구. 조기경보에서 넘어오면 그 지구를 연다 */
+  const { advanceTo, now } = useScenario();
+  /* 04 §9 — 기본 지구는 봉암지구. 재난관제에서 넘어오면 그 지구를 연다 */
   const district = (districtId && findDistrict(districtId)) || findDistrict("bongam") || DISTRICTS[0];
 
+  /* 주인공 지구로 트윈에 들어오면 S4 — 영향 분석 (04 §0) */
+  useEffect(() => {
+    if (district.id === "seohang") advanceTo(4);
+  }, [district.id, advanceTo]);
+
   const mapContainer = useRef<HTMLDivElement>(null);
+  /* 진입은 평면(pitch 0)에서 시작한다 — 재난관제의 2D 시점을 이어받아 focusDistrict 가
+     TWIN_PITCH 로 일으켜 세운다. "공간이 3D 로 일어선다"(05 S4)가 이 전환이다 (03 §5) */
   const { map, ready } = useMapLibre(mapContainer, {
     center: district.center,
     zoom: TWIN_ZOOM,
-    pitch: TWIN_PITCH,
+    pitch: 0,
   });
 
   const [layers, setLayers] = useState<LayerState>(DEFAULT_LAYERS);
   const [level, setLevel] = useState(0);
+
+  /* 위험요소 레이어 2종 — 서항 한정 · 기본 켜짐 (04 §9 · §1-1) */
+  const hazards = useMemo(() => hazardLayersOf(district.id, "twin"), [district.id]);
+  const [hazardOn, setHazardOn] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    setHazardOn(Object.fromEntries(hazards.map((h) => [h.id, true])));
+  }, [hazards]);
+
+  /* 조건 시나리오(04 §10) — 슬라이더 표식과 [이 판단으로 대응하기]의 근거 */
+  const scenario = scenarioOfDistrictAt(district.id, now);
+  const activeEvent = activeEventOfAt(district.id, now);
 
   const devices = useMemo(() => devicesOf(district.id), [district.id]);
   const visibleDevices = devices.filter((device) => layers.devices[device.kind as DeviceKind]);
@@ -135,6 +161,7 @@ export function DigitalTwinPage() {
       >
         <div ref={mapContainer} className="h-full w-full" />
         <TwinDeviceMarkers map={map} ready={ready} devices={visibleDevices} />
+        <HazardLayers map={map} ready={ready} layers={hazards} visible={hazardOn} />
 
         {/* 날씨효과 — 비 내리는 결. 씬 위에 얹고 클릭은 통과시킨다 */}
         {layers.weather && <div className="rain-overlay pointer-events-none absolute inset-0" />}
@@ -158,7 +185,7 @@ export function DigitalTwinPage() {
             <button
               type="button"
               onClick={() => navigate(`/scr-02/${district.id}`)}
-              aria-label="조기경보로"
+              aria-label="재난관제로"
               className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent text-foreground-subtle transition-colors hover:bg-surface-raised hover:text-foreground"
             >
               <Icon icon="mdi:arrow-left" className="size-4" aria-hidden />
@@ -171,7 +198,7 @@ export function DigitalTwinPage() {
                 </span>
               </div>
               <span className="truncate text-caption text-foreground-muted">
-                {district.target} · Twin 모드
+                {district.target} · 디지털트윈 분석
               </span>
             </div>
           </div>
@@ -198,15 +225,29 @@ export function DigitalTwinPage() {
       </div>
 
       {/* 우측 — 미니맵 · 이벤트 · 레이어 · 침수 슬라이더 */}
-      <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
+      <div className={`${RAIL_BASE} right-3 overflow-y-auto`} style={{ width: RIGHT_RAIL }}>
         <GlassPanel className="pointer-events-auto shrink-0">
           <MiniMap current={district} onSelect={openDistrict} />
         </GlassPanel>
         <GlassPanel className="pointer-events-auto shrink-0">
-          <DistrictEventList districtId={district.id} />
+          <DistrictEventList
+            districtId={district.id}
+            onOpen={(target) => navigate(`/scr-03?event=${target.id}`)}
+          />
         </GlassPanel>
         <GlassPanel className="pointer-events-auto shrink-0">
-          <LayerPanel state={layers} onChange={setLayers} />
+          <LayerPanel
+            state={layers}
+            onChange={setLayers}
+            hazards={hazards.map((h) => ({
+              id: h.id,
+              label: h.label,
+              swatch: h.color,
+              icon: h.icon,
+              checked: hazardOn[h.id] ?? true,
+            }))}
+            onHazardToggle={(id) => setHazardOn((prev) => ({ ...prev, [id]: !prev[id] }))}
+          />
         </GlassPanel>
         <GlassPanel className="pointer-events-auto shrink-0">
           <FloodSlider
@@ -215,8 +256,29 @@ export function DigitalTwinPage() {
             disabled={!layers.flood}
             threshold={threshold}
             onChange={setLevel}
+            marker={
+              scenario ? { value: scenario.peak, label: `시나리오 ${scenario.peak}` } : undefined
+            }
           />
         </GlassPanel>
+
+        {/* 침수 영향 — 슬라이더와 함께 움직인다. 예상범위를 켰을 때만 값이 뜻을 가진다 */}
+        {layers.flood && (
+          <GlassPanel className="pointer-events-auto shrink-0">
+            <FloodImpactCard districtId={district.id} level={level} />
+          </GlassPanel>
+        )}
+
+        {/* 분석 → 대응 (02 §2 · 03 §5). 진행 중 사건이 없는 지구에서는 잠긴다 —
+            대응할 사건이 없는데 대응 화면으로 보낼 수 없다 */}
+        <Button
+          className="pointer-events-auto w-full shrink-0"
+          disabled={!activeEvent}
+          onClick={() => activeEvent && navigate(`/scr-03?event=${activeEvent.id}`)}
+        >
+          <Icon icon="mdi:arrow-right-bold-box-outline" className="size-4" aria-hidden />
+          이 판단으로 대응하기
+        </Button>
       </div>
     </div>
   );

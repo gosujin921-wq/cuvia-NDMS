@@ -9,7 +9,7 @@
  *
  * 이 화면은 답을 지어내지 않는다 (03 §6 AI 표현 원칙).
  *   · 결론에는 근거를 붙이고, 근거마다 04 문서의 어느 절에서 왔는지 적는다
- *   · 예측이 빗나간 것을 숨기지 않는다 — 17:22 예측 4.24 대 실측 4.31 을 답변 안에 적는다
+ *   · 시나리오와 실측의 차이를 숨기지 않는다 — 17:22 시나리오 4.24 대 실측 4.31 을 답변 안에 적는다
  *   · 확률·신뢰도를 지어내 붙이지 않는다
  * ───────────────────────────────────────────── */
 
@@ -18,6 +18,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@iconify/react";
 import { Button, GlassPanel, Tag, cn } from "@ds";
 import { FullWidthLayout } from "../../layout/FullWidthLayout";
+import { useScenario } from "../../state/ScenarioProvider";
 import {
   CANNED_QUERIES,
   CAUSE_ANSWER,
@@ -36,8 +37,15 @@ import { LevelBadge } from "../../components/LevelBadge";
 
 export function AiSearchPage() {
   const [params] = useSearchParams();
+  const { advanceTo } = useScenario();
   const requested = params.get("q");
   const asked = params.get("ask");
+
+  /* 에필로그 = S9 (04 §0). 엔진이 선행 스텝(S8)을 가드한다 — 시연 초반에 칩을 눌러
+     들어와도 시계는 뛰지 않고 답변만 보인다 */
+  useEffect(() => {
+    advanceTo(9);
+  }, [advanceTo]);
 
   /* 못 알아들은 문장(`?ask=`)으로 들어왔으면 답변을 열지 않는다 — 지어낸 답 대신
      물은 문장을 그대로 보이고 질의 3종을 내놓는다 (04 §14-5) */
@@ -204,12 +212,12 @@ function SectionTitle({ title, note }: { title: string; note?: string }) {
   );
 }
 
-/* ── seohang-cause — 예측 최고 수위의 세 항 분해 (04 §14-2) ────── */
+/* ── seohang-cause — 조건 시나리오 도달 예상의 세 항 분해 (04 §14-2) ────── */
 
 function CauseAnswer() {
   return (
     <AnswerPanel headline={CAUSE_ANSWER.headline} detail={CAUSE_ANSWER.detail}>
-      {/* 지금과 예측을 나란히 — 두 값의 간격이 이 답의 요지다 */}
+      {/* 지금과 조건 시나리오를 나란히 — 두 값의 간격이 이 답의 요지다 */}
       <div className="mb-3 grid gap-1.5 sm:grid-cols-2">
         <div className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2.5">
           <div className="flex min-w-0 flex-col">
@@ -230,13 +238,13 @@ function CauseAnswer() {
         >
           <div className="flex min-w-0 flex-col">
             <span className="text-caption text-foreground-muted">
-              예측 최고 · {CAUSE_ANSWER.predictedAt} 만조
+              조건 시나리오 · {CAUSE_ANSWER.scenarioAt} 만조
             </span>
             <span
               className="font-mono text-h5 font-semibold"
               style={{ color: levelSpec("evacuate").color }}
             >
-              {CAUSE_ANSWER.predicted.toFixed(2)}
+              {CAUSE_ANSWER.scenario.toFixed(2)}
               <span className="ml-1 text-caption font-normal text-foreground-muted">EL.m</span>
             </span>
           </div>
@@ -244,7 +252,7 @@ function CauseAnswer() {
         </div>
       </div>
 
-      <SectionTitle title="근거" note="예측 최고 수위는 세 항을 더한 값이다" />
+      <SectionTitle title="근거" note="도달 예상 수위는 세 항을 더한 값이다" />
       <EvidenceList items={CAUSE_ANSWER.evidence} />
     </AnswerPanel>
   );

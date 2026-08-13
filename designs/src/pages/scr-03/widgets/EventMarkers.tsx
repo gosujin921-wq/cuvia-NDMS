@@ -9,6 +9,7 @@ import { useEffect, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import maplibregl from "maplibre-gl";
 import type { AlertEvent } from "../../../demo/events";
+import type { AlertLevel } from "../../../demo/levels";
 import type { Device } from "../../../demo/devices";
 import { DevicePin, EventPin } from "../../../components/MapPins";
 
@@ -17,9 +18,11 @@ interface EventMarkersProps {
   ready: boolean;
   devices: Device[];
   event: AlertEvent;
+  /** now 시점의 계측 단계 — 격상되면 핀 색이 함께 바뀐다 (03 §2) */
+  eventLevel: AlertLevel;
 }
 
-export function EventMarkers({ map, ready, devices, event }: EventMarkersProps) {
+export function EventMarkers({ map, ready, devices, event, eventLevel }: EventMarkersProps) {
   if (!ready) return null;
 
   return (
@@ -30,6 +33,7 @@ export function EventMarkers({ map, ready, devices, event }: EventMarkersProps) 
           map={map}
           device={device}
           event={device.id === event.deviceId ? event : null}
+          eventLevel={eventLevel}
         />
       ))}
     </>
@@ -40,10 +44,12 @@ function MarkerItem({
   map,
   device,
   event,
+  eventLevel,
 }: {
   map: RefObject<maplibregl.Map | null>;
   device: Device;
   event: AlertEvent | null;
+  eventLevel: AlertLevel;
 }) {
   const [host] = useState(() => {
     const el = document.createElement("div");
@@ -66,7 +72,7 @@ function MarkerItem({
     event ? (
       <EventPin
         type={event.type}
-        level={event.level}
+        level={eventLevel}
         label={device.name}
         pulse={event.clearedAt === null}
       />

@@ -6,6 +6,8 @@
 
 import { Icon } from "@iconify/react";
 import { hourlyForecast } from "../../../demo/measurements";
+import { WEATHER } from "../../../demo/weather";
+import { findDistrict } from "../../../demo/districts";
 
 /** 풍향 → 화살표 회전각. 화살표는 "바람이 가는 쪽"을 가리킨다 */
 const DIRECTION_DEG: Record<string, number> = {
@@ -21,10 +23,12 @@ const DIRECTION_DEG: Record<string, number> = {
 
 export function WindPanel({ districtId, districtName }: { districtId: string; districtName: string }) {
   const slots = hourlyForecast(districtId);
+  /* 해일 지구는 기압·만조를 함께 세운다(03 §2 · 04 §5) — 폭풍해일 판단의 배경 정보다 */
+  const coastal = findDistrict(districtId)?.kind === "해일";
 
   return (
-    <section className="flex flex-col gap-2 p-3" aria-label={`${districtName} 시간대별 풍향·풍속`}>
-      <h2 className="text-body font-semibold text-foreground">시간대별 풍향·풍속</h2>
+    <section className="flex flex-col gap-2 p-3" aria-label={`${districtName} 시간대별 기상·조위`}>
+      <h2 className="text-body font-semibold text-foreground">시간대별 기상·조위</h2>
 
       <ul className="flex gap-1">
         {slots.map((slot) => (
@@ -42,6 +46,13 @@ export function WindPanel({ districtId, districtName }: { districtId: string; di
         ))}
       </ul>
       <p className="text-caption text-foreground-subtle">풍속 m/s · 아래는 강수확률</p>
+      {coastal && (
+        <p className="border-t border-border pt-1.5 text-caption text-foreground-muted">
+          기압 <span className="font-mono">{WEATHER.pressure} hPa</span> {WEATHER.pressureTrend} ·
+          만조 <span className="font-mono">{WEATHER.tide.highAt}</span> · 천문조{" "}
+          <span className="font-mono">{WEATHER.tide.astro} EL.m</span> ({WEATHER.tide.note})
+        </p>
+      )}
     </section>
   );
 }

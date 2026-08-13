@@ -11,7 +11,8 @@
 import { useEffect, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import maplibregl from "maplibre-gl";
-import { activeEventOfDevice } from "../../../demo/events";
+import { activeEventOfDeviceAt, eventViewAt } from "../../../demo/events";
+import { useScenario } from "../../../state/ScenarioProvider";
 import type { Device } from "../../../demo/devices";
 import { DevicePin, EventPin } from "../../../components/MapPins";
 
@@ -69,7 +70,9 @@ function DeviceMarkerItem({
     };
   }, [map, host, device]);
 
-  const event = activeEventOfDevice(device.id);
+  const { now } = useScenario();
+  const event = activeEventOfDeviceAt(device.id, now);
+  const view = event ? eventViewAt(event, now) : null;
 
   /* 지도 클릭으로 전파되면 팝업이 열리자마자 닫힌다 */
   const handleClick = (e: React.MouseEvent) => {
@@ -78,10 +81,10 @@ function DeviceMarkerItem({
   };
 
   return createPortal(
-    event ? (
+    event && view ? (
       <EventPin
         type={event.type}
-        level={event.level}
+        level={view.level}
         label={device.name}
         selected={selected}
         onClick={handleClick}

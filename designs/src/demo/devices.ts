@@ -141,7 +141,9 @@ function buildDevices(): Device[] {
         const angle = index * 2.399 + rand() * 0.6;
         const radius = 120 + rand() * 220;
         const id = `${district.id}-${spec.kind}-${String(i + 1).padStart(3, "0")}`;
-        const spot = spots[(index + i) % spots.length];
+        /* index 는 장비마다 1씩 는다 — 여기에 i 를 더하면 한 종류 안에서 두 칸씩 건너뛰어
+           봉암 CCTV 1·3호가 같은 지점을 받았다(감사 B-9). index 만으로 순서대로 돈다 */
+        const spot = spots[index % spots.length];
 
         list.push({
           id,

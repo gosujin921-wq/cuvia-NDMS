@@ -13,6 +13,8 @@ interface FloodSliderProps {
   disabled?: boolean;
   threshold: WaterThreshold;
   onChange: (next: number) => void;
+  /** 조건 시나리오 표식 (04 §9·§10) — 시나리오 값으로 올릴 눈금 */
+  marker?: { value: number; label: string };
 }
 
 /** 이 수위가 어느 단계인가 */
@@ -23,8 +25,9 @@ function levelAt(value: number, threshold: WaterThreshold) {
   return null;
 }
 
-export function FloodSlider({ value, max, disabled, threshold, onChange }: FloodSliderProps) {
+export function FloodSlider({ value, max, disabled, threshold, onChange, marker }: FloodSliderProps) {
   const level = levelAt(value, threshold);
+  const markerPct = marker ? Math.min(100, Math.max(0, (marker.value / max) * 100)) : null;
 
   return (
     <section className="flex flex-col gap-2 p-3" aria-label="범람시 침수 예상범위">
@@ -38,17 +41,33 @@ export function FloodSlider({ value, max, disabled, threshold, onChange }: Flood
         </span>
       </header>
 
-      <input
-        type="range"
-        min={0}
-        max={max}
-        step={0.1}
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(Number(e.target.value))}
-        aria-label="침수 예상 수위"
-        className="w-full accent-primary disabled:opacity-40"
-      />
+      <div className="relative">
+        {/* 시나리오 표식 — 트랙 위 세로선 + 라벨. 시나리오와 슬라이더는 같은 what-if 의
+            언어고, 이 값은 그 위의 한 점이다(04 §10-3) */}
+        {markerPct !== null && marker && (
+          <div
+            className="pointer-events-none absolute -top-4 z-10 flex -translate-x-1/2 flex-col items-center"
+            style={{ left: `${markerPct}%` }}
+            aria-hidden
+          >
+            <span className="whitespace-nowrap text-caption font-medium text-primary-text">
+              {marker.label}
+            </span>
+            <span className="h-5 w-px bg-primary-text" />
+          </div>
+        )}
+        <input
+          type="range"
+          min={0}
+          max={max}
+          step={0.1}
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(Number(e.target.value))}
+          aria-label="침수 예상 수위"
+          className={marker ? "mt-5 w-full accent-primary disabled:opacity-40" : "w-full accent-primary disabled:opacity-40"}
+        />
+      </div>
 
       <div className="flex items-center justify-between text-caption">
         <span className="text-foreground-subtle">0</span>

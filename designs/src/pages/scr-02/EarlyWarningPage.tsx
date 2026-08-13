@@ -15,9 +15,12 @@ import { Button, FilterCapsule, GlassPanel, Tag } from "@ds";
 import { DISTRICT_ZOOM } from "../../lib/map-config";
 import { useMapLibre } from "../../lib/useMapLibre";
 import { DISTRICTS, findDistrict, type District } from "../../demo/districts";
-import { ACTIVE_EVENTS, activeEventOf } from "../../demo/events";
+import { activeEventOfAt, activeEventsAt, eventViewAt, hazardLabel } from "../../demo/events";
+import { useScenario } from "../../state/ScenarioProvider";
 import { levelSpec } from "../../demo/levels";
 import { DEVICE_KINDS, devicesOf, type DeviceKind } from "../../demo/devices";
+import { hazardLayersOf } from "../../demo/hazard-layers";
+import { HazardLayers } from "../../components/HazardLayers";
 import { MapPopup } from "../../components/MapPopup";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import { LevelBadge } from "../../components/LevelBadge";
@@ -30,15 +33,16 @@ import { RealtimeSensorPanel } from "./widgets/RealtimeSensorPanel";
 import { WindPanel } from "./widgets/WindPanel";
 
 /** 진행 중 이벤트가 있는 지구 우선. 없으면 첫 지구 */
-function defaultDistrict(): District {
-  const active = ACTIVE_EVENTS[0];
+function defaultDistrict(now: Date): District {
+  const active = activeEventsAt(now)[0];
   return (active && findDistrict(active.districtId)) ?? DISTRICTS[0];
 }
 
 export function EarlyWarningPage() {
   const navigate = useNavigate();
   const { districtId } = useParams();
-  const district = (districtId && findDistrict(districtId)) || defaultDistrict();
+  const { now, advanceTo, approvedResponseLevel } = useScenario();
+  const district = (districtId && findDistrict(districtId)) || defaultDistrict(now);
 
   const mapContainer = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(mapContainer, {
@@ -48,6 +52,14 @@ export function EarlyWarningPage() {
 
   const [hiddenKinds, setHiddenKinds] = useState<DeviceKind[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  /* 위험요소 레이어 3종 — 서항 한정 · 기본 켜짐. 장비 토글과 별도 그룹이다(03 §2).
+     장비는 "무엇이 설치돼 있나", 위험요소는 "왜 위험지구인가"를 말하는 다른 층이다 */
+  const hazards = useMemo(() => hazardLayersOf(district.id, "control"), [district.id]);
+  const [hazardOn, setHazardOn] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    setHazardOn(Object.fromEntries(hazards.map((h) => [h.id, true])));
+  }, [hazards]);
 
   const devices = useMemo(() => devicesOf(district.id), [district.id]);
   const visibleDevices = devices.filter((d) => !hiddenKinds.includes(d.kind));
@@ -90,8 +102,21 @@ export function EarlyWarningPage() {
     focusDistrict(700);
   }, [ready, focusDistrict]);
 
-  const event = activeEventOf(district.id);
-  const spec = event ? levelSpec(event.level) : null;
+  /* ── 시나리오 스텝 트리거 (04 §0) — 조작이 스텝을 올린다 ──
+     서항을 열면 S1. 주인공 수위계 팝업을 열면 S2 — 8초 뒤 격상은 엔진이 올린다(03 §2).
+     서항 CCTV 팝업을 열면 S3. 스텝은 단조라 곁가지(다른 지구 구경)에는 흔들리지 않는다 */
+  useEffect(() => {
+    if (district.id === "seohang") advanceTo(1);
+  }, [district.id, advanceTo]);
+  useEffect(() => {
+    if (!selected) return;
+    if (selected.id === "seohang-WL-001") advanceTo(2);
+    else if (selected.districtId === "seohang" && selected.kind === "CV") advanceTo(3);
+  }, [selected, advanceTo]);
+
+  const event = activeEventOfAt(district.id, now);
+  const view = event ? eventViewAt(event, now) : null;
+  const spec = view ? levelSpec(view.level) : null;
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -101,6 +126,7 @@ export function EarlyWarningPage() {
         aria-label={`${district.name} 지도`}
       >
         <div ref={mapContainer} className="h-full w-full" />
+        <HazardLayers map={map} ready={ready} layers={hazards} visible={hazardOn} />
         <DeviceMarkers
           map={map}
           ready={ready}
@@ -136,23 +162,44 @@ export function EarlyWarningPage() {
           map={map}
           disabled={!ready}
           onReset={() => focusDistrict(500)}
-          layers={{
-            title: "장비",
-            items: DEVICE_KINDS.filter((spec) => counts[spec.kind] > 0).map((spec) => ({
-              id: spec.kind,
-              label: spec.label,
-              color: spec.color,
-              icon: spec.icon,
-              count: counts[spec.kind],
-              visible: !hiddenKinds.includes(spec.kind),
-            })),
-            onToggle: (id) => toggleKind(id as DeviceKind),
-            onSetAll: (visible) =>
-              setHiddenKinds(
-                visible ? [] : DEVICE_KINDS.filter((s) => counts[s.kind] > 0).map((s) => s.kind),
-              ),
-            note: "이벤트 핀은 별도 종류가 아니다 — 그 장비 종류를 끄면 같이 내려간다",
-          }}
+          layers={[
+            {
+              title: "장비",
+              items: DEVICE_KINDS.filter((spec) => counts[spec.kind] > 0).map((spec) => ({
+                id: spec.kind,
+                label: spec.label,
+                color: spec.color,
+                icon: spec.icon,
+                count: counts[spec.kind],
+                visible: !hiddenKinds.includes(spec.kind),
+              })),
+              onToggle: (id) => toggleKind(id as DeviceKind),
+              onSetAll: (visible) =>
+                setHiddenKinds(
+                  visible ? [] : DEVICE_KINDS.filter((s) => counts[s.kind] > 0).map((s) => s.kind),
+                ),
+              note: "이벤트 핀은 별도 종류가 아니다 — 그 장비 종류를 끄면 같이 내려간다",
+            },
+            /* 위험요소 — 장비와 별도 그룹(03 §2). 등재된 지구(서항)에서만 선다 */
+            ...(hazards.length > 0
+              ? [
+                  {
+                    title: "위험요소",
+                    items: hazards.map((h) => ({
+                      id: h.id,
+                      label: h.label,
+                      color: h.color,
+                      icon: h.icon,
+                      visible: hazardOn[h.id] ?? true,
+                    })),
+                    onToggle: (id: string) =>
+                      setHazardOn((prev) => ({ ...prev, [id]: !(prev[id] ?? true) })),
+                    onSetAll: (visible: boolean) =>
+                      setHazardOn(Object.fromEntries(hazards.map((h) => [h.id, visible]))),
+                  },
+                ]
+              : []),
+          ]}
         />
       </div>
 
@@ -168,7 +215,7 @@ export function EarlyWarningPage() {
                 variant="ghost"
                 size="icon"
                 onClick={() => navigate("/scr-01")}
-                aria-label="대시보드로"
+                aria-label="종합상황으로"
                 className="size-7 shrink-0 text-foreground-subtle hover:text-foreground"
               >
                 <Icon icon="mdi:arrow-left" className="size-4" aria-hidden />
@@ -176,18 +223,26 @@ export function EarlyWarningPage() {
               <div className="flex min-w-0 flex-col">
                 <div className="flex items-center gap-1.5">
                   <h1 className="truncate text-h6 font-semibold text-foreground">{district.name}</h1>
-                  <Tag className="shrink-0">{district.kind}</Tag>
+                  {/* 지구 유형(시설 축) · 재난유형(현상 축) — 다른 축이라 함께 적는다(04 §4-0) */}
+                  <Tag className="shrink-0">
+                    {event ? `${district.kind} · ${hazardLabel(event.hazardType)}` : district.kind}
+                  </Tag>
                 </div>
                 <span className="truncate text-caption text-foreground-muted">
                   {district.target} · 장비 {devices.length}대
                 </span>
               </div>
-              {spec && event && (
-                <LevelBadge
-                  level={event.level}
-                  value={`${event.value} ${event.unit}`}
-                  className="ml-auto shrink-0"
-                />
+              {spec && event && view && (
+                <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                  {/* 승인 대응등급 배지(03 §0-6) — 계측 뱃지는 주황을 지키고, 승인 등급은
+                      별도로 선다. 핀을 빨갛게 칠하면 "실측이 대피 기준을 넘었다"로 오독된다 */}
+                  {district.id === "seohang" && approvedResponseLevel && (
+                    <span className="rounded-full border border-risk-lv5 px-2 py-0.5 text-caption font-medium text-risk-lv5">
+                      {levelSpec(approvedResponseLevel).label} 대응중
+                    </span>
+                  )}
+                  <LevelBadge level={view.level} value={`${view.value} ${event.unit}`} />
+                </span>
               )}
             </div>
           </GlassPanel>
@@ -198,12 +253,12 @@ export function EarlyWarningPage() {
           <GlassPanel className="pointer-events-auto">
             <div className="flex flex-wrap gap-1 px-2 py-1.5">
               {DISTRICTS.map((item) => {
-                const itemEvent = activeEventOf(item.id);
+                const itemEvent = activeEventOfAt(item.id, now);
                 return (
                   <FilterCapsule
                     key={item.id}
                     selected={item.id === district.id}
-                    colorDot={itemEvent ? levelSpec(itemEvent.level).color : undefined}
+                    colorDot={itemEvent ? levelSpec(eventViewAt(itemEvent, now).level).color : undefined}
                     onClick={() => navigate(`/scr-02/${item.id}`)}
                     className="shrink-0 px-2"
                   >
@@ -223,7 +278,7 @@ export function EarlyWarningPage() {
           style={{ marginRight: RIGHT_RAIL + 12 }}
         >
           <Icon icon="mdi:cube-scan" className="size-4" aria-hidden />
-          Twin 모드 실행
+          디지털트윈 분석
         </Button>
       </div>
 

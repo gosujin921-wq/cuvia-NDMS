@@ -26,12 +26,23 @@ export interface LayerState {
   flood: boolean;
 }
 
+export interface HazardToggleItem {
+  id: string;
+  label: string;
+  swatch: string;
+  icon: string;
+  checked: boolean;
+}
+
 interface LayerPanelProps {
   state: LayerState;
   onChange: (next: LayerState) => void;
+  /** 위험요소 레이어 — 등재된 지구(서항)에서만 온다. 빈 지구에 토글을 세우지 않는다(04 §1-1) */
+  hazards?: HazardToggleItem[];
+  onHazardToggle?: (id: string) => void;
 }
 
-export function LayerPanel({ state, onChange }: LayerPanelProps) {
+export function LayerPanel({ state, onChange, hazards, onHazardToggle }: LayerPanelProps) {
   const set = (patch: Partial<LayerState>) => onChange({ ...state, ...patch });
 
   return (
@@ -62,6 +73,21 @@ export function LayerPanel({ state, onChange }: LayerPanelProps) {
           />
         ))}
       </div>
+
+      {hazards && hazards.length > 0 && onHazardToggle && (
+        <div className="flex flex-col gap-1.5 border-t border-border pt-2">
+          {hazards.map((hazard) => (
+            <DeviceRow
+              key={hazard.id}
+              label={hazard.label}
+              swatch={hazard.swatch}
+              icon={hazard.icon}
+              checked={hazard.checked}
+              onChange={() => onHazardToggle(hazard.id)}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5 border-t border-border pt-2">
         <Row label="침수선 보기" checked={state.floodLine} onChange={(v) => set({ floodLine: v })} />

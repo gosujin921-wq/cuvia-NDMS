@@ -10,29 +10,40 @@
 import { useMemo } from "react";
 import { Icon } from "@iconify/react";
 import { DISTRICTS, type District } from "../../../demo/districts";
-import { DEMO_NOW, activeEventOf } from "../../../demo/events";
+import { activeEventOfAt, eventViewAt, hazardLabel } from "../../../demo/events";
+import { processStateAt } from "../../../demo/sop";
+import { useScenario } from "../../../state/ScenarioProvider";
 import { levelSpec } from "../../../demo/levels";
-import { formatRelative } from "../../../lib/datetime";
+
 
 /** 정렬 가중치 — 단계가 높은 지구를 위로 */
 const LEVEL_WEIGHT: Record<string, number> = { evacuate: 3, warning: 2, advisory: 1 };
 
 export function DistrictList({ onOpen }: { onOpen: (district: District) => void }) {
+  const { now, approvedResponseLevel } = useScenario();
   const ordered = useMemo(
     () =>
       [...DISTRICTS].sort((a, b) => {
-        const ea = activeEventOf(a.id);
-        const eb = activeEventOf(b.id);
-        return (eb ? LEVEL_WEIGHT[eb.level] : 0) - (ea ? LEVEL_WEIGHT[ea.level] : 0);
+        const ea = activeEventOfAt(a.id, now);
+        const eb = activeEventOfAt(b.id, now);
+        const wa = ea ? LEVEL_WEIGHT[eventViewAt(ea, now).level] : 0;
+        const wb = eb ? LEVEL_WEIGHT[eventViewAt(eb, now).level] : 0;
+        if (wb !== wa) return wb - wa;
+        /* 단계 동률이면 최신 발생순 — 시연 시작(셋 다 주의보)에 주인공 서항이 맨 위에 선다 */
+        const ta = ea ? new Date(ea.raisedAt).getTime() : 0;
+        const tb = eb ? new Date(eb.raisedAt).getTime() : 0;
+        if (tb !== ta) return tb - ta;
+        return a.id === "seohang" ? -1 : b.id === "seohang" ? 1 : 0;
       }),
-    [],
+    [now],
   );
 
   return (
     <ul className="flex flex-col gap-1 p-2">
       {ordered.map((district) => {
-        const event = activeEventOf(district.id);
-        const spec = event ? levelSpec(event.level) : null;
+        const event = activeEventOfAt(district.id, now);
+        const view = event ? eventViewAt(event, now) : null;
+        const spec = view ? levelSpec(view.level) : null;
 
         return (
           <li key={district.id}>
@@ -56,8 +67,8 @@ export function DistrictList({ onOpen }: { onOpen: (district: District) => void 
                   </span>
                 </span>
                 <span className="truncate text-caption text-foreground-muted">
-                  {event && spec
-                    ? `${spec.label} · ${event.type} ${event.value} ${event.unit} · ${formatRelative(event.raisedAt, DEMO_NOW)}`
+                  {event && view && spec
+                    ? `${hazardLabel(event.hazardType)} ${spec.label} · ${view.value} ${event.unit} · ${processStateAt(event, now, event.id === "EVT-260812-006" ? approvedResponseLevel : null)}`
                     : district.target}
                 </span>
               </span>

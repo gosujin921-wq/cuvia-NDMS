@@ -17,7 +17,8 @@ import { CITY_NAME } from "../../lib/map-config";
 import { useMapLibre } from "../../lib/useMapLibre";
 import { formatDateTime } from "../../lib/datetime";
 import { DISTRICTS, type District, type DistrictKind } from "../../demo/districts";
-import { ACTIVE_EVENTS, DEMO_NOW } from "../../demo/events";
+import { activeEventsAt } from "../../demo/events";
+import { useScenario } from "../../state/ScenarioProvider";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import { CENTER_LEFT, CENTER_RIGHT, LEFT_RAIL, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP } from "../../lib/layout";
 import { AgentBar } from "./widgets/AgentBar";
@@ -35,6 +36,8 @@ const LABEL_MARGIN = 70;
 const DISTRICT_KINDS: DistrictKind[] = ["하천", "해일", "내수", "저수지"];
 
 export function OverviewDashboardPage() {
+  const { now, cityStage } = useScenario();
+  const activeEvents = activeEventsAt(now);
   const navigate = useNavigate();
   const mapContainer = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(mapContainer);
@@ -153,9 +156,22 @@ export function OverviewDashboardPage() {
       <div className={`${RAIL_BASE} left-3`} style={{ width: LEFT_RAIL }}>
         <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
           <header className="shrink-0 border-b border-border px-3 py-2.5">
-            <h1 className="text-h6 font-semibold text-foreground">{CITY_NAME} 위험지구</h1>
+            <div className="flex items-center justify-between gap-2">
+              <h1 className="text-h6 font-semibold text-foreground">{CITY_NAME} 위험지구</h1>
+              {/* 도시 대응단계 — 이 축은 이 자리에만 선다(03 §0-8). S6 승인에서
+                  초기대응(보강)으로 오른다. 시나리오 상태값이지 판정 로직이 아니다(04 §0-1) */}
+              <span
+                className={
+                  cityStage === "상시대비"
+                    ? "shrink-0 rounded-full border border-border px-2 py-0.5 text-caption text-foreground-muted"
+                    : "shrink-0 rounded-full border border-risk-lv4 px-2 py-0.5 text-caption font-medium text-risk-lv4"
+                }
+              >
+                대응단계 · {cityStage}
+              </span>
+            </div>
             <p className="mt-0.5 text-caption text-foreground-muted">
-              진행 중 {ACTIVE_EVENTS.length}건 · {formatDateTime(DEMO_NOW)} 기준
+              진행 중 {activeEvents.length}건 · {formatDateTime(now)} 기준
             </p>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto">

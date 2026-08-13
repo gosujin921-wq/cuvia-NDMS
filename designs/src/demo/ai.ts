@@ -108,14 +108,16 @@ export interface Evidence {
   source: string;
 }
 
-/* ── `seohang-cause` — 예측 최고 수위의 세 항 분해 (04 §14-2) ──── */
+/* ── `seohang-cause` — 조건 시나리오 도달 예상(4.24)의 세 항 분해 (04 §14-2)
+ * "예측"으로 부르지 않는다 — 담당자 질의 문안(예측대로)은 그대로 두되, 시스템의
+ * 답변은 만조 조건 시나리오라는 말만 쓴다(04 §10 · §14). ──────────────── */
 
 export const CAUSE_ANSWER = {
-  headline: "예측 최고 4.24 EL.m · 19:10 만조",
+  headline: "만조 조건 시나리오 4.24 EL.m 도달 예상 · 19:10",
   detail: "대피 기준 4.2 EL.m 를 넘는다. 계측 단계는 아직 경보지만 대응 등급은 대피다.",
-  /** 예측 최고 수위 (EL.m) */
-  predicted: 4.24,
-  predictedAt: "19:10",
+  /** 조건 시나리오 도달 예상 수위 (EL.m) */
+  scenario: 4.24,
+  scenarioAt: "19:10",
   /** 판정 시점의 계측값 */
   current: 3.41,
   currentAt: "17:22",
@@ -126,7 +128,7 @@ export const CAUSE_ANSWER = {
     { label: "유역 강우 유입", value: "+0.38 m · 시간당 18 mm 지속", source: "04 §10-3" },
     { label: "현재 계측", value: "3.41 EL.m · 17:22 · 경보", source: "04 §4-2" },
   ] satisfies Evidence[],
-  limit: "실측은 4.31 EL.m · 19:22 였다. 예측보다 7cm 높고 12분 늦었다 (04 §10-3).",
+  limit: "실측은 4.31 EL.m · 19:22 였다. 시나리오보다 7cm 높고 12분 늦었다 (04 §10-3).",
 } as const;
 
 /* ── `district-risk` — 30일 원장 집계 (04 §14-3) ──────────────── */
@@ -198,7 +200,7 @@ export interface FloodImpactRow {
 }
 
 export const IMPACT_ANSWER = {
-  headline: "지금 6동, 예측대로면 47동",
+  headline: "지금 6동, 만조 조건이면 47동",
   detail: "대피 대상 412명. 물이 4.2 EL.m 를 넘으면 서항지구 전체가 전파 대상이 된다.",
   rows: [
     {
@@ -220,7 +222,7 @@ export const IMPACT_ANSWER = {
     },
     {
       level: 4.24,
-      caption: "19:10 예측",
+      caption: "19:10 조건 시나리오",
       area: "3.1 ha",
       buildings: 47,
       road: "해안도로 640 m · 물양장 진입로 전 구간",

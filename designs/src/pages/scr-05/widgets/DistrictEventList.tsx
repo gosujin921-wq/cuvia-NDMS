@@ -6,12 +6,21 @@
  * ───────────────────────────────────────────── */
 
 import { EmptyState, cn } from "@ds";
-import { EVENTS } from "../../../demo/events";
+import { EVENTS, eventViewAt, type AlertEvent } from "../../../demo/events";
 import { levelSpec } from "../../../demo/levels";
 import { levelTone } from "../../../lib/level-tone";
 import { formatDate } from "../../../lib/datetime";
+import { useScenario } from "../../../state/ScenarioProvider";
 
-export function DistrictEventList({ districtId }: { districtId: string }) {
+export function DistrictEventList({
+  districtId,
+  onOpen,
+}: {
+  districtId: string;
+  /** 항목 클릭 — 그 사건이 선택된 채 상황대응이 열린다 (02 §2 · 감사 B-2) */
+  onOpen: (event: AlertEvent) => void;
+}) {
+  const { now } = useScenario();
   const events = EVENTS.filter((event) => event.districtId === districtId);
 
   return (
@@ -30,24 +39,28 @@ export function DistrictEventList({ districtId }: { districtId: string }) {
       ) : (
         <ul className="flex flex-col">
           {events.map((event) => {
-            const spec = levelSpec(event.level);
+            const view = eventViewAt(event, now);
+            const spec = levelSpec(view.level);
             return (
-              <li
-                key={event.id}
-                className="flex items-center gap-2 border-b border-border py-1.5 text-caption last:border-b-0"
-              >
-                <span
-                  className={cn("size-2 shrink-0 rounded-sm", levelTone(event.level).dot)}
-                  aria-hidden
-                />
-                <span className="shrink-0 text-foreground-muted">{formatDate(event.raisedAt)}</span>
-                <span className="min-w-0 flex-1 truncate text-foreground-subtle">
-                  {event.type} {spec.label}
-                </span>
-                <span className="shrink-0 font-mono text-foreground">
-                  {event.value}
-                  <span className="ml-1 text-foreground-subtle">{event.unit}</span>
-                </span>
+              <li key={event.id} className="border-b border-border last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() => onOpen(event)}
+                  className="flex w-full cursor-pointer items-center gap-2 rounded border-none bg-transparent py-1.5 text-left text-caption transition-colors hover:bg-surface-raised"
+                >
+                  <span
+                    className={cn("size-2 shrink-0 rounded-sm", levelTone(view.level).dot)}
+                    aria-hidden
+                  />
+                  <span className="shrink-0 text-foreground-muted">{formatDate(event.raisedAt)}</span>
+                  <span className="min-w-0 flex-1 truncate text-foreground-subtle">
+                    {event.type} {spec.label}
+                  </span>
+                  <span className="shrink-0 font-mono text-foreground">
+                    {view.value}
+                    <span className="ml-1 text-foreground-subtle">{event.unit}</span>
+                  </span>
+                </button>
               </li>
             );
           })}

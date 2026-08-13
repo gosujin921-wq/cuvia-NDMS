@@ -7,10 +7,11 @@
 
 import { Icon } from "@iconify/react";
 import { CHANNELS, type DispatchRecord } from "../../../demo/dispatch";
-import { DEMO_NOW } from "../../../demo/events";
 import { formatClock, formatRelative } from "../../../lib/datetime";
+import { useScenario } from "../../../state/ScenarioProvider";
 
 export function DispatchHistory({ records }: { records: DispatchRecord[] }) {
+  const { now } = useScenario();
   return (
     /* 레일에서 남는 높이를 받는 패널 — 헤더는 자리를 지키고 내역만 스크롤한다.
        전파가 쌓일수록 목록만 길어지고 위 패널(그래프·전파 버튼)은 그대로 서 있다 */
@@ -48,7 +49,7 @@ export function DispatchHistory({ records }: { records: DispatchRecord[] }) {
                 ))}
               </div>
               <span className="ml-auto shrink-0 whitespace-nowrap text-caption text-foreground-subtle">
-                {record.recipients.toLocaleString()}명 · {formatRelative(record.at, DEMO_NOW)}
+                {record.recipients.toLocaleString()}명 · {formatRelative(record.at, now)}
               </span>
             </div>
           </li>

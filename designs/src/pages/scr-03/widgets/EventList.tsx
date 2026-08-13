@@ -25,7 +25,10 @@ import {
   cn,
 } from "@ds";
 import { findDistrict } from "../../../demo/districts";
-import { DEMO_NOW, type AlertEvent } from "../../../demo/events";
+import { eventViewAt, hazardLabel, type AlertEvent } from "../../../demo/events";
+import { processStateAt } from "../../../demo/sop";
+import { levelSpec } from "../../../demo/levels";
+import { useScenario } from "../../../state/ScenarioProvider";
 import { LevelBadge } from "../../../components/LevelBadge";
 import { formatClock, formatRelative } from "../../../lib/datetime";
 
@@ -50,20 +53,23 @@ interface EventListProps {
 }
 
 export function EventList({ events, selectedId, onSelect }: EventListProps) {
+  const { now } = useScenario();
   const [tab, setTab] = useState<StatusTab>("active");
 
+  /* 진행/해제는 now 기준이다(04 §4-2) — 주인공 사건이 S8 에서는 해제 탭으로 넘어간다 */
   const byStatus = useMemo(() => {
     const map: Record<StatusTab, AlertEvent[]> = { active: [], cleared: [] };
-    for (const event of events) map[event.clearedAt === null ? "active" : "cleared"].push(event);
+    for (const event of events)
+      map[eventViewAt(event, now).active ? "active" : "cleared"].push(event);
     return map;
-  }, [events]);
+  }, [events, now]);
 
   /* 선택은 이 패널 밖에서도 온다(첫 진입 기본 선택·지도 마커). 그 이벤트가 다른 탭에
      있으면 탭이 따라간다 — 고른 카드가 안 보이는 탭에 숨어 있으면 안 된다 */
   useEffect(() => {
     const hit = events.find((event) => event.id === selectedId);
-    if (hit) setTab(hit.clearedAt === null ? "active" : "cleared");
-  }, [selectedId, events]);
+    if (hit) setTab(eventViewAt(hit, now).active ? "active" : "cleared");
+  }, [selectedId, events, now]);
 
   return (
     <Tabs
@@ -126,8 +132,17 @@ function EventCard({
   selected: boolean;
   onClick: () => void;
 }) {
+  const { now, approvedResponseLevel } = useScenario();
   const district = findDistrict(event.districtId);
-  const active = event.clearedAt === null;
+  const view = eventViewAt(event, now);
+  const active = view.active;
+  /* 처리상태(04 §4-5) — 단계는 위험 수준, 처리상태는 담당자 업무 상태. 다른 축이다.
+     주인공 사건은 승인 뒤 `대피 대응중` — 승인 등급이 배지로 선다(03 §0-6) */
+  const heroApproved = event.id === "EVT-260812-006" ? approvedResponseLevel : null;
+  const processState = processStateAt(event, now, heroApproved);
+  const processLabel = heroApproved
+    ? `${levelSpec(heroApproved).label} 대응중`
+    : processState;
 
   /* 선택은 이 목록 밖에서도 온다(첫 진입 기본 선택). 그 카드가 스크롤 밖이면 끌어온다 */
   const cardRef = useRef<HTMLButtonElement>(null);
@@ -150,17 +165,17 @@ function EventCard({
     >
       {/* 헤더 — 단계와 처리상태 */}
       <div className="flex items-center gap-2">
-        <LevelBadge level={event.level} />
+        <LevelBadge level={view.level} />
         <StatusBadge
           status={active ? "live" : "done"}
-          label={active ? "진행중" : "해제"}
+          label={processLabel}
           className="ml-auto shrink-0"
         />
       </div>
 
       {/* 제목 — 어느 지구의 무슨 이벤트인가 */}
       <div className="mt-2 truncate text-body font-semibold leading-snug text-foreground">
-        {district?.name ?? "-"} {event.type}
+        {district?.name ?? "-"} {hazardLabel(event.hazardType)}
       </div>
 
       {/* 메타 — 위치 · 탐지 장비 · 측정값과 시각 */}
@@ -173,13 +188,13 @@ function EventCard({
         </MetaRow>
         <MetaRow icon="mdi:gauge" label="측정">
           <span className="shrink-0 font-mono">
-            {event.value}
+            {view.value}
             <span className="ml-1 text-foreground-subtle">{event.unit}</span>
           </span>
           {/* 진행 중은 경과 시간, 해제된 이벤트는 해제 시각 (정본 §3 동작) */}
           <span className="ml-auto shrink-0 truncate font-mono text-foreground-muted">
             {active
-              ? `${formatClock(event.raisedAt)} · ${formatRelative(event.raisedAt, DEMO_NOW)}`
+              ? `${formatClock(view.stageAt)} · ${formatRelative(view.stageAt, now)}`
               : `${formatClock(event.clearedAt as string)} 해제`}
           </span>
         </MetaRow>

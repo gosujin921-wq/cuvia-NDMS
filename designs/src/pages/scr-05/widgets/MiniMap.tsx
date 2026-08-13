@@ -6,7 +6,8 @@
  * ───────────────────────────────────────────── */
 
 import { DISTRICTS, type District } from "../../../demo/districts";
-import { activeEventOf } from "../../../demo/events";
+import { activeEventOfAt, eventViewAt } from "../../../demo/events";
+import { useScenario } from "../../../state/ScenarioProvider";
 import { levelSpec } from "../../../demo/levels";
 import { CITY_NAME } from "../../../lib/map-config";
 
@@ -21,6 +22,7 @@ export function MiniMap({
   current: District;
   onSelect: (district: District) => void;
 }) {
+  const { now } = useScenario();
   const lngs = DISTRICTS.map((d) => d.center[0]);
   const lats = DISTRICTS.map((d) => d.center[1]);
   const minLng = Math.min(...lngs);
@@ -44,9 +46,9 @@ export function MiniMap({
       <svg width="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label="지구 위치">
         {DISTRICTS.map((district) => {
           const active = district.id === current.id;
-          const event = activeEventOf(district.id);
+          const event = activeEventOfAt(district.id, now);
           const color = event
-            ? levelSpec(event.level).color
+            ? levelSpec(eventViewAt(event, now).level).color
             : "var(--color-foreground-subtle)";
 
           return (

@@ -11,22 +11,34 @@
 import { Table, TableBody, TableCell, TableRow, cn } from "@ds";
 import { levelTone } from "../../../lib/level-tone";
 import { ALERT_LEVELS } from "../../../demo/levels";
-import type { AlertEvent } from "../../../demo/events";
+import type { AlertEvent, EventView } from "../../../demo/events";
 import type { WaterThreshold } from "../../../demo/levels";
+import type { TideScenario } from "../../../demo/forecast";
 
 interface ThresholdTableProps {
   event: AlertEvent;
+  /** now 시점의 이벤트 모습 — 짚는 구간·값이 격상을 따라온다 (04 §4-2) */
+  view: EventView;
   threshold: WaterThreshold;
+  /** 만조 조건 시나리오 — 있으면 도달 예상 수위가 든 구간을 점선으로 함께 짚는다 (03 §3) */
+  scenario?: TideScenario | null;
 }
 
-export function ThresholdTable({ event, threshold }: ThresholdTableProps) {
+export function ThresholdTable({ event, view, threshold, scenario }: ThresholdTableProps) {
   /* 구간 = [기준값, 다음 단계 기준값). 대피는 상한이 없다 */
   const rows = ALERT_LEVELS.map((level, index) => {
     const from = threshold[level.id];
     const next = ALERT_LEVELS[index + 1];
     const to = next ? threshold[next.id] : null;
-    const inRange = event.value >= from && (to === null || event.value < to);
-    return { level, from, to, inRange };
+    const inRange = view.value >= from && (to === null || view.value < to);
+    /* 시나리오 구간 — 현재값과 다른 구간일 때만 점선이 뜻을 가진다. 같은 구간이면
+       채움 표시가 이미 말하고 있다 */
+    const scenarioHit =
+      scenario != null &&
+      scenario.peak >= from &&
+      (to === null || scenario.peak < to) &&
+      !inRange;
+    return { level, from, to, inRange, scenarioHit };
   });
 
   return (
@@ -38,11 +50,16 @@ export function ThresholdTable({ event, threshold }: ThresholdTableProps) {
 
       <Table className="text-caption">
         <TableBody>
-          {rows.map(({ level, from, to, inRange }) => (
+          {rows.map(({ level, from, to, inRange, scenarioHit }) => (
             <TableRow
               key={level.id}
               data-state={inRange ? "selected" : undefined}
-              className="border-b-0"
+              className={cn(
+                "border-b-0",
+                /* 조건 시나리오 값이 든 구간 — 점선으로 함께 짚는다(03 §3). 채움(현재)과
+                   점선(도달 예상)이 한 표에서 "지금"과 "곧"을 가른다 */
+                scenarioHit && "outline-dashed outline-1 -outline-offset-1 outline-foreground-subtle",
+              )}
             >
               <TableCell className="w-5 px-1.5 py-1">
                 <span
@@ -68,10 +85,18 @@ export function ThresholdTable({ event, threshold }: ThresholdTableProps) {
       </Table>
 
       <p className="text-caption text-foreground-subtle">
-        발생 당시{" "}
+        {view.active ? "현재" : "발생 당시"}{" "}
         <span className="font-mono text-foreground">
-          {event.value} {event.unit}
+          {view.value} {event.unit}
         </span>
+        {scenario != null && (
+          <>
+            {" · "}시나리오{" "}
+            <span className="font-mono text-foreground">
+              {scenario.peak} {event.unit}
+            </span>
+          </>
+        )}
       </p>
     </section>
   );

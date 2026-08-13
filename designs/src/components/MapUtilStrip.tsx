@@ -76,8 +76,8 @@ interface MapUtilStripProps {
    * 지도 화면은 평면(0)에서 시작하지만 트윈은 기울인 시점이 기본이다.
    */
   homePitch?: number;
-  /** 레이어 팝오버 — 켜고 끌 표식이 있는 화면만 준다 */
-  layers?: MapLayerSpec;
+  /** 레이어 팝오버 — 켜고 끌 표식이 있는 화면만 준다. 배열이면 그룹별 섹션으로 선다 */
+  layers?: MapLayerSpec | MapLayerSpec[];
   className?: string;
 }
 
@@ -155,11 +155,13 @@ export function MapUtilStrip({
     ],
   ];
 
+  const layerSpecs = layers ? (Array.isArray(layers) ? layers : [layers]) : [];
+
   return (
     <MapControlBar className={className}>
-      {layers && (
+      {layerSpecs.length > 0 && (
         <>
-          <MapLayerControl spec={layers} disabled={disabled} />
+          <MapLayerControl specs={layerSpecs} disabled={disabled} />
           <MapControlDivider />
         </>
       )}
@@ -189,9 +191,8 @@ export function MapUtilStrip({
  * 같은 줄에서 나는 판단이라 한 자리에 둔다.
  * ───────────────────────────────────────────── */
 
-function MapLayerControl({ spec, disabled }: { spec: MapLayerSpec; disabled: boolean }) {
-  const shownCount = spec.items.filter((item) => item.visible).length;
-  const allShown = shownCount === spec.items.length;
+function MapLayerControl({ specs, disabled }: { specs: MapLayerSpec[]; disabled: boolean }) {
+  const anyHidden = specs.some((spec) => spec.items.some((item) => !item.visible));
 
   return (
     <Popover>
@@ -200,12 +201,25 @@ function MapLayerControl({ spec, disabled }: { spec: MapLayerSpec; disabled: boo
         <MapControlButton
           icon="mdi:layers-outline"
           label="레이어"
-          active={!allShown}
+          active={anyHidden}
           disabled={disabled}
         />
       </PopoverTrigger>
       <PopoverContent side="left" align="start" sideOffset={10} className="w-60 p-0">
-        <section className="flex flex-col gap-1 p-3">
+        {specs.map((spec, index) => (
+          <LayerSection key={spec.title} spec={spec} bordered={index > 0} />
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function LayerSection({ spec, bordered }: { spec: MapLayerSpec; bordered: boolean }) {
+  const shownCount = spec.items.filter((item) => item.visible).length;
+  const allShown = shownCount === spec.items.length;
+
+  return (
+    <section className={cn("flex flex-col gap-1 p-3", bordered && "border-t border-border pt-2")}>
           <div className="flex items-center gap-2 pb-0.5">
             <span className="min-w-0 flex-1 text-caption font-semibold text-foreground-muted">
               {spec.title}
@@ -256,8 +270,6 @@ function MapLayerControl({ spec, disabled }: { spec: MapLayerSpec; disabled: boo
               {spec.note}
             </p>
           )}
-        </section>
-      </PopoverContent>
-    </Popover>
+    </section>
   );
 }

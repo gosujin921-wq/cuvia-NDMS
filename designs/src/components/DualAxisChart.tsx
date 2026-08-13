@@ -22,10 +22,18 @@ export interface EventBand {
   label: string;
 }
 
+/** 조건 시나리오 점선 (03 §4) — 그때 세운 시나리오가 실측과 어디서 갈라졌는지 */
+export interface OverlayLine {
+  points: { at: Date; value: number }[];
+  color: string;
+  label: string;
+}
+
 interface DualAxisChartProps {
   samples: HistorySample[];
   thresholds?: ThresholdLine[];
   bands?: EventBand[];
+  overlay?: OverlayLine;
   /** 픽셀 높이, 또는 "fill" 로 부모 높이를 채운다 */
   height?: number | "fill";
 }
@@ -48,6 +56,7 @@ export function DualAxisChart({
   samples,
   thresholds = [],
   bands = [],
+  overlay,
   height = 300,
 }: DualAxisChartProps) {
   const gradientId = useId();
@@ -84,6 +93,7 @@ export function DualAxisChart({
           samples={samples}
           thresholds={thresholds}
           bands={bands}
+          overlay={overlay}
           width={box.width}
           height={plotHeight}
           gradientId={gradientId}
@@ -97,10 +107,12 @@ function Plot({
   samples,
   thresholds,
   bands,
+  overlay,
   width,
   height,
   gradientId,
-}: Required<Omit<DualAxisChartProps, "height">> & {
+}: Required<Omit<DualAxisChartProps, "height" | "overlay">> & {
+  overlay?: OverlayLine;
   width: number;
   height: number;
   gradientId: string;
@@ -110,7 +122,9 @@ function Plot({
 
   const waters = samples.map((s) => s.water);
   const rains = samples.map((s) => s.rain);
-  const waterPeak = Math.max(...waters);
+  /* 시나리오 점선도 축 안에 들어와야 한다 — 4.24 가 잘리면 검증 장면이 서지 않는다 */
+  const overlayValues = overlay?.points.map((p) => p.value) ?? [];
+  const waterPeak = Math.max(...waters, ...overlayValues);
   /* 대피 기준처럼 아주 높은 선까지 담으면 실제 변화가 눌린다 (TrendChart 와 같은 규칙) */
   const near = thresholds.map((t) => t.value).filter((v) => v <= waterPeak * 1.35);
   const wMax = Math.max(waterPeak, ...near);

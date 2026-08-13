@@ -49,7 +49,7 @@ export function AppSidebar() {
       <button
         type="button"
         onClick={() => go(HUB_ROUTE)}
-        aria-label="대시보드로 이동"
+        aria-label="종합상황으로 이동"
         className="group mb-4 flex h-[69px] w-full shrink-0 cursor-pointer flex-col items-center justify-center border-x-0 border-b border-t-0 border-sidebar-divider bg-transparent p-0"
       >
         <img

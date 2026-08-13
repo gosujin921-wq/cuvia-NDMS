@@ -13,7 +13,8 @@ import { createPortal } from "react-dom";
 import maplibregl from "maplibre-gl";
 import { cn } from "@ds";
 import { DISTRICTS, type District } from "../../../demo/districts";
-import { activeEventOf } from "../../../demo/events";
+import { activeEventOfAt, eventViewAt } from "../../../demo/events";
+import { useScenario } from "../../../state/ScenarioProvider";
 import { levelSpec } from "../../../demo/levels";
 
 interface DistrictMarkersProps {
@@ -68,8 +69,9 @@ function DistrictMarker({
     };
   }, [map, host, district]);
 
-  const event = activeEventOf(district.id);
-  const spec = event ? levelSpec(event.level) : null;
+  const { now } = useScenario();
+  const event = activeEventOfAt(district.id, now);
+  const spec = event ? levelSpec(eventViewAt(event, now).level) : null;
 
   return createPortal(
     <button

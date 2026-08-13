@@ -7,28 +7,27 @@
 
 import { RingDonut } from "../../../components/RingDonut";
 import {
-  STATS_BY_LEVEL,
-  STATS_BY_TYPE,
   STATS_PERIOD_DAYS,
   STATS_TOTAL,
-  type EventType,
+  statsByHazardType,
+  statsByLevelAt,
 } from "../../../demo/events";
 import { levelSpec } from "../../../demo/levels";
-
-/** 타입별 색 — 장비 종류 색과 맞춘다(04 §2-1). 단계 색과 겹치지 않아야 한다 */
-const TYPE_COLOR: Record<EventType, string> = {
-  수위: "var(--color-primary)",
-  강우: "var(--color-primary-text)",
-  변위: "var(--color-success)",
-};
+import { HAZARD_COLOR } from "../../../lib/hazard-colors";
+import { useScenario } from "../../../state/ScenarioProvider";
 
 export function EventStats() {
-  const typeSegments = STATS_BY_TYPE.map((s) => ({
+  /* 단계 도넛은 now 까지 확정된 계측 단계로 센다(04 §4-3) — 격상되면 숫자가 움직인다.
+     유형 도넛은 재난유형 축이다 — 관측 축(수위·강우·변위)은 통계 화면 관측 분석 몫 */
+  const { now } = useScenario();
+  const statsByLevel = statsByLevelAt(now);
+  const statsByHazard = statsByHazardType();
+  const typeSegments = statsByHazard.map((s) => ({
     value: s.count,
-    color: TYPE_COLOR[s.type],
-    label: s.type,
+    color: HAZARD_COLOR[s.type],
+    label: s.label,
   }));
-  const levelSegments = STATS_BY_LEVEL.map((s) => ({
+  const levelSegments = statsByLevel.map((s) => ({
     value: s.count,
     color: levelSpec(s.level).color,
     label: levelSpec(s.level).label,
@@ -37,19 +36,19 @@ export function EventStats() {
   return (
     <section className="flex flex-col gap-3 p-3" aria-label="이벤트 발생 통계">
       <header className="flex items-baseline justify-between">
-        <h2 className="text-body font-semibold text-foreground">이벤트 발생 통계</h2>
+        <h2 className="text-body font-semibold text-foreground">재난유형별 발생 통계</h2>
         <span className="text-caption text-foreground-subtle">최근 {STATS_PERIOD_DAYS}일</span>
       </header>
 
       <div className="grid grid-cols-2 gap-2">
         <StatDonut
-          caption="타입별"
-          ariaLabel={`타입별 발생 통계. ${STATS_BY_TYPE.map((s) => `${s.type} ${s.count}건`).join(", ")}`}
+          caption="유형별"
+          ariaLabel={`재난유형별 발생 통계. ${statsByHazard.map((s) => `${s.label} ${s.count}건`).join(", ")}`}
           segments={typeSegments}
         />
         <StatDonut
           caption="단계별"
-          ariaLabel={`단계별 발생 통계. ${STATS_BY_LEVEL.map((s) => `${levelSpec(s.level).label} ${s.count}건`).join(", ")}`}
+          ariaLabel={`단계별 발생 통계. ${statsByLevel.map((s) => `${levelSpec(s.level).label} ${s.count}건`).join(", ")}`}
           segments={levelSegments}
         />
       </div>

@@ -1,8 +1,9 @@
 /* ─────────────────────────────────────────────
  * 내비게이션 구조 — 정본: docs/정본/02_IA_화면구조.md
  *
- * 메뉴는 그룹 없이 5개 단층이다. 대시보드에서 조기경보로 좁히고, 이벤트에서 전파하고,
- * 통계로 되짚고, 디지털트윈으로 앞을 내다보는 시연 순서가 그대로 메뉴 순서가 된다.
+ * 메뉴명은 기능명이 아니라 역할명이다(02 §1). 순서는 평시 업무 순서 — 전체를 보고(종합상황),
+ * 지구로 좁히고(재난관제), 대응하고(상황대응), 되짚고(통계·분석), 앞을 본다(디지털트윈).
+ * 시연 순서와는 다르다 — 시연은 사건 순서라 트윈이 상황대응보다 먼저 온다.
  *
  * 화면을 추가하거나 메뉴를 바꿀 때는 02 문서를 먼저 고친다.
  * ───────────────────────────────────────────── */
@@ -27,7 +28,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "dashboard",
     scr: "SCR-01",
-    label: "대시보드",
+    label: "종합상황",
     route: "/scr-01",
     icon: "mdi:view-dashboard-outline",
     fullBleed: true,
@@ -35,7 +36,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "warning",
     scr: "SCR-02",
-    label: "조기경보",
+    label: "재난관제",
     route: "/scr-02",
     icon: "mdi:map-marker-radius-outline",
     fullBleed: true,
@@ -43,8 +44,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "event",
     scr: "SCR-03",
-    label: "이벤트·상황전파",
-    short: "이벤트",
+    label: "상황대응",
     route: "/scr-03",
     icon: "mdi:bell-ring-outline",
     fullBleed: true,
@@ -52,7 +52,8 @@ export const NAV_ITEMS: NavItem[] = [
   {
     id: "statistics",
     scr: "SCR-04",
-    label: "통계",
+    label: "통계·분석",
+    short: "통계",
     route: "/scr-04",
     icon: "mdi:chart-line",
   },

@@ -8,29 +8,37 @@
 import { useEffect, useState } from "react";
 import { Icon } from "@iconify/react";
 import { Button, FilterCapsule, Textarea, toast } from "@ds";
-import { CHANNELS, DEFAULT_CHANNELS, draftMessage, type ChannelId } from "../../../demo/dispatch";
+import { CHANNELS, defaultChannelsFor, draftMessage, type ChannelId } from "../../../demo/dispatch";
 import type { AlertEvent } from "../../../demo/events";
+import type { AlertLevel } from "../../../demo/levels";
+import type { TideScenario } from "../../../demo/forecast";
+import { useScenario } from "../../../state/ScenarioProvider";
 import { findDistrict } from "../../../demo/districts";
 import { levelSpec } from "../../../demo/levels";
 
 interface DispatchPanelProps {
   event: AlertEvent;
+  /** 문안·기본 수단이 따르는 등급 — 승인 대응등급, 승인 전에는 권고 (04 §7-1 · §7-2) */
+  effectiveLevel: AlertLevel;
+  /** 등급이 조건 시나리오에서 올라온 경우 문안의 시각·어법이 바뀐다 (04 §7-2) */
+  scenario: TideScenario | null;
   onDispatch: (channels: ChannelId[], message: string) => void;
 }
 
-export function DispatchPanel({ event, onDispatch }: DispatchPanelProps) {
-  const [channels, setChannels] = useState<ChannelId[]>(DEFAULT_CHANNELS);
-  const [message, setMessage] = useState(() => draftMessage(event));
+export function DispatchPanel({ event, effectiveLevel, scenario, onDispatch }: DispatchPanelProps) {
+  const { now } = useScenario();
+  const [channels, setChannels] = useState<ChannelId[]>(() => defaultChannelsFor(effectiveLevel));
+  const [message, setMessage] = useState(() => draftMessage(event, now, { effectiveLevel, scenario }));
 
-  /* 이벤트를 바꾸면 문안도 그 이벤트 것으로 다시 쓴다. 앞 이벤트 문안이 남아 있으면
-     엉뚱한 마을에 보내는 사고가 난다 */
+  /* 이벤트·등급이 바뀌면 문안도 다시 쓴다. 앞 이벤트 문안이 남아 있으면 엉뚱한 마을에
+     보내는 사고가 나고, 등급이 오르면 문안·기본 수단도 같이 오른다(04 §7-1 · §7-2) */
   useEffect(() => {
-    setMessage(draftMessage(event));
-    setChannels(DEFAULT_CHANNELS);
-  }, [event]);
+    setMessage(draftMessage(event, now, { effectiveLevel, scenario }));
+    setChannels(defaultChannelsFor(effectiveLevel));
+  }, [event, now, effectiveLevel, scenario]);
 
   const district = findDistrict(event.districtId);
-  const spec = levelSpec(event.level);
+  const spec = levelSpec(effectiveLevel);
 
   const handleDispatch = () => {
     if (channels.length === 0) {

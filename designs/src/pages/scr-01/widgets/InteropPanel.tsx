@@ -6,12 +6,15 @@
  * ───────────────────────────────────────────── */
 
 import { StatusDotLabel } from "@ds";
-import { INTEROP_LINKS } from "../../../demo/interop";
-import { DEMO_NOW } from "../../../demo/events";
+import { interopLinksAt } from "../../../demo/interop";
 import { formatClock, formatRelative } from "../../../lib/datetime";
+import { useScenario } from "../../../state/ScenarioProvider";
 
 export function InteropPanel() {
-  const broken = INTEROP_LINKS.filter((link) => link.status === "끊김").length;
+  /* 정상 3곳은 시계를 따라 흐르고 경남만 09:02 에 멈춰 격차가 벌어진다 (04 §6) */
+  const { now } = useScenario();
+  const links = interopLinksAt(now);
+  const broken = links.filter((link) => link.status === "끊김").length;
 
   return (
     /* 레일에서 남는 높이를 받는 패널 — 헤더는 자리를 지키고 목록만 스크롤한다.
@@ -20,12 +23,12 @@ export function InteropPanel() {
       <header className="flex shrink-0 items-baseline justify-between">
         <h2 className="text-body font-semibold text-foreground">연계 현황</h2>
         <span className="text-caption text-foreground-subtle">
-          {broken > 0 ? `${INTEROP_LINKS.length}곳 중 ${broken}곳 끊김` : `${INTEROP_LINKS.length}곳 정상`}
+          {broken > 0 ? `${links.length}곳 중 ${broken}곳 끊김` : `${links.length}곳 정상`}
         </span>
       </header>
 
       <ul className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {INTEROP_LINKS.map((link) => (
+        {links.map((link) => (
           <li
             key={link.id}
             className="flex items-center justify-between gap-2 border-b border-border py-1.5 last:border-b-0"
@@ -42,7 +45,7 @@ export function InteropPanel() {
             <span className="shrink-0 text-right text-caption text-foreground-muted">
               <span className="font-mono">{formatClock(link.lastSyncAt)}</span>
               <span className="block text-foreground-subtle">
-                {formatRelative(link.lastSyncAt, DEMO_NOW)}
+                {formatRelative(link.lastSyncAt, now)}
               </span>
             </span>
           </li>

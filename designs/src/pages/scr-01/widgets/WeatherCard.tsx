@@ -6,7 +6,7 @@
  * ───────────────────────────────────────────── */
 
 import { Icon } from "@iconify/react";
-import { Badge } from "@ds";
+import { cn } from "@ds";
 import { CITY_NAME } from "../../../lib/map-config";
 import { DROUGHT, HEAT, WEATHER } from "../../../demo/weather";
 
@@ -20,13 +20,22 @@ export function WeatherCard() {
         </span>
       </header>
 
-      {/* 발효 특보 — DS Badge 의 색 variant. 경보는 주황(risk-lv4), 주의보는 노랑(risk-lv3)
-          단계에 대응한다. 원색은 뱃지에 덧씌우지 않는다(lib/level-tone.ts 규칙) */}
+      {/* 발효 특보 — 출처가 다른 정보는 라벨·스타일부터 가른다(03 §0-8).
+          기상청 특보는 `기상특보 ·` 접두 + 외곽선, 우리 센서의 시스템 이벤트는 채움 뱃지.
+          같은 "주의보"가 두 뜻으로 서는 것을 라벨 없이 두면 안 된다 */}
       <div className="flex flex-wrap gap-1.5">
         {WEATHER.advisories.map((advisory) => (
-          <Badge key={advisory.label} variant={advisory.level === "warning" ? "orange" : "yellow"}>
-            {advisory.label}
-          </Badge>
+          <span
+            key={advisory.label}
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-caption font-medium",
+              advisory.level === "warning"
+                ? "border-risk-lv4 text-risk-lv4"
+                : "border-risk-lv3 text-risk-lv3",
+            )}
+          >
+            기상특보 · {advisory.label}
+          </span>
         ))}
       </div>
 
@@ -40,6 +49,12 @@ export function WeatherCard() {
           <span className="text-caption text-foreground-muted">
             체감 {WEATHER.feelsLike}℃ · {WEATHER.condition}
           </span>
+          {/* 기압·만조 — 폭풍해일 판단의 배경 정보(04 §5). 만조·천문조는 조건 시나리오
+              (§10-3)와 같은 값이라 판정 카드와 이 카드가 같은 숫자를 말한다 */}
+          <span className="text-caption text-foreground-subtle">
+            기압 {WEATHER.pressure} hPa {WEATHER.pressureTrend} · 만조 {WEATHER.tide.highAt} (천문조{" "}
+            {WEATHER.tide.astro} EL.m)
+          </span>
         </div>
       </div>
 
@@ -47,7 +62,13 @@ export function WeatherCard() {
       <dl className="grid grid-cols-2 gap-2 border-t border-border pt-3">
         <div className="flex flex-col gap-0.5">
           <dt className="text-caption text-foreground-muted">폭염</dt>
-          <dd className="text-body font-medium text-risk-lv4">{HEAT.level}</dd>
+          <dd className="flex items-center gap-1.5 text-body font-medium text-risk-lv4">
+            {HEAT.level}
+            {/* 열돔 — 정보성 표기까지만(04 §5). 판정하는 것처럼 만들지 않는다 */}
+            <span className="rounded border border-border px-1 py-px text-caption font-normal text-foreground-subtle">
+              {HEAT.hint}
+            </span>
+          </dd>
           <dd className="text-caption text-foreground-subtle">{HEAT.note}</dd>
         </div>
         <div className="flex flex-col gap-0.5">

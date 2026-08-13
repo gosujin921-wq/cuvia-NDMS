@@ -18,6 +18,7 @@ import {
 } from "../../../demo/levels";
 import { TrendChart } from "../../../components/TrendChart";
 import { formatClock } from "../../../lib/datetime";
+import { useScenario } from "../../../state/ScenarioProvider";
 
 interface RealtimeSensorPanelProps {
   /** 계측 장비만 (CCTV·마을방송 제외) */
@@ -27,6 +28,7 @@ interface RealtimeSensorPanelProps {
 }
 
 export function RealtimeSensorPanel({ sensors, selected, onSelect }: RealtimeSensorPanelProps) {
+  const { now } = useScenario();
   const focus = selected && selected.kind !== "CV" && selected.kind !== "BC" ? selected : sensors[0];
 
   return (
@@ -41,7 +43,7 @@ export function RealtimeSensorPanel({ sensors, selected, onSelect }: RealtimeSen
         {sensors.map((sensor) => {
           const spec = deviceKindSpec(sensor.kind);
           const offline = sensor.status === "통신끊김";
-          const sample = latestValue(sensor);
+          const sample = latestValue(sensor, now);
           const active = focus?.id === sensor.id;
 
           return (
@@ -81,9 +83,10 @@ export function RealtimeSensorPanel({ sensors, selected, onSelect }: RealtimeSen
 }
 
 function FocusChart({ device }: { device: Device }) {
+  const { now } = useScenario();
   const spec = deviceKindSpec(device.kind);
   const offline = device.status === "통신끊김";
-  const sample = latestValue(device);
+  const sample = latestValue(device, now);
   const base =
     device.kind === "WL"
       ? WATER_THRESHOLDS[device.districtId]
@@ -117,7 +120,7 @@ function FocusChart({ device }: { device: Device }) {
             <span className="text-caption text-foreground-muted">{spec.unit}</span>
           </div>
           <TrendChart
-            samples={sensorSeries(device)}
+            samples={sensorSeries(device, now)}
             thresholds={thresholds}
             unit={spec.unit}
             height={88}
