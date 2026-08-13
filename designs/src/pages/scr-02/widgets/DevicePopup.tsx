@@ -19,7 +19,7 @@ import { useNavigate } from "react-router-dom";
 import { Icon } from "@iconify/react";
 import { Button, GlassPanel, StatusDotLabel, Tag } from "@ds";
 import { cctvSceneOf, deviceKindSpec, type Device } from "../../../demo/devices";
-import { CctvScene } from "../../../components/CctvScene";
+import { CctvStill } from "../../../components/CctvStill";
 import { latestValue } from "../../../demo/measurements";
 import {
   activeEventOfDeviceAt,
@@ -287,8 +287,7 @@ function SensorBody({ device }: { device: Device }) {
 function CctvBody({ device }: { device: Device }) {
   const { now } = useScenario();
   const offline = device.status !== "정상";
-  /* 장면이 등재된 주요 CCTV(04 §2-5)는 시연 영상을 튼다. 연출임을 라벨로 밝힌다 —
-     실황처럼 팔면 "그 영상 실제냐" 한 마디에 시연이 무너진다(05 S3) */
+  /* 실촬 스틸을 LIVE 로 튼다. 등재 장면(04 §2-5)이면 촬영 방향을 아래에 덧붙인다 */
   const scene = cctvSceneOf(device);
 
   return (
@@ -299,26 +298,16 @@ function CctvBody({ device }: { device: Device }) {
             <Icon icon="mdi:video-off" className="size-6 text-foreground-subtle" aria-hidden />
             <span className="text-caption text-foreground-subtle">{device.status}</span>
           </div>
-        ) : scene ? (
-          <>
-            <CctvScene kind={scene.kind} className="absolute inset-0" />
-            <span className="absolute left-2 top-2 rounded bg-surface px-1.5 py-0.5 text-caption text-foreground">
-              시연 영상
-            </span>
-            <span className="absolute bottom-1.5 right-2 font-mono text-caption text-foreground">
-              {formatClock(now)}
-            </span>
-          </>
         ) : (
           <>
-            {/* 장면 미등재 CCTV — 채널이 살아 있다는 것만 보인다 */}
-            <div className="flex flex-col items-center gap-1">
-              <Icon icon="mdi:cctv" className="size-7 text-foreground-subtle" aria-hidden />
-              <span className="text-caption text-foreground-subtle">실시간 영상</span>
-            </div>
+            <CctvStill device={device} className="absolute inset-0" />
             <span className="absolute left-2 top-2 flex items-center gap-1 rounded bg-surface px-1.5 py-0.5 text-caption text-foreground">
               <span className="size-1.5 animate-pulse rounded-full bg-danger" aria-hidden />
               LIVE
+            </span>
+            {/* 촬영 시각 — 스틸 위에 그냥 얹으면 밝은 화면에서 읽히지 않아 라벨과 같은 칩을 깐다 */}
+            <span className="absolute bottom-1.5 right-2 rounded bg-surface px-1.5 py-0.5 font-mono text-caption text-foreground">
+              {formatClock(now)}
             </span>
           </>
         )}

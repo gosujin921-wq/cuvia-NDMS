@@ -16,6 +16,7 @@ import { DISTRICTS, type District } from "../../../demo/districts";
 import { activeEventOfAt, eventViewAt } from "../../../demo/events";
 import { useScenario } from "../../../state/ScenarioProvider";
 import { levelSpec } from "../../../demo/levels";
+import { fadeColor } from "../../../lib/color";
 
 interface DistrictMarkersProps {
   map: RefObject<maplibregl.Map | null>;
@@ -73,27 +74,32 @@ function DistrictMarker({
   const event = activeEventOfAt(district.id, now);
   const spec = event ? levelSpec(eventViewAt(event, now).level) : null;
 
-  /* 시 전체 배율에서 이름표끼리 겹친다. 가리키는 지구를 z 1 로 올려 뒤에 깔린 이름표가
-     읽히게 한다(호버 확대 105% 도 잘리지 않는다). 손을 떼면 원래 층으로 돌아가고,
-     팝업 z 2 는 넘지 않는다 (03 §0-5 층서) */
-  const raise = () => {
-    host.style.zIndex = "1";
-  };
-  const drop = () => {
-    host.style.zIndex = "";
-  };
+  /* 이름표 층서 (03 §0-5) — 시 전체 배율에서 12개가 겹친다. 무엇을 위로 올릴지가 곧
+     "먼저 읽어야 할 것"의 순서다.
+
+       0(auto)  평시 지구
+       1        사건이 선 지구 — 평시 이름표에 가려지지 않는다
+       2        가리키는 지구 — 읽으려고 손을 올린 것이 가장 위다
+       3        팝업 (index.css .dsms-popup)
+
+     사건 유무는 계측 단계에서 파생되고(event) 호버만 화면 로컬 상태다 */
+  const [hovered, setHovered] = useState(false);
+
+  useEffect(() => {
+    host.style.zIndex = hovered ? "2" : event ? "1" : "";
+  }, [host, hovered, event]);
 
   return createPortal(
     <button
       type="button"
       onClick={() => onOpen(district)}
-      onMouseEnter={raise}
-      onMouseLeave={drop}
-      onFocus={raise}
-      onBlur={drop}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={() => setHovered(false)}
       aria-label={`${district.name} ${district.kind}${spec ? ` · ${spec.label} 발생 중` : ""}`}
       className={cn(
-        "glass-light pointer-events-auto flex cursor-pointer items-center gap-1.5 whitespace-nowrap",
+        "glass-light pointer-events-auto relative flex cursor-pointer items-center gap-1.5 whitespace-nowrap",
         "rounded-full py-1 pl-2 pr-2.5 text-caption font-medium transition-transform hover:scale-105",
         /* 진행 중인 지구는 단계 색 스트로크를 두껍게 — 12개가 흩어진 배율에서 어느 곳이
            경보 중인지 이름을 읽기 전에 테두리로 먼저 갈린다. 평상시는 얇은 유리 테두리 */
@@ -102,17 +108,32 @@ function DistrictMarker({
       style={{
         /* 면·blur·글자색은 .glass-light 가 맡는다(index.css) */
         borderColor: spec ? spec.color : "rgba(255, 255, 255, 0.7)",
-        /* 단계 색을 한 겹 더 밖으로 흘려 스트로크가 지도 위에서 묻히지 않게 한다 */
-        ...(spec && { boxShadow: `0 0 0 3px ${spec.color}33, 0 4px 16px rgba(0, 0, 0, 0.22)` }),
+        /* 단계 색을 한 겹 더 밖으로 흘려 스트로크가 지도 위에서 묻히지 않게 한다.
+           fadeColor 를 쓰는 이유는 spec.color 가 var() 토큰이라 hex 알파를 못 붙여서다 */
+        ...(spec && {
+          boxShadow: `0 0 0 3px ${fadeColor(spec.color, 20)}, 0 4px 16px rgba(0, 0, 0, 0.22)`,
+        }),
       }}
     >
-      <span
-        className={cn("size-2 shrink-0 rounded-full", spec && "animate-pulse")}
-        style={{ backgroundColor: spec ? spec.color : "var(--color-foreground-subtle)" }}
-        aria-hidden
-      />
-      {district.name}
-      <span className="glass-light-muted">{district.kind}</span>
+      {/* 사건이 있는 동안 이름표 면 전체가 단계 색으로 숨쉰다. 점 하나가 깜빡이는 것보다
+          시 전체 배율에서 먼저 눈에 들고, 멈추지 않으므로 "지금 진행 중"이 계속 읽힌다.
+          면은 글자 밑에 깔린다 — 아래 내용 묶음이 relative 로 그 위에 선다 */}
+      {spec && (
+        <span
+          className="pointer-events-none absolute inset-0 animate-pulse rounded-full"
+          style={{ backgroundColor: fadeColor(spec.color, 32) }}
+          aria-hidden
+        />
+      )}
+      <span className="relative flex items-center gap-1.5">
+        <span
+          className="size-2 shrink-0 rounded-full"
+          style={{ backgroundColor: spec ? spec.color : "var(--color-foreground-subtle)" }}
+          aria-hidden
+        />
+        {district.name}
+        <span className="glass-light-muted">{district.kind}</span>
+      </span>
     </button>,
     host,
   );

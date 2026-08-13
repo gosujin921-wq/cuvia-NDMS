@@ -18,21 +18,33 @@ import { GlassPanel, cn } from "@ds";
 import { activeEventsAt, majorDisasterAt } from "../../../demo/events";
 import { needsConfirmCountAt } from "../../../demo/sop";
 import { interopLinksAt } from "../../../demo/interop";
-import { relatedAdvisories } from "../../../demo/weather";
+import { backdropAdvisories, relatedAdvisories } from "../../../demo/weather";
 import { formatClock, formatDate } from "../../../lib/datetime";
 import { useScenario } from "../../../state/ScenarioProvider";
 
 export function StatusStrip() {
-  const { now, track, cityStage, approvedResponseLevel } = useScenario();
+  const { now, track, cityStage, approvedResponseLevel, onsetting } = useScenario();
   const activeCount = activeEventsAt(now).length;
   const confirmCount = needsConfirmCountAt(now, approvedResponseLevel);
   const brokenCount = interopLinksAt(now, track).filter((link) => link.status === "끊김").length;
   /* S6 승인에서 초기대응(보강)으로 오른다. 시나리오 상태값이지 판정 로직이 아니다(04 §0-1) */
   const stageRaised = cityStage !== "상시대비";
   /* 맨 앞 특보 배지 — 지금 주요 재난에 걸린 특보다(04 §4-7). 주요 재난 카드와 같은
-     파생값을 쓰므로 두 곳이 갈라지지 않는다. 걸린 특보가 없으면 배지를 접는다 */
+     파생값을 쓰므로 두 곳이 갈라지지 않는다. 걸린 특보가 없으면 배지를 접는다.
+
+     다만 특보는 사건에서 파생되기만 하면 두 자리에서 사라진다. 트랙의 배경 특보로
+     받치는 자리가 그 둘이다:
+
+       · 발생 연출 첫 칸 — 사건이 아직 0건이다. 특보는 사건보다 먼저 걸린 하늘이라
+         발사 직후부터 서 있어야 한다(04 §0-3 · §15-1). 없으면 1.6초 깜빡인다
+       · 대표 재난이 특보 없는 유형일 때 — 봉암은 08:27 부터 대표가 내수침수인데
+         내수침수라는 특보는 없다. 그 물을 만든 호우경보는 그대로 발효 중이다
+
+     사건이 다 해제된 뒤(S8 22:10)에는 둘 다 아니므로 배지가 접힌다 */
   const major = majorDisasterAt(now);
-  const advisories = major ? relatedAdvisories(major.hazardType, track) : [];
+  const related = major ? relatedAdvisories(major.hazardType, track) : [];
+  const advisories =
+    related.length > 0 ? related : major || onsetting ? backdropAdvisories(track) : [];
 
   return (
     <GlassPanel

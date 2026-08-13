@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────
- * 계측 장비 289대 — 정본: docs/정본/04_데모_데이터.md §2
+ * 계측 장비 289대 — 배경: docs/레거시/정본/04_데모_데이터.md §2
  *
  * 지구별 대수는 04 §2-3 표를 그대로 따르고, 설치 좌표는 지구 중심 둘레에 고정 배치로
  * 만든다. 실제 설치 좌표를 받으면 이 생성 규칙 대신 좌표 표를 넣는다.
@@ -8,6 +8,7 @@
  * ───────────────────────────────────────────── */
 
 import { DISTRICTS, type District } from "./districts";
+import { activeEventOfAt, eventViewAt } from "./events";
 import { hashSeed, seededRandom } from "../lib/seed";
 
 export type DeviceKind = "WL" | "RN" | "DP" | "CV" | "BC" | "TD";
@@ -206,10 +207,61 @@ export function findDevice(id: string): Device | undefined {
   return DEVICES.find((d) => d.id === id);
 }
 
+/* ── CCTV 스틸 (04 §2-5) ───────────────────────────────────
+ * 스트림이 없다. `public/cctv` 의 실촬 스틸이 그 자리를 받고, 화면 라벨은 LIVE 다.
+ *
+ * 컷은 화각(view) 하나에 평시 다섯 · 위험 하나로 든다. 평시 다섯은 서로 다른
+ * 지점이라 카메라마다 하나를 물면 타일이 겹치지 않고, 위험 컷은 그 지구 사건이
+ * 경보에 닿는 순간 갈린다(cctvStillAt) — 스틸도 다른 화면 요소와 같은 프레임에서
+ * 함께 바뀐다(CLAUDE.md · 03 §0-7).
+ * ───────────────────────────────────────────────────────── */
+
+/** 화각 — 지구 유형이 고르는 촬영 갈래 */
+export type CctvView = "harbor" | "reservoir" | "city";
+
+/** 지구 유형 → 화각. 하천은 보·제방이라 저수지 컷과 같은 갈래로 본다 */
+const DISTRICT_VIEW: Record<District["kind"], CctvView> = {
+  해일: "harbor",
+  저수지: "reservoir",
+  하천: "reservoir",
+  내수: "city",
+};
+
+/** 평시 컷 — 화각마다 다섯 지점. 장면 미등재 카메라가 id 로 하나를 문다 */
+const CALM_STILLS: Record<CctvView, string[]> = {
+  reservoir: [
+    "/cctv/01_reservoir_calm_01.jpg",
+    "/cctv/01_reservoir_calm_02.jpg",
+    "/cctv/01_reservoir_calm_03.jpg",
+    "/cctv/01_reservoir_calm_04.jpg",
+    "/cctv/01_reservoir_calm_05.jpg",
+  ],
+  harbor: [
+    "/cctv/03_harbor_calm_01.jpg",
+    "/cctv/03_harbor_calm_02.jpg",
+    "/cctv/03_harbor_calm_03.jpg",
+    "/cctv/03_harbor_calm_04.jpg",
+    "/cctv/03_harbor_calm_05.jpg",
+  ],
+  city: [
+    "/cctv/05_city_normal_01.jpg",
+    "/cctv/05_city_normal_02.jpg",
+    "/cctv/05_city_normal_03.jpg",
+    "/cctv/05_city_normal_04.jpg",
+    "/cctv/05_city_normal_05.jpg",
+  ],
+};
+
+/** 위험 컷 — 등재 장면이 경보 이상에서 갈아타는 한 장 */
+const ALERT_STILL: Record<CctvView, string> = {
+  reservoir: "/cctv/02_reservoir_rising.jpg",
+  harbor: "/cctv/04_harbor_tsunami.jpg",
+  city: "/cctv/06_city_flood_start.jpg",
+};
+
 /* ── 주요 CCTV 장면 (04 §2-5) ──────────────────────────────
- * 현장영상 패널과 CCTV 팝업이 트는 시연 영상(연출 그래픽)의 장면 등재.
- * 실황처럼 팔지 않는다 — 화면에는 `시연 영상` 라벨이 반드시 선다. 장면은 위험의
- * 묘사지 판정이 아니다: "월파 위험 확인" 판단 문구는 교차검증 행(04 §10-4) 몫이다.
+ * 현장영상 패널과 CCTV 팝업이 트는 대본 카메라. 장면은 위험의 묘사지 판정이 아니다:
+ * "월파 위험 확인" 판단 문구는 교차검증 행(04 §10-4) 몫이다.
  * ───────────────────────────────────────────────────────── */
 
 export interface CctvSceneSpec {
@@ -218,25 +270,53 @@ export interface CctvSceneSpec {
   spot: string;
   /** 장면 설명 — 타일 캡션 */
   scene: string;
-  /** 연출 그래픽 종류 — quay: 물양장 수위 상승 · overtop: 해안도로 월파 */
-  kind: "quay" | "overtop";
   /** 카메라 방향 */
   bearing: string;
+  /** 이 카메라의 화각 — 같은 지구 두 대가 같은 컷으로 갈리지 않게 장면마다 정한다.
+   *  서항 해안도로·봉암 수로 합류부는 도로를 보므로 지구 유형(해일·내수)과 어긋난다 */
+  view: CctvView;
+  /** 평시 컷 — 지정하지 않으면 두 대가 같은 풀에서 같은 장을 물 수 있다 */
+  calm: string;
 }
 
 export const CCTV_SCENES: CctvSceneSpec[] = [
-  { districtId: "seohang", spot: "방파제", scene: "물양장 수위 상승", kind: "quay", bearing: "남동 (외해·물양장)" },
-  { districtId: "seohang", spot: "해안도로", scene: "해안도로 월파", kind: "overtop", bearing: "남서 (해안도로 축)" },
+  { districtId: "seohang", spot: "방파제", scene: "물양장 수위 상승", bearing: "남동 (외해·물양장)", view: "harbor", calm: "/cctv/03_harbor_calm_01.jpg" },
+  { districtId: "seohang", spot: "해안도로", scene: "해안도로 월파", bearing: "남서 (해안도로 축)", view: "city", calm: "/cctv/05_city_normal_01.jpg" },
   /* 트랙 B (04 §15-6) — 배수문은 이 시연의 결정적 컷이다. 영상이 없으면 옆 칸의
      외수위·내수위 두 값과 08:47 폐쇄 로그로 대체해 말한다(봉암 대본 시연 실패 대비) */
-  { districtId: "bongam", spot: "배수문", scene: "배수문 폐쇄 · 외수위 상승", kind: "quay", bearing: "북 (봉암천 하류)" },
-  { districtId: "bongam", spot: "수로 합류부", scene: "수로 합류부 수위 상승", kind: "overtop", bearing: "북동 (배수구역 수로)" },
+  { districtId: "bongam", spot: "배수문", scene: "배수문 폐쇄 · 외수위 상승", bearing: "북 (봉암천 하류)", view: "reservoir", calm: "/cctv/01_reservoir_calm_03.jpg" },
+  { districtId: "bongam", spot: "수로 합류부", scene: "수로 합류부 수위 상승", bearing: "북동 (배수구역 수로)", view: "city", calm: "/cctv/05_city_normal_02.jpg" },
 ];
 
 /** 이 CCTV 에 등재된 장면 — 같은 지점의 2호부터는 장면이 없다(이름이 `CCTV` 로 끝나는 첫 대만) */
 export function cctvSceneOf(device: Device): CctvSceneSpec | undefined {
   if (device.kind !== "CV" || !device.name.endsWith("CCTV")) return undefined;
   return CCTV_SCENES.find((s) => s.districtId === device.districtId && s.spot === device.spot);
+}
+
+/**
+ * now 시점에 이 카메라가 트는 스틸 경로.
+ *
+ * 등재 장면은 지정 평시 컷으로 서 있다가 **그 지구 대표 사건이 경보 이상**이면 위험
+ * 컷으로 갈린다 — 격상 프레임에서 토스트·핀·그래프와 함께 바뀐다. 미등재 카메라는
+ * 지구 화각의 평시 풀에서 id 로 한 장을 물고 시연 내내 그대로다: 지구의 CCTV 스무 대가
+ * 한꺼번에 침수 컷으로 바뀌면 계측이 짚은 한 지점이 묻힌다(04 §2-1 과 같은 이유).
+ */
+export function cctvStillAt(device: Device, now: Date): string {
+  const scene = cctvSceneOf(device);
+  if (scene) {
+    const event = activeEventOfAt(device.districtId, now);
+    const level = event ? eventViewAt(event, now).level : null;
+    return level === "warning" || level === "evacuate" ? ALERT_STILL[scene.view] : scene.calm;
+  }
+  const districtIndex = DISTRICTS.findIndex((d) => d.id === device.districtId);
+  const kind = DISTRICTS[districtIndex]?.kind ?? "내수";
+  const pool = CALM_STILLS[DISTRICT_VIEW[kind]];
+  /* 지구 순번 × 4 + 이 지구의 CCTV 번호. 무작위 해시로 고르면 한 스트립에 같은 컷이
+     두 장 선다(주요 CCTV 6칸은 지구 셋에서 두 대씩 온다). 4 는 풀 크기 5 와 서로소라
+     지구를 건너도 컷이 겹치지 않고, 같은 지구의 1·2호는 이웃한 컷을 문다 */
+  const nth = Number(device.id.slice(-3)) - 1;
+  return pool[(districtIndex * 4 + nth) % pool.length];
 }
 
 /** 현장영상 패널이 세우는 지구의 주요 CCTV — 장면 등재분 우선, 없으면 앞 2대 (04 §2-5) */

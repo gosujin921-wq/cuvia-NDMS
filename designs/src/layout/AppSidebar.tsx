@@ -1,7 +1,8 @@
 /* ─────────────────────────────────────────────
  * AppSidebar — 폭 고정 레일 (80px, 펼침 없음)
  *
- * 이 앱 메뉴는 그룹 없는 단층 5개다(nav.ts). 펼침형 사이드바는 2depth 를 담기 위한
+ * 이 앱 메뉴는 그룹 없는 단층 4개다(nav.ts — AI 검색은 hidden 이라 레일에 서지 않는다).
+ * 펼침형 사이드바는 2depth 를 담기 위한
  * 물건이라 여기엔 담을 것이 없다 — 펼치면 같은 라벨이 한 줄 더 생길 뿐이다.
  * 그래서 접힌 폭에 고정하고 펼침·오버플로우·2depth 를 전부 들어낸다.
  *
@@ -23,7 +24,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { SidebarNavIcon, SidebarUserMenu, cn } from "@ds";
 import symbolUrl from "@cuvia/assets/symbol.svg";
 import wordmarkUrl from "@cuvia/assets/wordmark.svg";
-import { HUB_ROUTE, NAV_ITEMS, findNav, type NavItem } from "./nav";
+import { HUB_ROUTE, VISIBLE_NAV_ITEMS, findNav, type NavItem } from "./nav";
 import { DEMO_USER } from "../demo/user";
 
 /** 레일 폭 — DS 접힘 사이드바와 같은 80px(w-20). 화면 좌표 계산에는 쓰지 않는다 */
@@ -67,7 +68,7 @@ export function AppSidebar() {
       </button>
 
       <ul className="flex w-full flex-col items-center gap-3">
-        {NAV_ITEMS.map((item) => (
+        {VISIBLE_NAV_ITEMS.map((item) => (
           <li key={item.id} className="w-full">
             <RailItem item={item} active={item.id === activeId} onClick={() => go(item.route)} />
           </li>

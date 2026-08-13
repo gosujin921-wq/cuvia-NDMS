@@ -52,7 +52,6 @@ interface SopPanelProps {
   /** SOP 가 따르는 등급 — 승인 대응등급, 승인 전에는 권고 (04 §10-1) */
   level: AlertLevel;
   /** 담당자가 등급을 승인했는가 — 승인 전에는 제안 상태로 잠긴다 */
-  approved: boolean;
   /** 실행 완료 시 전파 기록에 한 줄을 쌓는다 (04 §7-3·§7-5). 실행한 승인 항목 id 를 넘긴다 */
   onExecuted: (itemIds: string[]) => void;
   /** 전파 문안 — 페이지가 든다(04 §7-2·§7-5). SOP 최초 전파와 재전파가 같은 문안을 잇는다 */
@@ -66,7 +65,6 @@ interface SopPanelProps {
 
 export function SopPanel({
   level,
-  approved,
   onExecuted,
   message,
   onMessageChange,
@@ -78,6 +76,7 @@ export function SopPanel({
     sopExecuted,
     sopExecutedItemIds,
     approvedAt,
+    approveResponseLevel,
     completeSopExecution,
     phoneReportedAt,
     logPhoneReport,
@@ -108,12 +107,20 @@ export function SopPanel({
   /** [승인·실행] — 승인 항목이 위에서 아래로 스피너 → 결과로 진화하고, 조건 대기
    *  자동 항목이 그 뒤에 이어 실행된다. 자동 항목이 스스로 나가는 장면이 있어야
    *  "자동 처리도 결과 확인이 필요하다"(04 §11-1)가 화면에 선다 */
+  /* 실행이 곧 승인이다 (KISA · SK 기준).
+     되돌릴 수 없는 조치를 고르고 [승인 · 실행]을 누르는 그 행위가 승인이라, 앞에 별도
+     [대응등급 상향] 관문을 두지 않는다. 다만 "누가 어느 등급으로 대응했나"는 남아야
+     하므로 실행 시점에 승인 등급을 함께 세운다 — SCR-01 대응단계·SCR-04 집계·사건
+     진행 타임라인이 그 값을 읽는다 */
   const run = () => {
     const ids = approvalItems.filter((i) => checked.includes(i.id)).map((i) => i.id);
     if (ids.length === 0) {
       toast.error("승인할 항목을 하나 이상 고르세요.");
       return;
     }
+    /* 승인은 관문을 지난 뒤다 — 고른 것이 없어 되돌아가는 누름에도 등급이 서면
+       시계가 S6 로 뛰고 도시 대응단계가 오른 채로 남는다 */
+    approveResponseLevel(level);
     setExecuting(true);
     onBusyChange?.(true);
     setMessageOpenId(null);
@@ -158,9 +165,7 @@ export function SopPanel({
         <Tag className="shrink-0">
           SOP-{hazardType ?? "해일"}-{spec.label}
         </Tag>
-        {!approved && (
-          <span className="ml-auto shrink-0 text-caption text-foreground-subtle">제안 상태</span>
-        )}
+
       </header>
 
       <ul className="flex flex-col">
@@ -186,7 +191,7 @@ export function SopPanel({
                   ? new Date(approvedAt.getTime() + result.offsetMin * 60_000)
                   : null
               }
-              disabled={!approved || executing || sopExecuted}
+              disabled={executing || sopExecuted}
               onToggle={() =>
                 setChecked((prev) =>
                   prev.includes(item.id)
@@ -239,21 +244,16 @@ export function SopPanel({
               variant="outline"
               size="sm"
               className="flex-1"
-              disabled={!approved || executing}
+              disabled={executing}
               onClick={() => setChecked(approvalItems.map((i) => i.id))}
             >
               전체 선택
             </Button>
-            <Button size="sm" className="flex-1" disabled={!approved || executing} onClick={run}>
+            <Button size="sm" className="flex-1" disabled={executing} onClick={run}>
               <Icon icon="mdi:send" className="size-4" aria-hidden />
               승인 · 실행
             </Button>
           </div>
-          {!approved && (
-            <p className="text-caption text-foreground-subtle">
-              위 판정 카드에서 대응등급을 승인하면 실행 버튼이 열립니다
-            </p>
-          )}
         </>
       )}
     </section>

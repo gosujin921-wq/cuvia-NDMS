@@ -2,8 +2,8 @@
  * 주요 CCTV 스트립 (03 화면정의서 §1 하단 전폭 · 04 §2-5)
  *
  * IDC SCR-01 하단 LIVE 스트립 선례. 사건군(04 §4-7) 지구의 현장영상 카메라를 지구
- * 순서대로 잇는다(서항 2 · 명동항 2 · 구항 2). 장면 등재분은 `시연 영상` 라벨의
- * 연출 그래픽을 틀고, 없는 카메라는 LIVE 자리 표시만 선다. 실황처럼 팔지 않는다.
+ * 순서대로 잇는다(서항 2 · 명동항 2 · 구항 2). 타일은 실촬 스틸을 틀고 LIVE 라벨을
+ * 세운다 — 스트림 자리를 스틸이 대신한다(04 §2-5).
  *
  * 타일은 16:9 고정. 폭이 남으면 채널을 늘리고 모자라면 줄인다(앞 = 우선순위 ·
  * IDC LiveStrip 실측 패턴). 타일을 누르면 그 지구 재난관제(SCR-02)로 가고
@@ -14,7 +14,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@iconify/react";
 import { EmptyState } from "@ds";
-import { CctvScene } from "../../../components/CctvScene";
+import { CctvStill } from "../../../components/CctvStill";
 import { cctvSceneOf, featuredCctvOf, type Device } from "../../../demo/devices";
 import { majorDisasterAt } from "../../../demo/events";
 import { formatClock } from "../../../lib/datetime";
@@ -98,19 +98,9 @@ export function CctvLiveStrip() {
                   <Icon icon="mdi:video-off" className="size-5 text-foreground-subtle" aria-hidden />
                   <span className="text-caption text-foreground-subtle">{device.status}</span>
                 </span>
-              ) : scene ? (
-                <>
-                  <CctvScene kind={scene.kind} className="absolute inset-0" />
-                  {/* 연출임을 화면에서 밝힌다. LIVE 로 팔지 않는다 (04 §2-5) */}
-                  <span className="absolute left-1.5 top-1.5 rounded bg-surface px-1.5 py-0.5 text-caption text-foreground">
-                    시연 영상
-                  </span>
-                </>
               ) : (
                 <>
-                  <span className="absolute inset-0 flex items-center justify-center">
-                    <Icon icon="mdi:cctv" className="size-6 text-foreground-subtle" aria-hidden />
-                  </span>
+                  <CctvStill device={device} className="absolute inset-0" />
                   <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-surface px-1.5 py-0.5 text-caption text-foreground">
                     <span className="size-1.5 animate-pulse rounded-full bg-danger" aria-hidden />
                     LIVE

@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────
- * SCR-05 디지털트윈 — 정본: docs/정본/03_화면정의서.md §5
+ * SCR-05 디지털트윈 — 배경: docs/레거시/정본/03_화면정의서.md §5
  *
  * 지구를 3D 로 띄워 놓고 **조건을 바꿔 공간 영향과 대응 대상을 비교하는** 자리다.
  * 사고 난 뒤가 아니라 나기 전을 본다.
@@ -20,7 +20,12 @@
  *   SCR-04  실제 결과와 과거 이력을 사후 분석
  *   SCR-06  여러 화면의 근거를 문장으로 종합
  *
- * ★ 우측 레일은 **결론이 위**다. 분석 대상 → 조건 → 영향 결과 → 근거·가정 → 완료 동작.
+ * ★ 두 모드의 주 조작축은 **시간**이다. 사건 연계는 시각(17:29), 모의분석은 경과(+55분).
+ *   사람이 미는 것은 시간이고 **예상 수위는 그 시간에 따라 나오는 결과다** — 예상은
+ *   시스템의 몫이라 사람이 미는 값이 될 수 없다. 조건(강우 강도 · 해일 편차)은 그 시간을
+ *   만드는 산정 근거로 내려간다(demo/progression.ts · demo/scenario-timeline.ts).
+ *
+ * ★ 우측 레일은 **결론이 위**다. 분석 대상 → 시간축 → 영향 결과 → 근거·가정 → 완료 동작.
  *   1280×720 에서 첫 화면에 다 서야 하는 것이 그 다섯이다. 미니맵·과거 이벤트는 분석
  *   보조라 맨 아래 접힌 자리로 내려가고, 레이어는 지도 위 팝오버로 나간다(다른 지도
  *   화면과 같은 자리·같은 문법 — components/MapUtilStrip.tsx).
@@ -32,8 +37,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Icon } from "@iconify/react";
-import { Badge, Button, CollapsibleSection, GlassPanel, toast } from "@ds";
+import { Badge, Button, CollapsibleSection, EmptyState, GlassPanel, toast } from "@ds";
 import { useMapLibre } from "../../lib/useMapLibre";
+import { useWindLayer } from "../../lib/useWindLayer";
+import {
+  DEFAULT_WEATHER,
+  isWeatherKey,
+  weatherLayerItems,
+  type WeatherState,
+} from "../../lib/weather-layers";
+import { useTemperatureLayer } from "../../lib/useTemperatureLayer";
+import { usePrecipitationLayer } from "../../lib/usePrecipitationLayer";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import {
   CENTER_LEFT,
@@ -54,7 +68,7 @@ import {
 } from "../../lib/flood-scene";
 import { ensureSafemapLayers, setSafemapVisible } from "../../lib/safemap";
 import { loadTerrainGrid, type TerrainPatch } from "../../lib/terrain-grid";
-import { DISTRICTS, findDistrict, type District } from "../../demo/districts";
+import { findDistrict, type District } from "../../demo/districts";
 import { DEVICE_KINDS, devicesOf, type DeviceKind } from "../../demo/devices";
 import { activeEventOfAt, eventViewAt, hazardLabel, type HazardType } from "../../demo/events";
 import { WATER_THRESHOLDS } from "../../demo/levels";
@@ -64,22 +78,26 @@ import {
   analysisBasisOf,
   conditionSpecOf,
   drillBasisOf,
+  drillDistrictAt,
   hazardTypesOf,
   impactAt,
   observedBasisOf,
-  thresholdPresetsOf,
   type AnalysisMode,
-  type AnalysisSnapshot,
   type DrillSnapshot,
 } from "../../demo/analysis";
-import { markOfValue, timelineOf, type TimeMark } from "../../demo/scenario-timeline";
-import { applyAnalysis, saveDrill, useDrills } from "../../state/analysis-results";
+import {
+  conditionOf,
+  formatOffset,
+  progressionSpecOf,
+  progressionTimelineOf,
+} from "../../demo/progression";
+import { markAt, timelineOf, valueAt, type TimeMark } from "../../demo/scenario-timeline";
+import { recordReview, saveDrill, useDrills } from "../../state/analysis-results";
 import { formatClock } from "../../lib/datetime";
 import { TimelinePanel } from "./widgets/TimelinePanel";
 import { HazardLayers } from "../../components/HazardLayers";
 import { AnalysisHeader } from "./widgets/AnalysisHeader";
 import { DrillSetupPanel } from "./widgets/DrillSetupPanel";
-import { ConditionPanel } from "./widgets/ConditionPanel";
 import { ImpactResultCard } from "./widgets/ImpactResultCard";
 import { AnalysisBasisCard } from "./widgets/AnalysisBasisCard";
 import { DistrictEventList } from "./widgets/DistrictEventList";
@@ -87,6 +105,7 @@ import { MiniMap } from "./widgets/MiniMap";
 import { TwinDeviceMarkers } from "./widgets/TwinDeviceMarkers";
 import { TwinWeather } from "./widgets/TwinWeather";
 import { useScenario } from "../../state/ScenarioProvider";
+import { DEMO_USER } from "../../demo/user";
 
 /**
  * 마을과 건물이 함께 잡히는 배율. 베이스맵 3D 건물이 15부터 나온다.
@@ -106,10 +125,6 @@ const TWIN_PITCH = 60;
  * 다른 지도 화면(SCR-01·02)과 같은 자리, 같은 문법이다. 상태만 여기 남는다.
  */
 interface LayerState {
-  buildings3d: boolean;
-  weather: boolean;
-  terrain: boolean;
-  hillshade: boolean;
   devices: Record<DeviceKind, boolean>;
   floodLine: boolean;
   flood: boolean;
@@ -118,11 +133,6 @@ interface LayerState {
 }
 
 const DEFAULT_LAYERS: LayerState = {
-  buildings3d: true,
-  weather: false,
-  terrain: true,
-  /* 등고선 데이터가 없어 산이 단색 면으로만 보인다. 음영을 기본으로 켜 능선을 살린다 */
-  hillshade: true,
   /* 사건 연계 핵심 장비만 기본 표시 — 전체 CCTV 를 깔면 분석 대상 지점이 묻힌다(03 §5) */
   devices: { WL: true, RN: false, DP: false, CV: true, BC: false, TD: false },
   floodLine: true,
@@ -131,19 +141,11 @@ const DEFAULT_LAYERS: LayerState = {
   floodOfficial: false,
 };
 
-/** 씬 표현 토글 — 팝오버 첫 묶음. 표식 필터가 아니라 화면 자체의 모드다 */
-const SCENE_ITEMS: { id: keyof LayerState; label: string }[] = [
-  { id: "buildings3d", label: "3D 건물" },
-  { id: "terrain", label: "지형 렌더링" },
-  { id: "hillshade", label: "지형 음영" },
-  { id: "weather", label: "날씨효과" },
-];
-
 /** 영향 표현 토글 — 조건 축이 그리는 층과 대조용 공식 자료 */
-const IMPACT_ITEMS: { id: keyof LayerState; label: string }[] = [
-  { id: "flood", label: "영향 예상범위" },
-  { id: "floodLine", label: "침수선 보기" },
-  { id: "floodOfficial", label: "해안침수예상도" },
+const IMPACT_ITEMS: { id: keyof LayerState; label: string; color: string; icon: string }[] = [
+  { id: "flood", label: "영향 예상범위", color: "#2f6fd0", icon: "mdi:waves" },
+  { id: "floodLine", label: "침수선 보기", color: "#7cc4ff", icon: "mdi:vector-polyline" },
+  { id: "floodOfficial", label: "해안침수예상도", color: "#64748b", icon: "mdi:map-legend" },
 ];
 
 const MODE_LABEL: Record<AnalysisMode, string> = {
@@ -155,15 +157,15 @@ export function DigitalTwinPage() {
   const navigate = useNavigate();
   const { districtId } = useParams();
   const [params] = useSearchParams();
-  const { advanceTo, now, selectedDeviceId, selectDevice } = useScenario();
-  /* 04 §9 — 기본 지구는 봉암지구. 재난관제에서 넘어오면 그 지구를 연다 */
-  const district = (districtId && findDistrict(districtId)) || findDistrict("bongam") || DISTRICTS[0];
-
-  /* 주인공 지구로 트윈에 들어오면 S4 — 영향 분석 (04 §0).
-     모의분석으로 다른 지구를 둘러보는 것은 대본 진행이 아니므로 스텝을 건드리지 않는다 */
-  useEffect(() => {
-    if (district.id === "seohang") advanceTo(4);
-  }, [district.id, advanceTo]);
+  const { advanceTo, heroDistrictId, now, selectedDeviceId, selectDevice } = useScenario();
+  /* 지구를 들고 오는 길은 재난관제뿐이다(`/scr-05/:districtId`). 메뉴로 들어오면 지구가
+     없으므로 **사건이 없는 지구**를 골라 사전 모의분석으로 연다(02 §2 · demo/analysis.ts).
+     봉암 고정이던 자리다 — 봉암 트랙에서는 그 지구가 사건 한복판이라, 메뉴로 들어왔는데
+     진행 중 사건의 연계 분석이 열렸다.
+     시계로 고르므로 트랙을 발사하면(0 키) 화면에 머문 채로도 답이 따라 바뀐다 */
+  const clockMs = now.getTime();
+  const menuDistrict = useMemo(() => drillDistrictAt(new Date(clockMs)), [clockMs]);
+  const district = (districtId && findDistrict(districtId)) || menuDistrict;
 
   /* 선택 장비 복구 — 엔진이 정본이고 URL(`?device=`)은 새로고침·딥링크의 보조다(03 §5) */
   const deviceParam = params.get("device");
@@ -181,20 +183,16 @@ export function DigitalTwinPage() {
   });
 
   const [layers, setLayers] = useState<LayerState>(DEFAULT_LAYERS);
+  const [weather, setWeather] = useState<WeatherState>(DEFAULT_WEATHER);
   const [level, setLevel] = useState(0);
   /* 참고 자리(미니맵·과거 이벤트)는 접힌 채로 연다 — 분석 결과가 첫 화면을 차지해야 한다 */
+
   const [referenceOpen, setReferenceOpen] = useState(false);
-  /* 상세 조건도 접힌 채로. 기본 조작은 시간축이고 조건은 고급 조작이다(03 §5) */
-  const [conditionOpen, setConditionOpen] = useState(false);
 
   /* 접힌 자리를 펼치면 그 자리로 스크롤한다. 둘 다 레일 아래쪽에 있어서, 펼쳐도 열린
      내용이 화면 밖에 있으면 눌러도 아무 일 없는 것처럼 보인다. block:"end" 로 펼친
      내용의 끝을 맞춰야 본문이 다 들어온다 */
-  const conditionRef = useRef<HTMLDivElement>(null);
   const referenceRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (conditionOpen) conditionRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [conditionOpen]);
   useEffect(() => {
     if (referenceOpen) referenceRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [referenceOpen]);
@@ -207,13 +205,22 @@ export function DigitalTwinPage() {
   const activeView = activeEvent ? eventViewAt(activeEvent, now) : null;
   const mode: AnalysisMode = activeEvent ? "event" : "drill";
 
+  /* 주인공 지구의 사건을 들고 트윈에 들어오면 S4 — 영향 분석 (04 §0).
+     주인공은 트랙이 정한다(04 §15-3) — 서항 id 에 하드로 물려 있어 봉암 트랙에서는 S4 가
+     오지 않았다. 모의분석으로 둘러보는 것은 대본 진행이 아니므로 스텝을 건드리지 않는다:
+     이 게이트가 없으면 봉암 트랙의 메뉴 진입(사건 없는 서항)이 스텝을 밀어 시계가
+     09:05 로 뛴다 */
+  useEffect(() => {
+    if (mode === "event" && district.id === heroDistrictId) advanceTo(4);
+  }, [mode, district.id, heroDistrictId, advanceTo]);
+
   /* 모의분석의 재난유형 — 원장에 이 지구 사건으로 등재된 것 중에서 고른다 */
   const hazardTypes = useMemo(() => hazardTypesOf(district.id), [district.id]);
   const [drillHazard, setDrillHazard] = useState<HazardType | null>(null);
   useEffect(() => {
-    /* 조건 패널이 설 수 있는 유형을 먼저 세운다 — 지구를 바꾸자마자 "미등재"가 뜨면
-       무엇을 잘못 골랐나 싶어진다. 없으면 첫 유형으로 두고 패널이 미등재를 말한다 */
-    const usable = hazardTypes.find((type) => conditionSpecOf(district.id, type));
+    /* 시간축이 설 수 있는 유형을 먼저 세운다 — 지구를 바꾸자마자 "미등재"가 뜨면
+       무엇을 잘못 골랐나 싶어진다. 없으면 첫 유형으로 두고 레일이 미등재를 말한다 */
+    const usable = hazardTypes.find((type) => progressionSpecOf(district.id, type));
     setDrillHazard(usable ?? hazardTypes[0] ?? null);
   }, [district.id, hazardTypes]);
 
@@ -221,6 +228,18 @@ export function DigitalTwinPage() {
   const threshold = WATER_THRESHOLDS[district.id] ?? null;
   const conditionSpec = hazardType ? conditionSpecOf(district.id, hazardType) : null;
   const unit = conditionSpec?.unit ?? activeEvent?.unit ?? "";
+
+  /* ── 모의분석의 조건 (demo/progression.ts) ───────────────────────────────
+     사람이 세우는 마지막 값이다. 이 값이 상승률을 정하고 상승률이 축 위 눈금 시각을
+     정한다 — 수위는 그 축을 밀어야 나온다. 지구·유형이 바뀌면 그 지구의 기본 조건으로
+     돌아간다(conditionOf 가 물러설 자리를 안다) */
+  const progression =
+    mode === "drill" && hazardType ? progressionSpecOf(district.id, hazardType) : null;
+  const [drillConditionId, setDrillConditionId] = useState<string | null>(null);
+  useEffect(() => {
+    setDrillConditionId(null);
+  }, [district.id, hazardType]);
+  const drillCondition = progression ? conditionOf(progression, drillConditionId) : null;
 
   /* 지형 고도 패치 — 있으면 수면이 지형을 따라 차오른다. 없으면(굽기 전·새 지구)
      flood-scene 이 원형 수면으로 물러나므로 실패해도 화면은 선다 */
@@ -240,7 +259,7 @@ export function DigitalTwinPage() {
     };
   }, [district.id]);
 
-  /* 위험요소 레이어 2종 — 서항 한정 · 기본 켜짐 (04 §9 · §1-1) */
+  /* 대피 시설 — 서항 한정 · 기본 켜짐 (04 §9 · §1-1). 트윈은 대피소 하나만 세운다 */
   const hazards = useMemo(() => hazardLayersOf(district.id, "twin"), [district.id]);
   const [hazardOn, setHazardOn] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -289,46 +308,29 @@ export function DigitalTwinPage() {
     focusDistrict(800);
   }, [map, ready, district, focusDistrict]);
 
-  /* ── 기준 조건 ──────────────────────────────────────────────────────────
+  /* ── 기준 조건 = 축의 출발점 ────────────────────────────────────────────
      사건 연계는 **현재 시각의 계측**이 기준이다("지금 이렇고, 19:10 이면 이렇게 된다").
-     모의분석은 관측이 없으므로 그 지구가 발령을 내는 지점(경보 기준)을 붙박이로 둔다 —
-     계획·훈련이 묻는 것이 "발령 수준에서 대피 수준으로 가면 얼마나 커지나"라서다 */
+     모의분석은 관측이 없으므로 **축의 출발점**(발령이 시작되는 지점)이 기준이다 —
+     "주의보가 난 시점에서 이 조건이 지속되면 얼마나 커지나"가 계획·훈련의 물음이라서다.
+     봉암은 그 자리에서 영향이 아직 0 인데, 그 0 이 비교의 왼쪽에 서는 것이 맞다:
+     "지금은 아무 일 없지만 이 비가 55분 더 오면 11동" 이 이 화면이 만드는 문장이다 */
   const observed = activeView?.value ?? null;
-  const baselineValue = mode === "event" ? observed : (threshold?.warning ?? null);
-  /* 열 머리 — 사건 연계는 시각으로, 모의분석은 조건 이름으로 읽는다. 시간축이 없는
-     자리에 "17:16" 을 세우면 그 시각에 무슨 뜻이 있는 것처럼 보인다 */
+  const baselineValue = mode === "event" ? observed : (progression?.startLevel ?? null);
+  /* 열 머리 — 사건 연계는 시각으로, 모의분석은 눈금 이름으로 읽는다. 경과 축에
+     "17:16" 을 세우면 그 시각에 무슨 뜻이 있는 것처럼 보인다 */
   const baselineLabel =
-    mode === "event"
-      ? `현재 ${formatClock(now)}`
-      : threshold
-        ? `경보 ${threshold.warning.toFixed(2)}`
-        : "기준";
-
-  /* 조건값 초기화 — 지구·모드가 바뀌면 첫 장면을 다시 잡는다. 앞 마을에서 올려 둔 물이
-     남으면 다음 마을이 이미 잠긴 채로 열린다.
-
-     사건 연계는 **현재 계측**에서 연다 — S4 가 "현재를 보고 조건을 올려 비교"라 첫 장면이
-     지금이어야 한다(03 §5 · 차수 K).
-     모의분석은 **대피 기준**에서 연다. 발령 기준(경보)에서 열면 영향표가 아직 0 인 지구가
-     있어(봉암은 4.02 부터 · 04 §15-8) 첫 화면이 통째로 0 으로 뜬다. 계획·훈련이 먼저
-     묻는 것도 "대피 기준에 닿으면 어디까지인가"라 그 조건이 열린 화면의 기본값이다 */
-  const openingValue = mode === "event" ? observed : (threshold?.evacuate ?? null);
-  useEffect(() => {
-    if (openingValue != null) {
-      setLevel(openingValue);
-      setLayers((prev) => (prev.flood ? prev : { ...prev, flood: true }));
-    } else {
-      setLevel(0);
-    }
-  }, [district.id, mode, openingValue]);
+    mode === "event" ? `현재 ${formatClock(now)}` : (progression?.startLabel ?? "기준");
 
   /* 레이어 토글 반영 */
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance) return;
-    setBuildings3D(instance, layers.buildings3d);
-    setTerrain(instance, layers.terrain);
-    setHillshadeVisible(instance, layers.hillshade);
+    /* 씬 표현은 토글을 두지 않는다 — 3D 로 세우고 지형을 깔고 음영으로 능선을 살리는
+       것이 이 화면의 정체이지 고르는 설정이 아니다. 끄면 트윈이 아니라 평면 지도가 된다.
+       등고선 데이터가 없어 산이 단색 면으로만 보이므로 음영은 켠 채로 둔다 */
+    setBuildings3D(instance, true);
+    setTerrain(instance, true);
+    setHillshadeVisible(instance, true);
     setFloodLineVisible(instance, layers.floodLine);
     /* 행안부 해안침수예상도 — 켤 때만 실시간 WMS 요청이 나간다(lib/safemap.ts) */
     ensureSafemapLayers(instance);
@@ -353,104 +355,164 @@ export function DigitalTwinPage() {
   /* 근거와 가정 — 모드마다 출처가 다르다. 모의분석은 "무엇을 안 썼는지"까지 적는다 */
   const basis = useMemo(() => {
     if (!threshold) return null;
-    if (mode === "drill") return drillBasisOf(threshold, unit, now);
+    if (mode === "drill") {
+      return progression && drillCondition
+        ? drillBasisOf(progression, drillCondition, threshold, unit, now)
+        : null;
+    }
     if (scenario) return analysisBasisOf(scenario, now, observed, unit);
     return observedBasisOf(threshold, unit, now, observed);
-  }, [mode, threshold, unit, now, scenario, observed]);
+  }, [mode, threshold, unit, now, scenario, observed, progression, drillCondition]);
 
   /* ── 시간축 (03 §5) ──────────────────────────────────────────────────────
-     사건 연계의 주 조작축. 시각을 옮기면 예상 수위·영향·대응 대상이 함께 바뀐다.
-     모의분석에는 서지 않는다 — 관측도 예보도 없어 "언제"가 뜻을 못 가진다 */
-  const timeline = useMemo(
-    () =>
-      mode === "event" && activeEvent && observed != null
+     ★ 두 모드의 주 조작축이다. 시간을 옮기면 예상 수위·영향·대응 대상이 함께 바뀐다.
+
+     사건 연계  절대 시각. 눈금은 원장 계측과 조건 시나리오가 세운다(scenario-timeline.ts)
+     모의분석  출발점에서의 경과. 눈금은 발령 기준·영향표가 세우고 시각은 조건이 정한
+               상승률이 계산한다(progression.ts). 예보가 없어 "몇 시"는 못 쓰지만
+               "이 조건이면 대피 기준까지 2시간 35분"은 근거를 참칭하지 않는다 */
+  const timeline = useMemo(() => {
+    if (mode === "event") {
+      return activeEvent && observed != null
         ? timelineOf(activeEvent, scenario, now, observed)
-        : null,
-    [mode, activeEvent, scenario, now, observed],
-  );
-  /* 어느 눈금을 짚었나.
-     ★ 값이 아니라 **id** 로 기억한다. 서항은 17:22 격상값과 17:29 현재값이 둘 다 3.41 이라
-       (그 사이 단계가 안 움직였으니 당연하다) 값으로 되찾으면 [경보 격상]을 눌러도 선택이
-       [현재]로 튄다. 누른 칩이 안 켜지면 조작이 먹지 않은 것으로 읽힌다.
-     상세 조건으로 손수 밀면 id 를 놓고, 그때는 값으로 되찾아 눈금 밖이면 undefined 가 된다 */
-  const [pickedMarkId, setPickedMarkId] = useState<string | null>(null);
-  const selectedMark = timeline
-    ? (pickedMarkId
-        ? timeline.marks.find(
-            (mark) => mark.id === pickedMarkId && Math.abs(mark.value - level) < 0.005,
-          )
-        : undefined) ?? markOfValue(timeline, level)
-    : undefined;
+        : null;
+    }
+    return progression && drillCondition
+      ? progressionTimelineOf(progression, drillCondition)
+      : null;
+  }, [mode, activeEvent, scenario, now, observed, progression, drillCondition]);
 
-  /* 조건 프리셋 — 시간축이 선 뒤로 사건 연계에서는 상세 조건 안쪽 보조가 됐다.
-     발령 기준 세 점은 두 모드가 같이 쓴다 */
-  const presets = useMemo(
-    () => (threshold ? thresholdPresetsOf(threshold) : undefined),
-    [threshold],
-  );
+  /* 축 위 어디에 서 있나.
+     ★ 값이 아니라 **시각**을 기억한다. 축이 자유 스크럽이라 한 값이 여러 시각에 설 수 있고
+       (서항은 17:22 격상값과 17:29 현재값이 둘 다 3.41 이다), 값으로 되찾으면 [경보 격상]을
+       눌러도 선택이 [현재]로 튄다. 누른 버튼이 안 켜지면 조작이 먹지 않은 것으로 읽힌다 */
+  const [pickedAt, setPickedAt] = useState<Date | null>(null);
 
-  /* 조건을 밀면 영향 층이 따라 켜진다 — 값은 움직이는데 화면이 안 변하면 조작이 죽은
+  /* 축이 열리는 자리 — 모드마다 다르다.
+
+     사건 연계  **현재 눈금.** S4 가 "지금을 보고 앞을 비교"라 첫 장면이 지금이어야 한다
+     모의분석  **마지막 눈금(대피 기준 도달).** 출발점에서 열면 영향이 아직 0 인 지구가
+               있어(봉암 3.45 는 표 밖 · 04 §15-8) 첫 화면이 통째로 0 으로 뜬다. 계획·훈련이
+               먼저 묻는 것도 "대피 기준에 닿으면 어디까지인가"라 그 자리가 기본값이다 */
+  const openingMark = timeline
+    ? timeline.marks[mode === "event" ? timeline.nowIndex : timeline.marks.length - 1]
+    : null;
+  /* 시각과 값을 한 효과로 함께 되돌린다 — 따로 두면 조건을 바꾸는 한 프레임 동안 축과
+     수면이 어긋난다. 지구·모드·조건이 바뀌면 축이 새로 서므로 이 값들도 함께 바뀐다 */
+  const openingAtMs = openingMark?.at.getTime() ?? null;
+  const openingValue = openingMark?.value ?? null;
+  useEffect(() => {
+    setPickedAt(openingAtMs === null ? null : new Date(openingAtMs));
+    if (openingValue == null) {
+      setLevel(0);
+      return;
+    }
+    setLevel(openingValue);
+    setLayers((prev) => (prev.flood ? prev : { ...prev, flood: true }));
+  }, [openingAtMs, openingValue, district.id, mode]);
+
+  /* 눈금 위인가 사이인가 — 사이면 undefined 라 화면이 "사용자 시각"으로 말한다 */
+  const selectedMark = timeline && pickedAt ? markAt(timeline, pickedAt) : undefined;
+  /* 축 위 한 점의 표기 — 사건 연계는 시각, 모의분석은 경과 */
+  const axisAt = (at: Date) =>
+    mode === "event" || !timeline ? formatClock(at) : formatOffset(timeline, at);
+
+  /* 기상 격자 — 켜고 끄는 것은 토글이 정하고, **어느 시각의 기상인가는 시간축이 정한다.**
+     시각을 옮기면 근거 카드의 강우 유입과 지도의 비가 함께 움직인다.
+     모의분석 축은 경과라 시각이 없다(축 기준점은 표기에 안 쓰는 상수다 · progression.ts) —
+     그쪽은 시나리오 시계를 그대로 쓴다. 안 그러면 훈련 축을 밀 때 지도의 비가 자정으로 뛴다 */
+  const weatherHour = (mode === "event" ? (pickedAt ?? now) : now).getHours();
+  useWindLayer(map, ready, weather.wind);
+  useTemperatureLayer(map, ready, weather.temp);
+  usePrecipitationLayer(map, ready, weather.rain, weatherHour);
+
+  /* 축을 밀면 영향 층이 따라 켜진다 — 값은 움직이는데 화면이 안 변하면 조작이 죽은
      것으로 읽힌다. "레이어에서 켜세요" 안내로 사용자를 돌려보내지 않는다 */
   const changeLevel = (next: number) => {
     setLevel(next);
     setLayers((prev) => (prev.flood ? prev : { ...prev, flood: true }));
   };
 
-  /* 시간축 눈금 짚기 — 값과 함께 어느 눈금인지도 기억한다 */
+  /* 시간축 눈금 짚기 — 04 등재값으로 정확히 데려간다 */
   const pickMark = (mark: TimeMark) => {
-    setPickedMarkId(mark.id);
+    setPickedAt(mark.at);
     changeLevel(mark.value);
   };
 
-  /* 상세 조건으로 손수 밀기 — 눈금에서 벗어난다 */
-  const pushCondition = (next: number) => {
-    setPickedMarkId(null);
-    changeLevel(next);
+  /* 시간축 스크럽 — 눈금 사이는 선형 보간(demo/scenario-timeline.ts valueAt).
+     04 에 없는 값이라 화면이 "사용자 시각"으로 구분해 말한다 (03 §5) */
+  const scrubTo = (at: Date) => {
+    if (!timeline) return;
+    setPickedAt(at);
+    changeLevel(valueAt(timeline, at));
   };
+
 
   const setLayer = (id: keyof LayerState) =>
     setLayers((prev) => ({ ...prev, [id]: !prev[id as keyof LayerState] }));
 
   const openDistrict = (next: District) => navigate(`/scr-05/${next.id}`);
 
-  /* ── 완료 동작 — 모드마다 저장처가 갈린다 (02 §2) ────────────────────────
-     사건 연계: 트윈은 판단을 확정하지 않는다. 조건·영향·근거를 사건에 붙일 뿐이고,
-       권고 대응과 SOP 대상을 구체화하는 것은 SCR-02 의 몫이다. 그래서 버튼도 "이 판단으로
-       대응하기"가 아니라 "분석 결과를 사건에 반영"이다 — 무엇이 저장되는지가 문안에 있다.
+  /* ── 완료 동작 — 모드마다 남기는 것이 갈린다 (02 §2) ─────────────────────
+     사건 연계: 트윈은 사건의 값도 SOP 도 바꾸지 않는다. SOP 를 정하는 것은 재난유형
+       (목록)·승인 대응등급(활성 범위)·정본 데이터(대상 인원·수단·기관) 셋이고 셋 다 트윈
+       밖이다. `재난문자 412명` 은 트윈에 들어가기 전부터 경보 등급 SOP 에 서 있다.
+       그래서 남기는 것은 **"대표 전망을 언제 누가 검토했다"** 는 사실과 근거뿐이고,
+       사건 상태를 바꾸는 행위는 SCR-02 의 [대응등급 대피로 상향] 하나다.
+       버튼이 "분석 결과를 사건에 반영"이 아닌 이유가 이것이다 — 반영되는 것은 결과가
+       아니라 검토다.
      사전 모의분석: 모의분석안으로만 남는다. 사건 id 를 들지 않아 대응 등급·타임라인·
        전파 원장 어디에도 닿지 않는다 */
   const drills = useDrills(district.id);
-  const canFinish = Boolean(selected && basis && hazardType);
 
-  const applyToEvent = () => {
-    if (!activeEvent || !selected || !basis || !hazardType) return;
-    const snapshot: AnalysisSnapshot = {
+  /* 검토 대상은 언제나 **대표 전망**이다. 사용자가 상세 조건으로 밀어 본 값(3.80 같은)은
+     "이 정도면 어디까지"를 알아보는 자유 탐색이고 사건의 공식 근거를 대체하지 않는다.
+     그래서 슬라이더가 어디에 서 있든 기록되는 값은 이 한 벌이다 */
+  const projectedImpact =
+    scenario && hazardType ? impactAt(district.id, hazardType, scenario.peak) : null;
+  const canSaveDrill = Boolean(selected && basis && hazardType);
+  const returnToControl = () => {
+    /* 돌아가는 길에 검토 기록을 남긴다. 트윈에 들어와 시간축을 본 것이 곧 검토이고,
+       기록되는 값은 언제나 대표 전망 한 벌이다 — 화면에서 어느 시각을 짚고 있었든
+       사건에 붙는 근거는 04 가 세운 전망이지 지나며 스친 사이값이 아니다(02 §2) */
+    if (!activeEvent) return;
+    if (!scenario || !projectedImpact || !basis || !hazardType) {
+      navigate(`/scr-02/${activeEvent.districtId}?event=${activeEvent.id}`);
+      return;
+    }
+    recordReview({
       districtId: district.id,
       eventId: activeEvent.id,
       hazardType,
-      conditionValue: level,
-      conditionLabel: `${level.toFixed(2)} ${unit}`,
-      baseline,
-      impact: selected,
+      reviewedAt: now,
+      reviewer: `${DEMO_USER.group} ${DEMO_USER.role}`,
+      scenarioCreatedAt: new Date(scenario.createdAt),
+      scenarioAt: new Date(scenario.peakAt),
+      scenarioLabel: scenario.peakLabel,
+      scenarioValue: scenario.peak,
+      unit,
+      scenarioImpact: projectedImpact,
+      observedImpact: baseline,
+      observedValue: observed,
       basis,
-    };
-    applyAnalysis(snapshot);
-    toast.success("분석 결과를 사건에 반영했습니다", {
-      /* 대피 대상은 카드와 같은 말로 적는다 — 한쪽이 "0명", 다른 쪽이 "없음"이면
-         같은 값을 두 번 말한 것으로 안 읽힌다 */
-      description: `${level.toFixed(2)} ${unit} 조건 · 영향 건물 ${selected.buildings}동 · 대피 대상 ${selected.evacuees > 0 ? `${selected.evacuees}명` : "없음"}`,
     });
     navigate(`/scr-02/${activeEvent.districtId}?event=${activeEvent.id}`);
   };
 
   const saveDrillResult = () => {
     if (!selected || !basis || !hazardType) return;
+    /* 남기는 이름에 **경과가 먼저 선다.** 수위만 적으면 "5.83 을 세워 봤다"로 읽히는데
+       실제로 세운 것은 조건이고 5.83 은 거기서 2시간 35분 뒤에 나온 결과다 */
+    const offset = timeline && pickedAt ? formatOffset(timeline, pickedAt) : null;
+    const conditionLabel = offset
+      ? `${offset} · ${level.toFixed(2)} ${unit}`
+      : `${level.toFixed(2)} ${unit}`;
     const snapshot: DrillSnapshot = {
       districtId: district.id,
       districtName: district.name,
       hazardType,
       conditionValue: level,
-      conditionLabel: `${level.toFixed(2)} ${unit}`,
+      conditionLabel,
       baseline,
       baselineLabel,
       impact: selected,
@@ -459,7 +521,7 @@ export function DigitalTwinPage() {
     };
     saveDrill(snapshot);
     toast.success("모의분석 결과를 저장했습니다", {
-      description: `${district.name} ${hazardType} · ${level.toFixed(2)} ${unit} · 실제 사건에는 반영되지 않습니다`,
+      description: `${district.name} ${hazardType} · ${drillCondition?.label ?? ""} ${conditionLabel} · 실제 사건에는 반영되지 않습니다`,
     });
   };
 
@@ -487,8 +549,6 @@ export function DigitalTwinPage() {
         />
         <HazardLayers map={map} ready={ready} layers={hazards} visible={hazardOn} />
 
-        {/* 날씨효과 — 비 내리는 결. 씬 위에 얹고 클릭은 통과시킨다 */}
-        {layers.weather && <div className="rain-overlay pointer-events-none absolute inset-0" />}
 
         {!ready && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-surface">
@@ -502,35 +562,38 @@ export function DigitalTwinPage() {
         )}
       </div>
 
-      {/* 좌상단 — 화면 이름 · 모드 · 분석 대상.
-          모드가 여기 서야 한다. 두 모드는 레일 모양이 거의 같아서, 무엇을 하는 중인지가
-          화면 맨 위에 없으면 훈련 결과와 실제 사건 분석을 눈으로 못 가른다 */}
+      {/* 좌상단 — 브레드크럼. 어디서 왔고 지금 어디이며 무엇을 보는 중인가를 한 줄로.
+          두 줄로 세우면 화면 이름과 분석 대상이 따로 노는 표제처럼 읽힌다 */}
       <div className="pointer-events-none absolute left-3 top-3 z-30">
         <GlassPanel className="pointer-events-auto">
-          <div className="flex items-center gap-2 px-3 py-2">
+          <nav className="flex items-center gap-1.5 px-2 py-2 text-caption" aria-label="위치">
             <button
               type="button"
-              /* 돌아갈 곳도 모드를 따른다 — 사건 연계는 그 사건의 재난관제로,
+              /* 돌아갈 곳이 브레드크럼의 첫 마디다 — 사건 연계는 그 사건의 재난관제로,
                  모의분석은 대응할 사건이 없으니 종합상황으로 */
               onClick={() => navigate(mode === "event" ? `/scr-02/${district.id}` : "/scr-01")}
-              aria-label={mode === "event" ? "재난관제로" : "종합상황으로"}
-              className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent text-foreground-subtle transition-colors hover:bg-surface-raised hover:text-foreground"
+              className="flex shrink-0 cursor-pointer items-center gap-1 rounded border-none bg-transparent px-1 py-0.5 text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground"
             >
               <Icon icon="mdi:arrow-left" className="size-4" aria-hidden />
+              {mode === "event" ? "재난관제" : "종합상황"}
             </button>
-            <div className="flex min-w-0 flex-col">
-              <div className="flex items-center gap-1.5">
-                <h1 className="shrink-0 text-h6 font-semibold text-foreground">디지털트윈</h1>
-                <Badge variant={mode === "event" ? "default" : "gray"} className="shrink-0">
-                  {MODE_LABEL[mode]}
-                </Badge>
-              </div>
-              <span className="truncate text-caption text-foreground-muted">
-                {subject}
-                <span className="text-foreground-subtle"> · {district.target}</span>
-              </span>
-            </div>
-          </div>
+            <Icon
+              icon="mdi:chevron-right"
+              className="size-4 shrink-0 text-foreground-subtle"
+              aria-hidden
+            />
+            <span className="shrink-0 text-foreground-muted">디지털트윈</span>
+            <Icon
+              icon="mdi:chevron-right"
+              className="size-4 shrink-0 text-foreground-subtle"
+              aria-hidden
+            />
+            <h1 className="min-w-0 truncate font-semibold text-foreground">{subject}</h1>
+            {/* 모드는 마디가 아니라 지금 화면의 성격이라 끝에 붙인다 */}
+            <Badge variant={mode === "event" ? "default" : "gray"} className="ml-0.5 shrink-0">
+              {MODE_LABEL[mode]}
+            </Badge>
+          </nav>
         </GlassPanel>
       </div>
 
@@ -551,20 +614,6 @@ export function DigitalTwinPage() {
           homePitch={TWIN_PITCH}
           onReset={() => focusDistrict(500)}
           layers={[
-            {
-              title: "씬 표현",
-              items: SCENE_ITEMS.map((item) => ({
-                id: item.id,
-                label: item.label,
-                visible: layers[item.id] as boolean,
-              })),
-              onToggle: (id) => setLayer(id as keyof LayerState),
-              onSetAll: (visible) =>
-                setLayers((prev) => ({
-                  ...prev,
-                  ...Object.fromEntries(SCENE_ITEMS.map((item) => [item.id, visible])),
-                })),
-            },
             {
               title: "장비",
               items: DEVICE_KINDS.filter((spec) => deviceCounts[spec.kind] > 0).map((spec) => ({
@@ -589,13 +638,13 @@ export function DigitalTwinPage() {
                     DEVICE_KINDS.map((spec) => [spec.kind, visible]),
                   ) as Record<DeviceKind, boolean>,
                 })),
-              note: "재난관제에서 넘어온 선택 장비는 종류를 꺼도 자리에 남는다",
             },
-            /* 위험요소 — 등재된 지구(서항)에서만 온다. 빈 지구에 묶음을 세우지 않는다(04 §1-1) */
+            /* 대피 시설 — 등재된 지구(서항)에서만 온다. 빈 지구에 묶음을 세우지 않는다(04 §1-1).
+               "위험요소"라 부르지 않는다: 대피소는 피할 곳이지 위험한 곳이 아니다 */
             ...(hazards.length > 0
               ? [
                   {
-                    title: "위험요소",
+                    title: "대피 시설",
                     items: hazards.map((h) => ({
                       id: h.id,
                       label: h.label,
@@ -613,18 +662,27 @@ export function DigitalTwinPage() {
               : []),
             {
               title: "영향 표현",
-              items: IMPACT_ITEMS.map((item) => ({
-                id: item.id,
-                label: item.label,
-                visible: layers[item.id] as boolean,
-              })),
-              onToggle: (id) => setLayer(id as keyof LayerState),
-              onSetAll: (visible) =>
+              items: [
+                ...IMPACT_ITEMS.map((item) => ({
+                  id: item.id,
+                  label: item.label,
+                  color: item.color,
+                  icon: item.icon,
+                  visible: layers[item.id] as boolean,
+                })),
+                ...weatherLayerItems(weather),
+              ],
+              onToggle: (id) =>
+                isWeatherKey(id)
+                  ? setWeather((prev) => ({ ...prev, [id]: !prev[id] }))
+                  : setLayer(id as keyof LayerState),
+              onSetAll: (visible) => {
                 setLayers((prev) => ({
                   ...prev,
                   ...Object.fromEntries(IMPACT_ITEMS.map((item) => [item.id, visible])),
-                })),
-              note: "해안침수예상도는 행정안전부 생활안전지도 · 실시간 타일",
+                }));
+                setWeather({ rain: visible, temp: visible, wind: visible });
+              },
             },
           ]}
         />
@@ -660,65 +718,44 @@ export function DigitalTwinPage() {
                 hazardType={drillHazard}
                 hazardTypes={hazardTypes}
                 onHazardChange={setDrillHazard}
+                progression={progression}
+                condition={drillCondition}
+                onConditionChange={setDrillConditionId}
               />
             )}
           </GlassPanel>
 
-          {/* 주 조작축. 사건 연계는 시간축이고, 모의분석은 예보가 없어 조건축이 그대로다 */}
-          {timeline ? (
-            <>
-              <GlassPanel className="pointer-events-auto shrink-0">
-                <TimelinePanel
-                  timeline={timeline}
-                  selected={selectedMark}
-                  onSelect={pickMark}
-                />
-              </GlassPanel>
-
-              {/* 조건은 시각을 만드는 세부라 접어 둔다 — 기본 조작은 시간, 고급 조작이
-                  수위다(03 §5). 펼쳐 손수 밀면 시간축 눈금에서 벗어나 "사용자 조건"이 된다 */}
-              <div ref={conditionRef} className="shrink-0">
-              <CollapsibleSection
-                className="pointer-events-auto border-border"
-                bodyClassName="pb-1"
-                headerClassName="px-3"
-                collapsed={!conditionOpen}
-                onToggle={() => setConditionOpen((prev) => !prev)}
-                trailingChevron
-                trigger={
-                  <span className="flex items-center gap-1.5 text-caption text-foreground-muted">
-                    <Icon icon="mdi:tune-variant" className="size-4 shrink-0" aria-hidden />
-                    상세 조건 조정
-                    {!selectedMark && (
-                      <span className="text-primary-text">· 사용자 조건 {level.toFixed(2)}</span>
-                    )}
-                  </span>
-                }
-              >
-                <ConditionPanel
-                  districtId={district.id}
-                  hazardType={hazardType}
-                  value={level}
-                  onChange={pushCondition}
-                  marker={
-                    scenario ? { value: scenario.peak, label: scenario.peakLabel } : undefined
-                  }
-                  presets={presets}
-                />
-              </CollapsibleSection>
-              </div>
-            </>
-          ) : (
-            <GlassPanel className="pointer-events-auto shrink-0">
-              <ConditionPanel
-                districtId={district.id}
-                hazardType={hazardType}
-                value={level}
-                onChange={changeLevel}
-                presets={presets}
+          {/* 주 조작축 — 두 모드가 같은 부품에 선다. 갈리는 것은 표기와 문안뿐이다 */}
+          <GlassPanel className="pointer-events-auto shrink-0">
+            {timeline ? (
+              <TimelinePanel
+                timeline={timeline}
+                at={pickedAt ?? undefined}
+                mark={selectedMark}
+                onScrub={scrubTo}
+                onPick={pickMark}
+                title={mode === "event" ? undefined : "경과 시간별 영향"}
+                formatAt={mode === "event" ? undefined : (at) => formatOffset(timeline, at)}
+                caption={mode === "event" ? undefined : "설정 조건 지속 시"}
+                freeLabel={mode === "event" ? undefined : "사용자 시점"}
               />
-            </GlassPanel>
-          )}
+            ) : (
+              /* 04 에 진행 조건·영향표가 없는 유형이다. 근거 없이 움직이는 축을 세우는
+                 것보다 "아직 등재되지 않음"이 정직하다 */
+              <section className="flex flex-col gap-1.5 p-3" aria-label="분석 조건">
+                <h2 className="text-body font-semibold text-foreground">분석 조건</h2>
+                <EmptyState
+                  variant="inline"
+                  icon="mdi:tune-variant"
+                  message={
+                    hazardType
+                      ? `${hazardType} 조건 분석은 아직 등재되지 않았습니다`
+                      : "분석할 사건이 없습니다"
+                  }
+                />
+              </section>
+            )}
+          </GlassPanel>
 
           {selected && (
             <GlassPanel className="pointer-events-auto shrink-0">
@@ -726,22 +763,25 @@ export function DigitalTwinPage() {
                 baseline={baseline}
                 selected={selected}
                 baselineLabel={baselineLabel}
-                /* 사건 연계는 선택한 **시각**이 열 머리다. 눈금을 벗어나 손수 민 값이면
-                   시각이 없으므로 조건값으로 되돌아간다 */
+                /* 선택한 **시간**이 열 머리다. 사건 연계는 시각("19:10 바닷물 최고"),
+                   모의분석은 경과("+2시간 35분 대피 기준"). 축이 없으면 값으로 물러난다 */
                 selectedLabel={
                   timeline
                     ? selectedMark
-                      ? `${formatClock(selectedMark.at)} ${selectedMark.label}`
-                      : `사용자 조건 ${level.toFixed(2)}`
+                      ? `${axisAt(selectedMark.at)} ${selectedMark.label}`
+                      : pickedAt
+                        ? `${axisAt(pickedAt)} ${mode === "event" ? "사용자 시각" : "사용자 시점"}`
+                        : `사용자 조건 ${level.toFixed(2)}`
                     : `선택 ${level.toFixed(2)}`
                 }
                 same={sameAsBaseline}
-                /* 예상 수위가 결과의 첫 행 — 시간축이 주축이 되면서 조작 대상이던 값이
-                   그 시각에 따라오는 결과로 자리를 옮겼다(03 §5) */
+                /* 예상 수위가 결과의 첫 행 — 시간축이 두 모드의 주축이 되면서 조작
+                   대상이던 값이 그 시간에 따라오는 결과로 자리를 옮겼다(03 §5).
+                   행 이름은 스펙이 든다(demo/analysis.ts ConditionSpec) */
                 condition={
                   conditionSpec
                     ? {
-                        label: "예상 수위",
+                        label: conditionSpec.title,
                         unit: conditionSpec.unit,
                         baseline: baselineValue,
                         selected: level,
@@ -753,10 +793,10 @@ export function DigitalTwinPage() {
           )}
 
           {/* 근거·가정은 **사건 연계에만** 세운다.
-              모의분석에서는 네 줄 중 셋이 다른 데서 이미 한 말이었다 — 발령 기준은 조건
-              슬라이더가(경보 구간 · 프리셋 세 개), "가상 조건"은 설정 카드와 저장 버튼 아래가,
-              산출표는 바로 위 영향 결과가 말한다. "설정한 조건이 성립한다고 가정"에 이르면
-              사용자가 세운 조건이니 동어반복이다.
+              모의분석에서는 네 줄이 다 다른 데서 이미 한 말이다 — 산정 한 항(상승률)은 설정
+              카드의 조건 줄 바로 아래가, "가상 조건"은 같은 카드 맨 아래와 저장 버튼 아래가,
+              산출표는 바로 위 영향 결과가 말한다. "설정한 조건이 지속된다고 가정"에 이르면
+              사용자가 방금 고른 조건이니 동어반복이다.
               사건 연계는 사정이 다르다 — 산정 세 항이 04 §10-3 그대로고 SCR-02 판정 카드·AI
               답변이 같은 값을 쓴다. "유지" 한 줄이 "예측이 아니라 조건 시나리오"라는 이 데모의
               방어선이라, 만조를 제목에서 내릴 수 있었던 것도 이 카드가 있어서다.
@@ -795,34 +835,18 @@ export function DigitalTwinPage() {
         {/* 완료 동작 — 스크롤 밖에 두어 어떤 길이의 근거 카드에도 화면에 남는다 */}
         <div className="flex shrink-0 flex-col gap-1.5">
           {mode === "event" ? (
-            <>
-              <Button
-                className="pointer-events-auto w-full"
-                disabled={!canFinish}
-                onClick={applyToEvent}
-              >
-                <Icon icon="mdi:content-save-move-outline" className="size-4" aria-hidden />
-                분석 결과를 사건에 반영
-              </Button>
-              <Button
-                variant="outline"
-                className="pointer-events-auto w-full"
-                onClick={() =>
-                  navigate(
-                    activeEvent
-                      ? `/scr-02/${activeEvent.districtId}?event=${activeEvent.id}`
-                      : `/scr-02/${district.id}`,
-                  )
-                }
-              >
-                대응 판단으로 돌아가기
-              </Button>
-            </>
+            /* 하나뿐이다. 트윈은 확인하는 자리라 여기서 결정할 것이 없고, 결정은 대응
+               판단 레일이 받는다. "검토 완료"와 "검토 없이"를 나눠 물으면 확인만 하러 온
+               사람에게 하지 않은 결정을 고르게 한다 — 돌아가는 순간 검토는 이미 끝났다 */
+            <Button className="pointer-events-auto w-full" onClick={returnToControl}>
+              <Icon icon="mdi:arrow-left" className="size-4" aria-hidden />
+              재난관제로 돌아가기
+            </Button>
           ) : (
             <>
               <Button
                 className="pointer-events-auto w-full"
-                disabled={!canFinish}
+                disabled={!canSaveDrill}
                 onClick={saveDrillResult}
               >
                 <Icon icon="mdi:clipboard-check-outline" className="size-4" aria-hidden />

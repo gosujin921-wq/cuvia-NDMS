@@ -5,7 +5,7 @@
 | 폴더 | 무엇 |
 |---|---|
 | [designs/](./designs/) | 앱. Vite + React + Tailwind v4 ([실행법](./designs/README.md)) |
-| [docs/](./docs/) | 기준·작업 문서 ([안내](./docs/README.md)) |
+| [docs/](./docs/) | 작업·감사 문서와 레거시 정본 ([안내](./docs/README.md)) |
 
 ```bash
 cd designs
@@ -15,4 +15,6 @@ corepack pnpm dev      # http://localhost:5400
 
 ## 고치는 순서
 
-화면 구성·수치·시나리오가 바뀌면 [docs/정본/](./docs/정본/) 을 먼저 고치고 코드를 따라오게 한다. 코드 주석이 정본 문서를 경로로 참조하므로, 문서를 건너뛰면 어느 쪽이 맞는지 알 수 없게 된다.
+화면 구성·수치·시나리오가 바뀌면 코드(`designs/src`)를 고친다. 확정값은 `src/demo/*.ts`, 화면 동작은 페이지·위젯, 시연 중 변하는 상태는 `src/state/ScenarioProvider.tsx` 가 든다.
+
+[docs/레거시/정본/](./docs/레거시/정본/) 은 이 데모가 어떻게 짜였는지의 배경 자료다. 코드 주석의 절 참조(`04 §11` 등)가 가리키는 곳이지만 더 이상 갱신하지 않는다 — 코드와 어긋나면 코드가 맞다.

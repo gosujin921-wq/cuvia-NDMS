@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────
- * 침수 영향 — 정본: docs/정본/04_데모_데이터.md §12
+ * 침수 영향 — 배경: docs/레거시/정본/04_데모_데이터.md §12
  *
  * 슬라이더 수위에 따라 바뀌는 영향 규모. 서항지구 고정값이고 사이값은 선형 보간한다.
  * "지금은 6동, 만조 조건이면 47동"(3.41 행과 4.24 행)이 선제 대피 판단의 근거로
@@ -58,6 +58,16 @@ const TABLES: Record<
   seohang: { rows: SEOHANG_IMPACT, zeroLevel: 2.9, evacueeLevel: 4.2, evacuees: 412 },
   bongam: { rows: BONGAM_IMPACT, zeroLevel: 3.83, evacueeLevel: 4.3, evacuees: 328 },
 };
+
+/**
+ * 영향표가 등재된 지구인가 (04 §12 · §15-8).
+ *
+ * 표가 없는 지구는 조건을 밀어도 영향 결과가 서지 않는다 — 트윈이 스스로 지구를 고를 때
+ * (메뉴 진입 · demo/analysis.ts drillDistrictAt) 빈 화면을 열지 않기 위한 물음이다.
+ */
+export function hasFloodImpact(districtId: string): boolean {
+  return districtId in TABLES;
+}
 
 function zeroAnchor(level: number): FloodImpactRow {
   return { level, areaHa: 0, buildings: 0, roadM: 0, wharfRoad: false, evacuees: 0 };

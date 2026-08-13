@@ -6,16 +6,15 @@
  * 서로 다른 기능을 판정 카드 안에 섞지 않는다.
  *
  * 권고가 계측 단계와 같을 때는 단계명을 되풀이하지 않고 **"현 단계 유지"** 로 적고,
- * 사유(추가 영향 분석 필요)를 함께 단다. 진행 사건이 있으면 항상 서고, 승인 행은
- * 선제 권고가 서거나 승인이 있은 뒤에만 — 빈 `—` 자리 표시는 없다.
+ * 사유(추가 영향 분석 필요)를 함께 단다.
  *
- * 승인 버튼 라벨은 [대응등급 {권고}로 상향] — 무엇으로 올리는지가 버튼에 적혀 있어야
- * 승인이 눈감고 누르는 확인창이 되지 않는다(03 §2). 버튼은 집중 팝업에서만 온다(§0-9).
+ * 승인 행은 **승인이 있은 뒤에만** 선다 — 빈 `—` 자리 표시는 없다. 승인은 SOP 대응의
+ * [승인 · 실행]이 세우므로(SopPanel), 승인 전에 `— (승인 전)`을 세우면 이 카드 안에
+ * 누를 곳 없는 자리가 하나 남는다. 아직 없는 값은 행째로 없다.
+ *
  * "예측"이라는 라벨을 쓰지 않는다 — 보이는 것은 조건 시나리오와 산출 근거다(04 §10).
  * ───────────────────────────────────────────── */
 
-import { Button, cn } from "@ds";
-import { Icon } from "@iconify/react";
 import {
   DISPLACEMENT_THRESHOLD,
   RAIN_THRESHOLD,
@@ -34,17 +33,18 @@ interface RiskCardProps {
   /** 승인 대응등급 — 엔진이 든다. null = 승인 전 */
   approved: AlertLevel | null;
   /** [대응등급 {권고}로 상향] — 주인공 사건 + 선제 권고에서만 온다 */
-  onApprove?: (level: AlertLevel) => void;
 }
 
-export function RiskCard({ event, risk, approved, onApprove }: RiskCardProps) {
+export function RiskCard({ event, risk, approved }: RiskCardProps) {
   /* 승인 시각은 엔진이 든다 — 트랙마다 다르므로 화면이 리터럴로 들 수 없다 */
   const { approvedAt } = useScenario();
   const { measured, scenario, recommended, preemptive, basis } = risk;
   const measuredSpec = levelSpec(measured.level);
   const recommendedSpec = levelSpec(recommended);
-  /* 승인이 필요한 자리 — 선제 권고인데 아직 승인 전 */
-  const needsApproval = preemptive && !approved && onApprove;
+  /* 승인 버튼은 여기 없다 (KISA · SK 기준).
+     되돌릴 수 없는 조치를 고르고 [승인 · 실행]을 누르는 그 행위가 승인이라, 그 앞에
+     [대응등급 상향]이라는 관문을 따로 두지 않는다. 이 카드가 하는 일은 판정을 보이는
+     것이고, 승인 등급은 실행이 세운다(SopPanel). 여기는 그 결과를 읽어 적을 뿐이다 */
 
   /* 계측 근거 — 현재 단계가 초과한 발령 기준값 (04 §3) */
   const base =
@@ -127,37 +127,22 @@ export function RiskCard({ event, risk, approved, onApprove }: RiskCardProps) {
           </span>
         </Row>
 
-        {/* 4층 — 승인 대응등급. 확정은 담당자가 한다. 선제 권고가 서거나 승인이 있을
-            때만 — 그 전의 "— (승인 전)"은 빈 자리 표시다(03 §위험도 판정) */}
-        {(approved || preemptive) && (
+        {/* 4층 — 승인 대응등급. 확정은 담당자가 하고, 값을 세우는 것은 SOP 의
+            [승인 · 실행]이다. 승인 전에는 행 자체가 없다 — 이 카드에 누를 것이 없어
+            "— (승인 전)"은 갈 곳 없는 빈 자리 표시가 된다(03 §위험도 판정) */}
+        {approved && (
           <Row label="승인 대응등급">
-            {approved ? (
-              <>
-                <span className="font-medium" style={{ color: levelSpec(approved).color }}>
-                  {levelSpec(approved).label}
-                </span>
-                {/* 승인 시각은 엔진이 든다 — 리터럴을 박으면 트랙마다 어긋난다 */}
-                <span className="ml-1.5 text-caption text-foreground-muted">
-                  {approvedAt ? ` · ${formatClock(approvedAt)}` : ""} · 상황실 담당
-                </span>
-              </>
-            ) : (
-              <span className="text-foreground-subtle">— (승인 전)</span>
-            )}
+            <span className="font-medium" style={{ color: levelSpec(approved).color }}>
+              {levelSpec(approved).label}
+            </span>
+            {/* 승인 시각은 엔진이 든다 — 리터럴을 박으면 트랙마다 어긋난다 */}
+            <span className="ml-1.5 text-caption text-foreground-muted">
+              {approvedAt ? ` · ${formatClock(approvedAt)}` : ""} · 상황실 담당
+            </span>
           </Row>
         )}
       </dl>
 
-      {needsApproval && (
-        <Button
-          size="sm"
-          className={cn("mt-1.5 w-full")}
-          onClick={() => onApprove(recommended)}
-        >
-          <Icon icon="mdi:arrow-up-bold-box-outline" className="size-4" aria-hidden />
-          대응등급 {recommendedSpec.label}로 상향
-        </Button>
-      )}
     </section>
   );
 }

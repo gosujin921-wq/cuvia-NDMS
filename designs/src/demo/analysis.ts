@@ -1,26 +1,28 @@
 /* ─────────────────────────────────────────────
- * 분석 조건과 영향 결과 — 정본: docs/정본/04_데모_데이터.md §10 · §12
+ * 분석 조건과 영향 결과 — 배경: docs/레거시/정본/04_데모_데이터.md §10 · §12
  *
  * SCR-05 는 "물을 올려보는 화면"이 아니라 "사건 조건을 바꿔 공간 영향과 대응 대상을
  * 비교하는 화면"이다. 그래서 축을 둘로 가른다.
  *
- *   조건 (ConditionSpec)  재난유형마다 다르다. 해일은 수위, 호우는 강우 지속시간,
- *                         화학 누출은 풍향·풍속 — 조절할 변수 자체가 그 유형의 정체성이다.
- *                         공통 슬라이더 하나로 뭉치면 유형을 늘릴 때 화면을 다시 짜야 한다.
+ *   시간 (Timeline)       두 모드의 주 조작축이다. 사건 연계는 시각(demo/scenario-timeline.ts),
+ *                         모의분석은 경과(demo/progression.ts). 미는 것은 언제나 시간이고
+ *                         수위는 그 시간에 따라 나오는 결과다.
  *   영향 (ImpactResult)   재난유형이 달라도 같다. 범위·인구·건물·도로·대피 대상은
  *                         무엇이 덮치든 대응이 물어보는 것이 같기 때문이다.
  *
- * 유형을 하나 늘리는 일 = CONDITION_SPECS 에 한 줄 + impactAt 에 분기 하나 +
- * 조건 패널 부품 하나. 화면(DigitalTwinPage)과 3D 씬(lib/flood-scene.ts)은 손대지 않는다.
+ * 유형을 하나 늘리는 일 = 진행 스펙 한 벌 + impactAt 에 분기 하나. 화면(DigitalTwinPage)과
+ * 3D 씬(lib/flood-scene.ts)은 손대지 않는다.
  *
- * ★ 등재되지 않은 유형은 비워 둔다. 04 에 조건표·영향표가 없는 유형에 슬라이더를 세우면
+ * ★ 등재되지 않은 유형은 비워 둔다. 04 에 진행 조건·영향표가 없는 유형에 축을 세우면
  *   숫자가 근거 없이 움직인다 — 화면은 "아직 등재되지 않음"으로 정직하게 선다.
  * ───────────────────────────────────────────── */
 
-import { EVENTS, HAZARD_ORDER, type HazardType } from "./events";
-import { floodImpactAt } from "./flood-impact";
+import { DISTRICTS, type District } from "./districts";
+import { EVENTS, HAZARD_ORDER, activeEventOfAt, type HazardType } from "./events";
+import { floodImpactAt, hasFloodImpact } from "./flood-impact";
 import { HERO_SCENARIO, type ScenarioTerm, type TideScenario } from "./forecast";
 import { WATER_THRESHOLDS, type WaterThreshold } from "./levels";
+import { progressionSpecOf, type ProgressionCondition, type ProgressionSpec } from "./progression";
 
 /* ── 진입 모드 ───────────────────────────────────────── */
 
@@ -50,70 +52,65 @@ export function hazardTypesOf(districtId: string): HazardType[] {
   return HAZARD_ORDER.filter((type) => found.has(type));
 }
 
-/* ── 조건 ────────────────────────────────────────────── */
+/**
+ * 메뉴로 들어온 트윈이 열 지구 (02 §2 · 03 §5).
+ *
+ * 메뉴 진입은 사건을 들고 오지 않는다 — 사전 모의분석의 자리다. 그래서 **그 시각에 진행
+ * 중 사건이 없는** 지구를 연다. 사건이 도는 지구를 열면 메뉴로 들어왔는데 사건 연계
+ * 분석이 서고, 트윈이 사건에 종속된 화면으로 보인다. 사건을 들고 들어오는 길은
+ * SCR-02 의 [디지털트윈] 하나여야 한다.
+ *
+ * 고르는 범위는 **진행 스펙과 영향표가 등재된 지구**다. 표가 없는 지구를 열면 축을 밀어도
+ * 영향 결과 카드가 서지 않아 화면이 반쯤 빈 채로 열린다(04 §12 · §15-8).
+ *
+ * 트랙 이름을 보지 않는다 — 원장을 현재 시계로 자르면 답이 저절로 갈린다. 서항
+ * 트랙(8/12 저녁)에서는 봉암(8/13 사건은 아직 미래)이, 봉암 트랙(8/13 오전)에서는
+ * 서항(8/12 21:48 해제)이 열린다.
+ */
+export function drillDistrictAt(now: Date): District {
+  const analyzable = DISTRICTS.filter(
+    (district) =>
+      hasFloodImpact(district.id) &&
+      hazardTypesOf(district.id).some((type) => progressionSpecOf(district.id, type)),
+  );
+  /* 전부 사건 중이면(트랙이 늘면 있을 수 있다) 첫 지구로 물러난다 — 사건 연계로 열리지만
+     화면이 서지 않는 것보다는 낫다 */
+  return analyzable.find((d) => !activeEventOfAt(d.id, now)) ?? analyzable[0] ?? DISTRICTS[0];
+}
+
+/* ── 결과 수위의 표기 ────────────────────────────────── */
 
 /**
- * 재난유형별 조절 변수 한 벌.
+ * 시간축이 낸 수위를 화면이 어떻게 읽는가.
+ *
+ * ★ 이것은 **조건이 아니라 결과의 규격**이다. 한때 이 자리에 조건 슬라이더의 min·max·step
+ *   이 있었다 — 사람이 "침수 예상 수위"를 직접 밀던 시절의 잔재다. 예상은 시스템의 몫이라
+ *   미는 것은 시간이 됐고(demo/progression.ts), 여기 남은 것은 그 결과를 부르는 이름과
+ *   단위뿐이다.
  *
  * 지금 등재된 것은 수위 계열(폭풍해일·하천범람·내수침수) 하나뿐이다. 셋이 한 벌을 쓰는
- * 것은 조절 대상이 같은 물리량(EL.m 수면 표고)이고 3D 씬의 수면 하나가 함께 움직이기
- * 때문이지, 셋을 같은 재난으로 보기 때문이 아니다.
+ * 것은 결과의 물리량이 같고(EL.m 수면 표고) 3D 씬의 수면 하나가 함께 움직이기 때문이지,
+ * 셋을 같은 재난으로 보기 때문이 아니다 — **조건은 셋이 다 다르다**(progression.ts).
  */
 export interface ConditionSpec {
-  /** 조건 패널 부품 선택 키 — 유형이 늘면 여기에 값이 하나 는다 */
+  /** 결과 행 선택 키 — 유형 계열이 늘면 여기에 값이 하나 는다 */
   kind: "water-level";
-  /** 패널 제목 — "침수 예상 수위" */
+  /** 결과 행 이름 — "예상 수위" */
   title: string;
   /** 값 단위 — "EL.m" */
   unit: string;
-  min: number;
-  max: number;
-  step: number;
-  /** 지구별 발령 기준 — 슬라이더 아래 "지금 어느 구간인가" */
-  threshold: WaterThreshold;
 }
 
-/**
- * 수위 계열 조건 (04 §9) — 상한 6 EL.m, step 0.01.
- *
- * step 이 0.01 인 것은 정본 수치(3.41 · 4.24)를 손으로도 맞출 수 있어야
- * "시나리오 값은 조건 축 위의 한 점"이라는 말이 성립하기 때문이다(03 §5 · 차수 K).
- */
 const WATER_LEVEL_HAZARDS: HazardType[] = ["폭풍해일", "하천범람", "내수침수"];
-const WATER_LEVEL_MAX = 6;
 
 /**
- * 이 지구·이 재난유형의 조건 한 벌. 등재되지 않은 유형은 null —
- * 조건 패널이 "아직 등재되지 않음"으로 선다.
+ * 이 지구·이 재난유형의 결과 수위 규격. 등재되지 않은 유형은 null —
+ * 영향 결과 카드에 수위 행이 서지 않는다.
  */
 export function conditionSpecOf(districtId: string, hazardType: HazardType): ConditionSpec | null {
   if (!WATER_LEVEL_HAZARDS.includes(hazardType)) return null;
-  const threshold = WATER_THRESHOLDS[districtId];
-  if (!threshold) return null;
-  return {
-    kind: "water-level",
-    title: "침수 예상 수위",
-    unit: "EL.m",
-    min: 0,
-    max: WATER_LEVEL_MAX,
-    step: 0.01,
-    threshold,
-  };
-}
-
-/**
- * 발령 기준 프리셋 (04 §3) — 사전 모의분석의 조건 축 위 세 점.
- *
- * 사건 연계는 "지금 3.41 / 만조 4.24"라는 실제 값을 프리셋으로 쓰지만, 모의분석에는
- * 관측이 없다. 대신 이 지구가 발령을 내는 세 지점이 계획·훈련이 물어보는 조건이다 —
- * "대피 기준까지 가면 몇 동, 몇 명인가".
- */
-export function thresholdPresetsOf(threshold: WaterThreshold): { label: string; value: number }[] {
-  return [
-    { label: `주의보 ${threshold.advisory}`, value: threshold.advisory },
-    { label: `경보 ${threshold.warning}`, value: threshold.warning },
-    { label: `대피 ${threshold.evacuate}`, value: threshold.evacuate },
-  ];
+  if (!WATER_THRESHOLDS[districtId]) return null;
+  return { kind: "water-level", title: "예상 수위", unit: "EL.m" };
 }
 
 /* ── 영향 ────────────────────────────────────────────── */
@@ -252,56 +249,87 @@ export function observedBasisOf(
  *   두 결과가 같은 무게로 읽힌다.
  */
 export function drillBasisOf(
+  spec: ProgressionSpec,
+  condition: ProgressionCondition,
   threshold: WaterThreshold,
   unit: string,
   now: Date,
 ): AnalysisBasis {
   return {
     at: now,
-    /* 모의분석에는 전망 시각이 없다 — 예보가 아니라 사용자가 세운 조건이라 "언제"가 없다.
-       시간축이 사건 연계에만 서는 이유도 같다 */
+    /* 모의분석에는 전망 **시각**이 없다 — 예보가 아니라 사용자가 세운 조건이라 "몇 시"가
+       뜻을 못 가진다. 축이 절대 시각이 아니라 경과인 이유가 이것이다(progression.ts) */
     projectedAt: null,
-    terms: [],
+    /* 산정 한 항 — 사건 연계의 조건 시나리오 세 항(04 §10-3)이 서는 자리에, 모의분석은
+       상승률 하나를 세운다. 축 위 눈금 시각이 전부 이 값에서 나온다 */
+    terms: [
+      {
+        label: spec.leverLabel,
+        value: `${condition.label} 지속`,
+        note: `수위 상승 ${condition.riseRate} m/h · ${condition.note}`,
+      },
+    ],
     sources: [
+      `${spec.startLabel} ${spec.startLevel} ${unit} 에서 출발`,
       `지구 발령 기준 주의보 ${threshold.advisory} · 경보 ${threshold.warning} · 대피 ${threshold.evacuate} ${unit}`,
       "지구별 수위-영향 산출표",
       "행정안전부 생활안전지도 위험지구 자료",
     ],
     assumptions: [
-      "설정한 조건이 그대로 성립한다고 가정",
+      `${spec.leverLabel} ${condition.label} 조건이 그대로 지속`,
       "실시간 계측·기상 자료를 쓰지 않은 가상 조건",
     ],
   };
 }
 
-/* ── 사건에 반영할 분석 결과 ─────────────────────────── */
+/* ── 사건에 남기는 검토 기록 ─────────────────────────── */
 
 /**
- * SCR-05 가 SCR-02 로 넘기는 한 벌 (02 §2).
+ * SCR-05 가 사건에 붙이는 한 벌 (02 §2).
  *
- * "이 판단으로 대응하기"는 디지털트윈이 판단을 확정하는 것처럼 읽힌다. 트윈이 하는 일은
- * 판단이 아니라 **검토 결과를 사건에 붙이는 것**이고, 권고 대응과 SOP 대상을 구체화하는
- * 것은 SCR-02 의 몫이다. 그래서 넘기는 것도 결론이 아니라 조건·영향·근거다.
+ * ★ 트윈은 사건의 값도 SOP 도 바꾸지 않는다. SOP 를 정하는 것은 셋이고 셋 다 트윈 밖이다:
+ *   재난유형이 목록을 고르고(`sopItemsFor`), 승인 대응등급이 그 목록에서 열리는 범위를
+ *   정하고(`minLevel <= level`), 대상 인원·수단·기관은 04 §11-2 에 고정돼 있다.
+ *   `재난문자 412명` 은 트윈에 들어가기 전부터 경보 등급 SOP 에 서 있다.
+ *
+ *   그래서 여기 남는 것은 **"대표 전망을 언제 누가 검토했다"** 는 사실과 그 근거뿐이다.
+ *   사건 상태를 실제로 바꾸는 행위는 SCR-02 의 [대응등급 대피로 상향] 승인 하나다.
+ *
+ * ★ 사용자가 상세 조건으로 밀어 본 값(3.80 같은)은 **여기 들어오지 않는다.** 그것은
+ *   "이 정도면 어디까지"를 알아보는 자유 탐색이고, 사건의 공식 근거를 대체할 수 없다.
+ *   기록되는 것은 언제나 사건에 이미 생성된 조건 시나리오(04 §10 · §15-7) 한 벌이다.
  */
-export interface AnalysisSnapshot {
+export interface AnalysisReview {
   districtId: string;
   eventId: string;
   hazardType: HazardType;
-  /** 조건값과 표기 — "4.24 EL.m" */
-  conditionValue: number;
-  conditionLabel: string;
-  /** 현재 조건의 영향 (비교 기준) */
-  baseline: ImpactResult | null;
-  /** 선택 조건의 영향 */
-  impact: ImpactResult;
+  /** 검토 시각과 검토자 */
+  reviewedAt: Date;
+  reviewer: string;
+
+  /* 검토 대상 — 사건에 이미 생성된 공식 전망. 사용자가 고른 값이 아니다 */
+  /** 조건 시나리오를 세운 시각. 같은 사건의 전망을 가리키는 열쇠다 */
+  scenarioCreatedAt: Date;
+  /** 전망 시각과 그 이름 ("바닷물 최고" · "저지대 영향 확대") */
+  scenarioAt: Date;
+  scenarioLabel: string;
+  /** 전망 조건값과 단위 */
+  scenarioValue: number;
+  unit: string;
+  /** 전망 조건의 영향 */
+  scenarioImpact: ImpactResult;
+  /** 검토 시점 계측의 영향 — 비교 기준 */
+  observedImpact: ImpactResult | null;
+  observedValue: number | null;
   basis: AnalysisBasis;
 }
 
 /**
  * 사전 모의분석 결과 한 벌.
  *
- * AnalysisSnapshot 과 모양이 닮았지만 **eventId 가 없다**. 그 한 칸의 부재가 이 결과가
- * 어떤 사건에도 붙지 않는다는 뜻이고, 저장 경로가 갈리는 지점이다(state/analysis-results.ts).
+ * AnalysisReview 와 달리 eventId 가 없고, 대신 **사용자가 세운 조건값을 그대로 담는다.**
+ * 사건에 붙지 않는 결과라 자유롭게 세운 조건이 그대로 결론이 된다 — 붙일 사건이 없으니
+ * 공식 전망과 탐색값을 가를 이유도 없다(state/analysis-results.ts).
  */
 export interface DrillSnapshot {
   districtId: string;

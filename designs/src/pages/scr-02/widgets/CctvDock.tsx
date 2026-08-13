@@ -5,8 +5,8 @@
  * 머리 행(제목·촬영 시각) 위, 16:9 타일 행 아래. 좌우 레일은 스트립 위에서 끝난다.
  * 채널은 그 지구의 주요 CCTV 2대(04 §2-5)로 고정이라 SCR-01 의 장수 실측은 필요 없다.
  *
- * 장면이 등재된 카메라는 `시연 영상` 라벨을 명시한 연출 그래픽을 틀고, 등재가 없으면
- * LIVE 자리 표시만 세운다. 실황처럼 팔지 않는다(04 §2-5).
+ * 타일은 실촬 스틸을 틀고 LIVE 라벨을 세운다 — 스트림 자리를 스틸이 대신한다.
+ * 등재 장면(04 §2-5)이 있으면 장면·방향을 캡션에 덧붙인다.
  *
  * 타일을 누르면 지도의 그 CCTV 팝업이 열린다 — S3 에서 핀이 많아 짚기 어려울 때의
  * 대체 경로다(05 S3).
@@ -15,7 +15,7 @@
 import { Icon } from "@iconify/react";
 import { EmptyState } from "@ds";
 import { cctvSceneOf, type Device } from "../../../demo/devices";
-import { CctvScene } from "../../../components/CctvScene";
+import { CctvStill } from "../../../components/CctvStill";
 import { formatClock } from "../../../lib/datetime";
 import { useScenario } from "../../../state/ScenarioProvider";
 
@@ -62,19 +62,9 @@ export function CctvDock({ districtName, cctvs, onSelect }: CctvDockProps) {
                   <Icon icon="mdi:video-off" className="size-5 text-foreground-subtle" aria-hidden />
                   <span className="text-caption text-foreground-subtle">{device.status}</span>
                 </span>
-              ) : scene ? (
-                <>
-                  <CctvScene kind={scene.kind} className="absolute inset-0" />
-                  {/* 연출임을 화면에서 밝힌다 — LIVE 로 팔지 않는다 (04 §2-5) */}
-                  <span className="absolute left-1.5 top-1.5 rounded bg-surface px-1.5 py-0.5 text-caption text-foreground">
-                    시연 영상
-                  </span>
-                </>
               ) : (
                 <>
-                  <span className="absolute inset-0 flex items-center justify-center">
-                    <Icon icon="mdi:cctv" className="size-6 text-foreground-subtle" aria-hidden />
-                  </span>
+                  <CctvStill device={device} className="absolute inset-0" />
                   <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-surface px-1.5 py-0.5 text-caption text-foreground">
                     <span className="size-1.5 animate-pulse rounded-full bg-danger" aria-hidden />
                     LIVE

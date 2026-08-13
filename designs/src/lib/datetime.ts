@@ -23,6 +23,17 @@ export function formatClock(input: string | Date): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** 경과 시간 — "32분" · "1시간 32분" · "2시간". 두 시각 사이의 길이 표기. */
+export function formatElapsed(from: string | Date, to: string | Date): string {
+  const a = toDate(from);
+  const b = toDate(to);
+  if (!a || !b) return "-";
+  const min = Math.max(0, Math.round((b.getTime() - a.getTime()) / 60_000));
+  if (min < 60) return `${min}분`;
+  const rest = min % 60;
+  return rest === 0 ? `${Math.floor(min / 60)}시간` : `${Math.floor(min / 60)}시간 ${rest}분`;
+}
+
 /** 상대 시간 — "방금 전" · "3분 전" · "2시간 전" · "3일 전". 목록 표기. */
 export function formatRelative(input: string | Date, now: Date = new Date()): string {
   const d = toDate(input);

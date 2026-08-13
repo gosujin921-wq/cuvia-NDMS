@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────
- * 이벤트 — 정본: docs/정본/04_데모_데이터.md §4
+ * 이벤트 — 배경: docs/레거시/정본/04_데모_데이터.md §4
  *
  * "지금"은 이 파일에 없다 — 시나리오 시계(state/ScenarioProvider)가 단일 source of truth 고,
  * 이 파일은 원장(정적 사실)과 now 를 받아 자르는 파생 함수만 든다 (CLAUDE.md).
@@ -76,6 +76,8 @@ export interface AlertEvent {
   unit: string;
   /** 단계 이력 (04 §4-2). 첫 행 = 발생. 없으면 단계가 하나인 사건 */
   stages?: StageChange[];
+  /** 그 트랙의 대본이 도는 사건인가 — 격상·판정·승인·SOP 가 전부 이 사건 위에서 일어난다 */
+  hero?: boolean;
 }
 
 /** 주인공 사건 id — 승인·SOP·타임라인의 무대 (04 §4-2) */
@@ -87,6 +89,7 @@ export const EVENTS: AlertEvent[] = [
        → 최고 4.83(10:12 · 단계는 경보 유지) → 해제(11:52). 계측이 끝내 대피 기준(5.83)에
        닿지 않는 것이 이 트랙의 정체성이다 — 승인 대응등급만 대피로 오른다 */
     id: "EVT-260813-002",
+    hero: true,
     districtId: "bongam",
     deviceId: "bongam-WL-002",
     device: "수위계 2호기",
@@ -124,6 +127,7 @@ export const EVENTS: AlertEvent[] = [
     /* 주인공 사건 — 주의보(17:05) → 경보 격상(17:22 · 시연 중 목격) → 대피 도달(19:22)
        → 해제(21:48). 시연 시계(S0=17:16)에서는 아직 주의보고, S8(22:10)에서는 해제다 */
     id: "EVT-260812-006",
+    hero: true,
     districtId: "seohang",
     deviceId: "seohang-WL-001",
     device: "수위계 1호기",
@@ -419,6 +423,25 @@ export function activeEventOfAt(districtId: string, now: Date): AlertEvent | und
         RANK[b.view.level] - RANK[a.view.level] ||
         new Date(b.view.stageAt).getTime() - new Date(a.view.stageAt).getTime(),
     )[0]?.e;
+}
+
+/**
+ * 이 지구에서 **지금 다루는 사건** — 재난관제(SCR-02)의 사건 핀·사건 캡슐·판정이 여는 것.
+ *
+ * `activeEventOfAt`(대표 사건)과 다른 질문에 답한다. 저쪽은 "이 지구에서 가장 높은 단계가
+ * 무엇인가"라 도시 지도·지구 목록의 색을 정하고, 이쪽은 "이 화면이 지금 무엇을 보고
+ * 있는가"다. 둘을 한 함수로 묶으면 봉암에서 화면이 뛴다 — 08:50 에는 집중호우가 이미
+ * 경보(08:31)라 대표를 먹고, 08:52 내수침수 격상에 대표가 갈아타면서 **사건 핀이
+ * 강우량계에서 수위계로 자리를 옮긴다.** 시연이 찍는 것은 좌표가 아니라 지구인데 핀이
+ * 뛰면 격상이 "보던 사건이 위험해졌다"가 아니라 "다른 데서 뭔가 났다"로 읽힌다.
+ *
+ * 그래서 대본이 도는 사건(`hero`)이 진행 중이면 그것을 붙든다. 자리는 고정되고 색만
+ * 주의보 → 경보로 갈린다. 대본 사건이 없는 지구는 대표 사건을 그대로 쓴다 —
+ * 명동항·구항처럼 사건이 하나뿐인 지구는 두 답이 어차피 같다.
+ */
+export function watchedEventOfAt(districtId: string, now: Date): AlertEvent | undefined {
+  const hero = activeEventsAt(now).find((e) => e.hero && e.districtId === districtId);
+  return hero ?? activeEventOfAt(districtId, now);
 }
 
 /** 장비별 진행 중 이벤트. 그 장비 자리에 이벤트 핀을 세울지 판단한다 (03 §0-5) */

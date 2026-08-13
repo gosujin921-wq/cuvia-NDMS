@@ -21,7 +21,7 @@ import {
   WATER_THRESHOLDS,
   levelSpec,
 } from "../../../demo/levels";
-import { activeEventOfAt, activeEventsAt, eventViewAt } from "../../../demo/events";
+import { watchedEventOfAt, activeEventsAt, eventViewAt } from "../../../demo/events";
 import { CCTV_SCENES } from "../../../demo/devices";
 import { drainageOf, tideSurgeOf } from "../../../demo/drainage";
 import { formatClock } from "../../../lib/datetime";
@@ -47,7 +47,7 @@ interface CheckRow {
 
 export function CrossCheckPanel({ district, devices }: CrossCheckPanelProps) {
   const { now, step } = useScenario();
-  const event = activeEventOfAt(district.id, now);
+  const event = watchedEventOfAt(district.id, now);
   const view = event ? eventViewAt(event, now) : null;
   const coastal = district.kind === "해일";
   const tideDevice = devices.find((d) => d.kind === "TD");

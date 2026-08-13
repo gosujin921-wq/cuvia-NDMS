@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────
- * 내비게이션 구조 — 정본: docs/정본/02_IA_화면구조.md
+ * 내비게이션 구조 — 배경: docs/레거시/정본/02_IA_화면구조.md
  *
  * 메뉴명은 기능명이 아니라 역할명이다(02 §1). 순서는 평시 업무 순서 — 전체를 보고(종합상황),
  * 지구로 좁히고(재난관제), 대응하고(상황대응), 되짚고(통계·분석), 앞을 본다(디지털트윈).
@@ -27,6 +27,11 @@ export interface NavItem {
    * 도크가 쓰므로, 화면 위에 떠 있는 질의 버튼이 그 자리를 비켜 선다(AgentFab).
    */
   bottomDock?: boolean;
+  /**
+   * 레일에 세우지 않는 화면 — 목록에는 남기고 메뉴에서만 감춘다.
+   * 항목 자체를 지우면 상단바 화면명(findNav)까지 같이 사라진다.
+   */
+  hidden?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -65,15 +70,20 @@ export const NAV_ITEMS: NavItem[] = [
     fullBleed: true,
   },
   /* 순서가 아니라 옆길이다 — 어느 화면에 서 있든 말로 물어 답을 받는 자리라 맨 뒤에 둔다.
-     실제 진입은 SCR-01 하단의 질의 바가 맡는다 (02 문서 §1) */
+     진입은 전부 질의 바(SCR-01 하단)·질의 버튼(그 밖 화면 우하단)이 맡으므로 레일에는
+     세우지 않는다. 목록에 남겨 두는 이유는 상단바 화면명을 findNav 가 여기서 읽기 때문 */
   {
     id: "ai-search",
     scr: "SCR-06",
     label: "AI 검색",
     route: "/scr-06",
     icon: "mdi:creation-outline",
+    hidden: true,
   },
 ];
+
+/** 레일에 서는 항목 — 사이드바가 쓴다 */
+export const VISIBLE_NAV_ITEMS: NavItem[] = NAV_ITEMS.filter((item) => !item.hidden);
 
 /** 허브 — 시연이 출발하고 되돌아오는 자리. 브랜드 로고도 여기로 보낸다. */
 export const HUB_ROUTE = "/scr-01";

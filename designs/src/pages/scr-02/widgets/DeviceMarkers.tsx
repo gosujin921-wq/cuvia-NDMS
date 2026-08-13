@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import maplibregl from "maplibre-gl";
-import { activeEventOfAt, activeEventOfDeviceAt, eventViewAt } from "../../../demo/events";
+import { activeEventOfDeviceAt, eventViewAt, watchedEventOfAt } from "../../../demo/events";
 import { useScenario } from "../../../state/ScenarioProvider";
 import type { Device } from "../../../demo/devices";
 import { DevicePin, EventPin } from "../../../components/MapPins";
@@ -89,19 +89,24 @@ function DeviceMarkerItem({
   }, [map, host, device]);
 
   const { now } = useScenario();
-  /* 이벤트 핀은 **지구당 대표 사건 하나**만 세운다 (04 §15-3 대표 사건 규칙).
+  /* 이벤트 핀은 **지구당 하나**, 지금 다루는 사건 자리에 선다(watchedEventOfAt).
      한 지구에 사건이 둘인 트랙(봉암 · 집중호우 + 내수침수)에서 핀을 둘 다 세우면
-     "지금 무엇을 보는 화면인가"가 지도에서 갈리고, 격상 순간 대표가 갈아타도 앞
-     사건의 핀이 남아 아무것도 바뀌지 않은 것처럼 보인다. 대표에서 밀린 사건은
-     장치 핀으로 돌아가고, 그 사건은 상단 사건 바의 진행 사건 전환이 맡는다 */
-  const lead = activeEventOfAt(device.districtId, now);
+     "지금 무엇을 보는 화면인가"가 지도에서 갈린다. 밀린 사건은 장치 핀으로 돌아가고,
+     그 사건은 상단 사건 캡슐과 동시 진행 사건 목록이 맡는다.
+
+     ★ 대표 사건(최고 단계)이 아니라 **대본 사건**을 붙드는 이유: 봉암은 08:52 격상에
+     대표가 집중호우 → 내수침수로 갈아타면서 핀이 강우량계에서 수위계로 뛴다. 격상은
+     보던 사건의 색이 갈리는 장면이지 핀이 이사하는 장면이 아니다 */
+  const lead = watchedEventOfAt(device.districtId, now);
   const own = activeEventOfDeviceAt(device.id, now);
   const event = own && lead && own.id === lead.id ? own : undefined;
   const view = event ? eventViewAt(event, now) : null;
 
-  /* 이벤트 핀은 장치·클러스터 핀 위에 선다(03 §0-5). 팝업(z 2)은 그 위 */
+  /* 쌓임 순서 — 장치·클러스터(기본 0) < 방재시설(1) < 이벤트(2) < 팝업(.dsms-popup z 3).
+     그리는 차례에 맡길 수 없다: 클러스터는 줌마다 마커를 다시 붙여(DOM 끝으로 간다)
+     나중에 붙은 쪽이 위를 먹는다 */
   useEffect(() => {
-    host.style.zIndex = event ? "1" : "";
+    host.style.zIndex = event ? "2" : "";
   }, [host, event]);
 
   /* 지도 클릭으로 전파되면 팝업이 열리자마자 닫힌다 */

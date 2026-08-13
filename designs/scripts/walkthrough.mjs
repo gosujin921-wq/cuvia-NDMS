@@ -15,7 +15,11 @@ const OUT = process.env.OUT ?? "shots";
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
-const shot = (name) => page.screenshot({ path: `${OUT}/${name}.png` });
+/* 어디까지 갔는지 남긴다 — 대본이 어긋나면 어느 스텝의 조작이 사라졌는지가 곧 진단이다 */
+const shot = async (name) => {
+  await page.screenshot({ path: `${OUT}/${name}.png` });
+  console.log(`  ✓ ${name}`);
+};
 
 // S0 — 종합상황 (17:16 · 상시대비 · 서항 확인중)
 await page.goto(`${BASE}/scr-01`, { waitUntil: "networkidle" });
@@ -37,13 +41,13 @@ await shot("s2a-팝업-주의보");
 await page.waitForTimeout(3500);
 await shot("s2b-격상-경보");
 
-// S4 — [디지털트윈 분석] (S3 CCTV 는 정적 확인이라 생략)
-await page.getByRole("button", { name: "디지털트윈 분석" }).click();
+// S4 — [디지털트윈으로 상세 분석] (S3 CCTV 는 정적 확인이라 생략)
+await page.getByRole("button", { name: /디지털트윈으로 상세 분석/ }).click();
 await page.waitForTimeout(6000);
 await shot("s4-트윈");
 
-// S5 — [이 판단으로 대응하기] → 재난관제 복귀. 판단 국면 — 레일 사건 블록(판정 카드) 강조
-await page.getByRole("button", { name: "이 판단으로 대응하기" }).click();
+// S5 — [재난관제로 돌아가기] → 사건 지정 진입(`?event=`). 판단 국면 — 판정 카드가 선다
+await page.getByRole("button", { name: /재난관제로 돌아가기/ }).click();
 await page.waitForTimeout(3500);
 await shot("s5a-재난관제-판단국면");
 

@@ -30,7 +30,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export function DemoControls() {
-  const { track, launchTrack, onset } = useScenario();
+  const { track, launchTrack } = useScenario();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -45,36 +45,16 @@ export function DemoControls() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  /* 시나리오 행 — IDC 조작판의 사건 발생 자리. 구현된 2편만 선다. 진행 중인 편도
-     누를 수 있다: 같은 트랙 재발사가 곧 되감기라 리허설 복구 수단이 된다 (04 §0-2 · §15) */
-  const tracks = [
-    { key: "seohang" as const, label: "서항 해일 수위 상승", date: "8/12" },
-    { key: "bongam" as const, label: "봉암 호우·내수침수", date: "8/13" },
-  ];
+  /* 시나리오 행 — IDC 조작판의 사건 발생 자리. 진행 중인 편도 누를 수 있다: 같은 트랙
+     재발사가 곧 되감기라 리허설 복구 수단이 된다.
+
+     서항 발사 행은 내려 뒀다. 앱이 서항 트랙 상태로 열리므로 서항으로 돌아가는 길은
+     새로고침이다. 되살리려면 배열에 한 줄을 더한다:
+       { key: "seohang" as const, label: "서항 해일 수위 상승", date: "8/12" } */
+  const tracks = [{ key: "bongam" as const, label: "봉암 호우·내수침수", date: "8/13" }];
 
   return (
     <>
-      {/* 발생 연출 진행 — 조작판이 닫혀도 유입 중임이 보인다 (04 §15-1) */}
-      {onset && (
-        <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5">
-          <Icon
-            icon="mdi:loading"
-            className="size-4 shrink-0 animate-spin text-warning"
-            aria-hidden
-          />
-          <span className="shrink-0 text-caption text-foreground">사건 유입 중</span>
-          <span className="h-1 w-24 overflow-hidden rounded-full bg-border">
-            <span
-              className="block h-full rounded-full bg-warning transition-[width] duration-500"
-              style={{ width: `${(onset.count / onset.total) * 100}%` }}
-            />
-          </span>
-          <span className="shrink-0 font-mono text-caption text-foreground-subtle">
-            {onset.count}/{onset.total}
-          </span>
-        </div>
-      )}
-
       {open && (
         <GlassPanel
           borderStyle="none"

@@ -20,8 +20,10 @@
  *   MapMarkerLayer(좌표고정 WebGL 판). 마커가 수백 개로 늘면 DOM 마커 대신 그쪽으로 간다.
  * ───────────────────────────────────────────── */
 
-import { MapMarker } from "@ds";
+import { Button, MapMarker } from "@ds";
+import { Icon } from "@iconify/react";
 import { deviceKindSpec, type Device } from "../demo/devices";
+import { facilityKindSpec, type Facility, type FacilityState } from "../demo/facilities";
 import { levelSpec, type AlertLevel } from "../demo/levels";
 import type { EventType } from "../demo/events";
 
@@ -78,6 +80,127 @@ export function DevicePin({ device, selected, onClick }: DevicePinProps) {
       }}
       onClick={onClick}
       aria-label={`${spec.label} · ${device.name} · ${device.status}`}
+    />
+  );
+}
+
+interface FacilityPinProps {
+  facility: Facility;
+  /** 운영 상태 — 시계로 자른 파생값(demo/facilities.ts) */
+  state: FacilityState;
+  /** 같은 자리를 보는 CCTV — 주면 피커 자유 슬롯에 [현장 영상] 버튼이 선다 */
+  cctv?: { name: string; onOpen: () => void };
+  /** 수동 개폐 — 주면 [수동 폐쇄]·[수동 개방]이 선다. 확인 창은 호출부가 든다(KISA 문법) */
+  onRequestGateToggle?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
+}
+
+/**
+ * 방재시설 핀 — 배수문 · 배수펌프장.
+ *
+ * 장치 핀과 **같은 모양**(원형 글라스 칩)을 쓴다. §0-5 가 장치 핀에 준 뜻이 "여기 무엇이
+ * 설치돼 있다"이고 방재시설도 같은 말을 하기 때문이다. 색과 아이콘으로만 갈린다.
+ *
+ * 팝오버는 DS `MapMarker` 의 `picker` 를 쓴다 — KISA·SK 의 출입문 호버 팝오버(관제
+ * 대시보드 도어 핀)를 DS 가 공용화해 둔 그 부품이다. 제목 → 강조줄 → 라벨행 → 자유 슬롯 →
+ * 안내문 순서와 150ms 닫힘 유예가 DS 소유라, 여기서는 **무엇을 담을지만** 넘긴다.
+ * 라벨행 구성도 원본 문법 그대로다: 종류 · 위치 · **문 상태 / 가동 여부**(원본의
+ * `문 상태 · 가동 여부` 두 줄) · 운영 로그.
+ *
+ * 원본이 자유 슬롯에 [차단] · [차단 해제] 를 세운 자리에 **[수동 폐쇄] · [수동 개방]** 과
+ * **[현장 영상]** 이 선다. 개폐는 되돌릴 수 있지만 물길을 막는 조작이라 원본처럼 확인 창을
+ * 한 번 거치고, 확인 창은 피커가 아니라 호출부가 든다 — 피커는 마우스가 떠나면 닫힌다.
+ *
+ * 평소 상태는 배수펌프장 운영 로그를 시계로 자른 값이고, 수동 조작이 있으면 그것이 이긴다.
+ * 어느 쪽으로 정해진 상태인지는 `state.manual` 이 말하고 피커 안내문이 그대로 적는다 —
+ * 사람이 내린 명령과 운영 기록이 화면에서 같은 얼굴을 하면 안 된다.
+ *
+ * 운영 중인 상태(배수문 폐쇄 · 펌프 가동)는 배지로 알린다. **이벤트 핀으로 세우지 않는다** —
+ * 폐쇄·가동은 센서가 감지한 사건이 아니라 조작·운영의 결과다(demo/drainage.ts).
+ */
+export function FacilityPin({
+  facility,
+  state,
+  cctv,
+  onRequestGateToggle,
+  onClick,
+}: FacilityPinProps) {
+  const spec = facilityKindSpec(facility.kind);
+  const gate = facility.kind === "gate";
+  const engagedTone = gate ? "var(--color-warning)" : "var(--color-success)";
+  const closed = gate && state.engaged;
+
+  return (
+    <MapMarker
+      className="pointer-events-auto"
+      variant="facility"
+      icon={spec.icon}
+      size={DEVICE_PIN_SIZE}
+      color={spec.color}
+      badge={
+        state.engaged
+          ? {
+              icon: gate ? "mdi:lock" : "mdi:play",
+              tone: engagedTone,
+              label: state.label,
+            }
+          : undefined
+      }
+      picker={{
+        title: facility.name,
+        rows: [
+          { label: "시설물 종류", value: spec.label },
+          { label: "위치", value: facility.spot },
+          {
+            label: gate ? "문 상태" : "가동 여부",
+            value: state.label,
+            tone: state.engaged ? engagedTone : undefined,
+          },
+          ...(state.detail ? [{ label: "운영 로그", value: state.detail }] : []),
+        ],
+        /* 자유 슬롯은 close 를 받는다 — 조작을 누르면 피커를 먼저 닫고 확인 창을 연다.
+           피커가 열린 채로 다이얼로그가 뜨면 마우스가 떠나는 순간 뒤에서 닫히며 깜빡인다 */
+        extra: (close) =>
+          onRequestGateToggle || cctv ? (
+            <div className="mt-2 flex flex-col gap-1.5">
+              {onRequestGateToggle && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    close();
+                    onRequestGateToggle();
+                  }}
+                >
+                  <Icon
+                    icon={closed ? "mdi:lock-open-variant" : "mdi:lock"}
+                    className="size-4 shrink-0"
+                    aria-hidden
+                  />
+                  {closed ? "수동 개방" : "수동 폐쇄"}
+                </Button>
+              )}
+              {cctv && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    close();
+                    cctv.onOpen();
+                  }}
+                  aria-label={`${cctv.name} 팝업 열기`}
+                >
+                  <Icon icon="mdi:cctv" className="size-4 shrink-0" aria-hidden />
+                  현장 영상
+                </Button>
+              )}
+            </div>
+          ) : undefined,
+        hint: state.manual
+          ? "상황실이 수동으로 정한 상태입니다."
+          : "배수펌프장 운영 기록을 받아 표시합니다.",
+      }}
+      onClick={onClick}
+      aria-label={`${spec.label} · ${facility.name} · ${state.label}`}
     />
   );
 }

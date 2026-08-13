@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────
- * 기상 — 정본: docs/정본/04_데모_데이터.md §5
+ * 기상 — 배경: docs/레거시/정본/04_데모_데이터.md §5
  *
  * 폭염·가뭄은 별도 센서를 두지 않는다. 폭염은 기상특보에서, 가뭄은 저수지 저수율에서
  * 끌어온다(01 개요 §정한 것).
@@ -11,19 +11,26 @@ export interface WeatherAdvisory {
   label: string;
   /** 심각도 톤 — 카드에서 색으로 구분한다 */
   level: "advisory" | "warning";
+  /** 이 트랙 사건의 배경이 되는 특보. 사건이 태어나기 전(발생 연출)에도 서 있다 */
+  backdrop?: boolean;
 }
 
 export const WEATHER = {
   /** 발효 중인 기상특보 */
   advisories: [
     { label: "폭염경보", level: "warning" },
-    { label: "폭풍해일주의보", level: "advisory" },
+    { label: "폭풍해일주의보", level: "advisory", backdrop: true },
   ] as WeatherAdvisory[],
-  temperature: 32.4,
-  feelsLike: 35.1,
-  condition: "맑음",
-  conditionIcon: "mdi:weather-sunny",
-  humidity: 68,
+  /* 폭풍해일주의보가 발효 중인 하늘이다. 맑은 해가 떠 있으면 화면이 사건과 어긋난다 —
+     조건 시나리오의 강우 유입 +0.38 m 는 "시간당 18 mm 지속"을 관측 중이라는 뜻이고
+     (§10-3), 기압은 998 에서 내려가는 중이다. 비가 오고 있어야 앞뒤가 맞는다.
+     그러면서도 무덥다: 남동풍이 더운 습기를 밀어 올리는 저기압 접근 전형이라
+     폭염경보가 함께 발효 중인 것이 어색하지 않다 */
+  temperature: 29.8,
+  feelsLike: 34.2,
+  condition: "비",
+  conditionIcon: "mdi:weather-rainy",
+  humidity: 88,
   windDirection: "남동",
   windSpeed: 7.2,
   /* 기압·조위 — 폭풍해일 판단의 배경 정보(04 §5). 해일 지구의 기상 패널과
@@ -36,12 +43,13 @@ export const WEATHER = {
 /**
  * 봉암 트랙 기상 (04 §15-4).
  *
- * 서항(맑음 32.4℃ · 폭염경보)과 정반대다 — 호우경보 아래 비가 오고 기온이 8도 낮다.
+ * 서항(비 29.8℃ · 폭염경보)과 같은 비라도 결이 다르다 — 호우경보 아래 장대비가 쏟아지고
+ * 기온이 5도 낮다. 서항의 비는 해일을 밀어 올리는 저기압의 곁가지고, 봉암의 비는 사건 자체다.
  * 트랙을 갈면 하늘부터 바뀌어야 "다른 날의 다른 재난"으로 읽힌다. 만조는 봉암천
  * 하구 기준(09:12)이고, 배수문을 언제까지 못 여는지의 출처다(§15-6).
  */
 export const BONGAM_WEATHER = {
-  advisories: [{ label: "호우경보", level: "warning" }] as WeatherAdvisory[],
+  advisories: [{ label: "호우경보", level: "warning", backdrop: true }] as WeatherAdvisory[],
   temperature: 24.8,
   feelsLike: 26.2,
   condition: "비",
@@ -67,6 +75,13 @@ const ADVISORY_KEYWORD: Partial<Record<HazardType, string>> = {
   폭풍해일: "해일",
   집중호우: "호우",
 };
+
+/** 트랙의 배경 특보 — 사건이 아직 없어도 하늘에는 걸려 있다.
+ *  발생 연출 첫 칸(사건 0건)에서 상태 스트립이 이것을 세운다. 특보가 사건에서 파생되면
+ *  유입 1.6초 동안 배지가 접혔다가 다시 뜨는데, 특보는 사건보다 먼저 있던 것이다 */
+export function backdropAdvisories(track: "seohang" | "bongam"): WeatherAdvisory[] {
+  return weatherOf(track).advisories.filter((advisory) => advisory.backdrop);
+}
 
 export function relatedAdvisories(
   type: HazardType,
@@ -130,7 +145,7 @@ export const HEAT = {
   level: "경보",
   gauge: 83,
   tone: "danger",
-  note: "체감 35℃ 이상 지속",
+  note: "체감 34℃ 이상 지속",
   hint: "열돔 영향 가능",
 } as const satisfies BackgroundRisk & { hint: string };
 
