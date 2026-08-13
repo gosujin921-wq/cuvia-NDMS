@@ -6,13 +6,80 @@
  * ───────────────────────────────────────────── */
 
 import { DEMO_DAY, EVENTS, activeEventOfAt, eventViewAt } from "./events";
-import { WATER_THRESHOLDS } from "./levels";
+import {
+  ALERT_LEVELS,
+  DISPLACEMENT_THRESHOLD,
+  RAIN_THRESHOLD,
+  WATER_THRESHOLDS,
+  type WaterThreshold,
+} from "./levels";
+import { TIDE_CURVE } from "./weather";
 import type { Device } from "./devices";
 import { hashSeed, seededRandom } from "../lib/seed";
 
 export interface Sample {
   at: Date;
   value: number;
+}
+
+/* ── 조위계 (04 §8) ─────────────────────────────
+ * 실측 조위 = 천문조 + 해일 편차. 천문조는 저조(13:05)→만조(19:10) 코사인 보간이라
+ * 저조 앞 구간은 내림 물때로 자연히 이어지고, 편차는 앵커 선형 보간 후 끝값 유지다.
+ * 절대 시각의 함수라 6시간 창이 흘러도 같은 시각은 같은 값을 낸다. */
+
+function clockMs(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  const d = new Date(DEMO_DAY);
+  d.setHours(h, m, 0, 0);
+  return d.getTime();
+}
+
+function astroLevelAt(at: Date): number {
+  const lowMs = clockMs(TIDE_CURVE.low.at);
+  const half = clockMs(TIDE_CURVE.high.at) - lowMs;
+  const mid = (TIDE_CURVE.low.level + TIDE_CURVE.high.level) / 2;
+  const amp = (TIDE_CURVE.high.level - TIDE_CURVE.low.level) / 2;
+  return mid - amp * Math.cos((Math.PI * (at.getTime() - lowMs)) / half);
+}
+
+function surgeRiseAt(at: Date): number {
+  const anchors = TIDE_CURVE.surge;
+  let rise = anchors[anchors.length - 1].rise;
+  for (let i = 0; i < anchors.length; i += 1) {
+    const ms = clockMs(anchors[i].at);
+    if (at.getTime() > ms) continue;
+    if (i === 0) {
+      rise = anchors[0].rise;
+    } else {
+      const prevMs = clockMs(anchors[i - 1].at);
+      rise =
+        anchors[i - 1].rise +
+        ((anchors[i].rise - anchors[i - 1].rise) * (at.getTime() - prevMs)) / (ms - prevMs);
+    }
+    break;
+  }
+  return rise;
+}
+
+function tideLevelAt(at: Date): number {
+  return astroLevelAt(at) + surgeRiseAt(at);
+}
+
+/** 조위 읽기 (04 §8·§10-4) — 천문조 현재값·실측·해일 편차를 한 번에.
+ *  교차검증 패널의 조위 비교 4행과 판정 카드가 같은 곡선을 읽는다 (17:22 = 2.36 / 3.51 / +1.15) */
+export interface TideReading {
+  astro: number;
+  measured: number;
+  surge: number;
+}
+
+export function tideReadingAt(at: Date): TideReading {
+  return {
+    astro: Number(astroLevelAt(at).toFixed(2)),
+    /* 실측은 원곡선 합의 반올림 — 조위계 시계열(sensorSeries TD)의 표본과 같은 값이어야 한다 */
+    measured: Number(tideLevelAt(at).toFixed(2)),
+    surge: Number(surgeRiseAt(at).toFixed(2)),
+  };
 }
 
 interface SeriesOptions {
@@ -46,6 +113,10 @@ export function sensorSeries(device: Device, now: Date, options: SeriesOptions =
     ((device.kind === "WL" && event.type === "수위") ||
       (device.kind === "RN" && event.type === "강우") ||
       (device.kind === "DP" && event.type === "변위"));
+  /* 측정값에 정확히 닿는 건 원장에 적힌 그 장비뿐이다(04 §8). 같은 종류의 이웃 장비는
+     조금 아래에서 따라간다. 두 장비가 같은 값을 찍으면 계측이 아니라 복사로 보인다 */
+  const primary = !!(event && matched && event.deviceId === device.id);
+  const follow = primary ? 0 : 0.05 + (hashSeed(device.id) % 6) * 0.02;
 
   const threshold = WATER_THRESHOLDS[device.districtId];
   const samples: Sample[] = [];
@@ -60,22 +131,26 @@ export function sensorSeries(device: Device, now: Date, options: SeriesOptions =
     if (device.kind === "WL") {
       const base = (threshold?.advisory ?? 2.5) * 0.72;
       const tide = Math.sin(t * Math.PI * 1.6 + hashSeed(device.id) % 3) * 0.08;
-      const target = matched && view ? view.value : base + 0.12;
+      const target = matched && view ? view.value - follow : base + 0.12;
       /* 이벤트 구간에선 끝으로 갈수록 조석·잡음을 걷는다 — 마지막 표본이 현재 단계
          측정값에 정확히 닿아야 한다(04 §8). 격상되면 target 이 3.02 → 3.41 로 따라온다 */
       const damp = matched && view ? 1 - rise : 1;
       value = base + tide * damp + (target - base) * rise + (rand() - 0.5) * 0.03 * damp;
     } else if (device.kind === "RN") {
-      const burst = matched && view ? view.value : 8;
+      const burst = matched && view ? view.value - follow : 8;
       value = Math.max(0, burst * rise * (0.6 + rand() * 0.5) - 0.4);
+    } else if (device.kind === "TD") {
+      /* 조석 합성 곡선이라 잡음을 얹지 않는다(04 §8) — 17:22 3.51 · 19:22 3.95 가
+         §10-3 판정 카드의 편차(+1.15 → +1.24)와 정확히 맞물려야 한다 */
+      value = tideLevelAt(at);
     } else {
-      const base = matched && view ? view.value * 0.6 : 3.4;
-      value = base + rise * (matched && view ? view.value * 0.4 : 0.6) + rand() * 0.15;
+      const base = matched && view ? (view.value - follow) * 0.6 : 3.4;
+      value = base + rise * (matched && view ? (view.value - follow) * 0.4 : 0.6) + rand() * 0.15;
     }
 
     /* 마지막 표본은 이벤트 측정값 그 자체다 — 팝업·패널의 "현재값"이 카드·뱃지의
-       단계 측정값과 한 자리도 다르면 안 된다(04 §8) */
-    if (matched && view && i === count - 1) value = view.value;
+       단계 측정값과 한 자리도 다르면 안 된다(04 §8). 원장 장비만이다 — 이웃은 follow 만큼 아래 */
+    if (primary && view && i === count - 1) value = view.value;
 
     samples.push({ at, value: Number(value.toFixed(2)) });
   }
@@ -89,22 +164,60 @@ export function latestValue(device: Device, now: Date): Sample {
   return series[series.length - 1];
 }
 
-/** 월별 이벤트 발생 건수 — 최근 12개월. 이번 달은 실제 이벤트 건수와 맞춘다 */
-export function monthlyEvents(districtId: string): { month: string; count: number }[] {
-  const rand = seededRandom(hashSeed(`monthly-${districtId}`));
-  const thisMonth = EVENTS.filter(
-    (e) => e.districtId === districtId && new Date(e.raisedAt).getMonth() === DEMO_DAY.getMonth(),
-  ).length;
+/* ── 추세 요약 (04 §8 · SCR-02 좌측 계측 추이) ──────────────
+ * 그래프에서 파생 계산한다. 별도 수치를 두지 않는다 — 요약과 그래프가 다른 원천을
+ * 읽으면 "숫자와 그래프를 같이 보여준다"는 목적 자체가 깨진다.
+ * ───────────────────────────────────────────── */
 
-  const out: { month: string; count: number }[] = [];
-  for (let i = 11; i >= 0; i -= 1) {
-    const d = new Date(DEMO_DAY.getFullYear(), DEMO_DAY.getMonth() - i, 1);
-    /* 여름(6~9월)에 몰린다. 겨울은 0~1건 */
-    const summer = d.getMonth() >= 5 && d.getMonth() <= 8;
-    const count = i === 0 ? thisMonth : Math.floor(rand() * (summer ? 5 : 2));
-    out.push({ month: `${d.getMonth() + 1}월`, count });
+export interface TrendSummary {
+  /** 최근 30분 변화량 — 현재값 − 30분 전 표본값 */
+  delta30: number;
+  direction: "상승" | "하강" | "유지";
+  /** 현재값이 넘은 최고 발령 기준. 기준이 없는 장비(조위계)는 null */
+  exceeded: { label: string; value: number; color: string } | null;
+  /** 다음 기준과 남은 폭. 이미 대피 구간이면 null */
+  next: { label: string; value: number; gap: number; color: string } | null;
+  /** 조위계 한정 — 천문조 대비 편차 (§10-3 판정 카드의 그 값) */
+  surge: number | null;
+}
+
+function thresholdOf(device: Device): WaterThreshold | null {
+  if (device.kind === "WL") return WATER_THRESHOLDS[device.districtId] ?? null;
+  if (device.kind === "RN") return RAIN_THRESHOLD;
+  if (device.kind === "DP") return DISPLACEMENT_THRESHOLD;
+  return null;
+}
+
+export function trendSummaryAt(device: Device, now: Date): TrendSummary | null {
+  if (device.status === "통신끊김") return null;
+  const series = sensorSeries(device, now);
+  const last = series[series.length - 1].value;
+  /* 표본 간격 10분 — 3칸 전이 30분 전이다 */
+  const prev = series[series.length - 4]?.value ?? last;
+  const delta30 = Number((last - prev).toFixed(2));
+  const direction = delta30 > 0.02 ? "상승" : delta30 < -0.02 ? "하강" : "유지";
+
+  const base = thresholdOf(device);
+  let exceeded: TrendSummary["exceeded"] = null;
+  let next: TrendSummary["next"] = null;
+  if (base) {
+    for (const level of ALERT_LEVELS) {
+      const value = base[level.id];
+      if (last >= value) {
+        exceeded = { label: level.label, value, color: level.color };
+      } else if (!next) {
+        next = { label: level.label, value, gap: Number((value - last).toFixed(2)), color: level.color };
+      }
+    }
   }
-  return out;
+
+  return {
+    delta30,
+    direction,
+    exceeded,
+    next,
+    surge: device.kind === "TD" ? tideReadingAt(now).surge : null,
+  };
 }
 
 /* ── 기간 조회용 시계열 (SCR-04) ────────────────────────────

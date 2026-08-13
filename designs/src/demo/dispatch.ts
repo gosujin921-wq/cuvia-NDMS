@@ -33,11 +33,19 @@ export function defaultChannelsFor(level: AlertLevel): ChannelId[] {
   return ["sms", "broadcast", "sign"];
 }
 
-/** 단계별 행동 안내 (04 §7-2) */
+/** 단계별 행동 안내 (04 §7-2) — 해일·하천 */
 const ACTION_LINE: Record<AlertLevel, string> = {
   advisory: "하천·해안 접근을 자제해 주시기 바랍니다.",
   warning: "해안가 접근을 자제하고 안내 방송에 따라 주시기 바랍니다.",
   evacuate: "즉시 인근 대피소로 이동해 주시기 바랍니다.",
+};
+
+/** 내수침수 행동 안내 (04 §15-10) — 내륙 배수구역에 "해안가" 문자를 보내지 않는다.
+ *  대피 문안이 가리키는 곳도 해안이 아니라 지하·반지하다 */
+const FLOOD_ACTION_LINE: Record<AlertLevel, string> = {
+  advisory: "저지대·지하 공간 침수에 유의해 주시기 바랍니다.",
+  warning: "저지대 도로 통행을 피하고 안내 방송에 따라 주시기 바랍니다.",
+  evacuate: "지하·반지하에서 즉시 나와 인근 대피소로 이동해 주시기 바랍니다.",
 };
 
 /**
@@ -56,147 +64,216 @@ export function draftMessage(
   const district = findDistrict(event.districtId);
   const view = eventViewAt(event, now);
   const level = options.effectiveLevel ?? view.level;
+  /* 어법은 재난유형이 고른다 (04 §7-2 · §15-10). 내륙 배수구역에 해안 문안을 보내지
+     않고, 조건 이름도 만조가 아니라 강우 지속이다 */
+  const flood = event.hazardType === "내수침수";
+  const actionLine = flood ? FLOOD_ACTION_LINE[level] : ACTION_LINE[level];
 
   const RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
   if (options.scenario && RANK[level] > RANK[view.level]) {
     const at = new Date(options.scenario.peakAt);
     const when = `${at.getMonth() + 1}월 ${at.getDate()}일 ${String(at.getHours()).padStart(2, "0")}시 ${String(at.getMinutes()).padStart(2, "0")}분`;
-    return `[창원시] ${when} 만조 조건에서 ${district?.name ?? ""} 침수 우려.\n${ACTION_LINE[level]}`;
+    const condition = flood ? "강우 지속 조건에서" : "만조 조건에서";
+    return `[창원시] ${when} ${condition} ${district?.name ?? ""} ${flood ? "저지대 " : ""}침수 우려.\n${actionLine}`;
   }
 
   const at = new Date(view.stageAt);
   const when = `${at.getMonth() + 1}월 ${at.getDate()}일 ${String(at.getHours()).padStart(2, "0")}시 ${String(at.getMinutes()).padStart(2, "0")}분`;
-  return `[창원시] ${when} ${district?.name ?? ""} ${event.type} ${levelSpec(level).label}.\n${ACTION_LINE[level]}`;
+  return `[창원시] ${when} ${district?.name ?? ""} ${event.type} ${levelSpec(level).label}.\n${actionLine}`;
 }
+
+/** 전파 기록 유형 (04 §7-5) — SOP 실행이 만든 전파 / 담당자의 [수정 문안 재전파] */
+export type DispatchKind = "sop" | "manual-resend";
 
 export interface DispatchRecord {
   id: string;
-  /** 전파한 시각 */
-  at: string;
-  /** 대상 이벤트 — 전파 기록은 이벤트에 붙는다(04 §7-3). "언제 난 사건을 몇 분 만에
-   *  알렸나"가 계산되려면 이 연결이 있어야 한다. 시연 중 쌓는 기록도 채운다 */
-  eventId?: string;
+  /** 대상 이벤트 — 전파 기록은 이벤트에 붙는다(04 §7-3·§7-5). "언제 난 사건을 몇 분 만에
+   *  알렸나"가 계산되려면 이 연결이 있어야 한다. 시연 중 쌓는 기록도 반드시 채운다 */
+  eventId: string;
+  dispatchKind: DispatchKind;
+  /** 전파가 따른 등급 — SOP 전파·재전파는 승인 대응등급(04 §10-1), 사전 원장은 당시 단계 */
+  responseLevel: AlertLevel;
   /** 어떤 이벤트를 알렸나 */
   summary: string;
   channels: ChannelId[];
+  /** 실제 전송한 문안 (04 §7-5). 재전파는 담당자가 고친 문안 그대로.
+   *  사전 원장 12건은 문안을 남기지 않았다 */
+  message?: string;
   /** 받은 사람 수 */
   recipients: number;
-  /** 발생 → 전파 소요(분). SCR-04 대응 KPI(평균 3.8분)가 여기서 나온다 */
+  /** 전파한 시각. SOP 전파는 승인 시각(04 §10-2) */
+  sentAt: string;
+  /** 발생 → 전파 소요(분). **그 사건의 최초 전파에만 둔다**(04 §7-5) —
+   *  SCR-04 대응 KPI(평균 3.8분)가 여기서 나온다. 재전파에는 없다 */
   durationMin?: number;
+  /** 기록 주체 — `시스템`(SOP 실행) · `상황실 담당`(재전파) */
+  recordedBy: string;
 }
 
-/** 이미 나간 전파 내역 (04 §7-3) */
+/**
+ * SOP 전파 기록의 수단 — 승인·실행된 항목에서 파생한다(04 §7-5). 고정 목록을 박으면
+ * 담당자가 승인에서 뺀 수단이 내역에 찍힌다. 마을방송·전광판 항목은 등급이 대피일 때만
+ * 전광판까지 나간다(04 §11-2 "방송만 / 방송 + 전광판").
+ */
+export function channelsFromSopItems(itemIds: string[], level: AlertLevel): ChannelId[] {
+  const channels: ChannelId[] = [];
+  if (itemIds.includes("sms")) channels.push("sms");
+  if (itemIds.includes("broadcast")) {
+    channels.push("broadcast");
+    if (level === "evacuate") channels.push("sign");
+  }
+  return channels;
+}
+
+/** 이미 나간 전파 내역 (04 §7-3). 전부 그 사건의 최초 전파(SOP 실행)라 durationMin 이 있다.
+ *  문안은 남기지 않았다(04 §7-5) — 시연 중 쌓는 기록만 실제 전송 문안을 저장한다 */
 export const DISPATCH_HISTORY: DispatchRecord[] = [
   {
     /* 주인공 사건의 주의보 단계 전파(04 §7-3). 대피 전파는 사전 내역에 없다 —
        시연 S6 에서 담당자가 승인해 쌓는 것이 첫 대피 전파다. 주의보=방송 한 갈래 →
        대피=문자+방송+전광판, 등급이 오르면 알리는 폭이 넓어지는 대비가 여기서 선다 */
     id: "DSP-260812-003",
-    at: "2026-08-12T17:09:00",
+    sentAt: "2026-08-12T17:09:00",
     eventId: "EVT-260812-006",
+    dispatchKind: "sop",
+    responseLevel: "advisory",
     summary: "서항지구 수위 주의보",
     channels: ["broadcast"],
     recipients: 412,
     durationMin: 4,
+    recordedBy: "시스템",
   },
   {
     id: "DSP-260812-002",
-    at: "2026-08-12T16:51:00",
+    sentAt: "2026-08-12T16:51:00",
     eventId: "EVT-260812-004",
+    dispatchKind: "sop",
+    responseLevel: "advisory",
     summary: "구항지구 수위 주의보",
     channels: ["broadcast"],
     recipients: 187,
     durationMin: 3,
+    recordedBy: "시스템",
   },
   {
     id: "DSP-260811-006",
-    at: "2026-08-11T22:43:00",
+    sentAt: "2026-08-11T22:43:00",
     eventId: "EVT-260811-004",
+    dispatchKind: "sop",
+    responseLevel: "evacuate",
     summary: "창원천 수위 대피",
     channels: ["sms", "broadcast", "sign", "projector"],
     recipients: 1043,
     durationMin: 3,
+    recordedBy: "시스템",
   },
   {
     id: "DSP-260811-003",
-    at: "2026-08-11T21:59:00",
+    sentAt: "2026-08-11T21:59:00",
     eventId: "EVT-260811-002",
+    dispatchKind: "sop",
+    responseLevel: "warning",
     summary: "남천 수위 경보",
     channels: ["sms", "broadcast"],
     recipients: 231,
     durationMin: 4,
+    recordedBy: "시스템",
   },
   {
     id: "DSP-260805-001",
-    at: "2026-08-05T02:35:00",
+    sentAt: "2026-08-05T02:35:00",
     eventId: "EVT-260805-001",
+    dispatchKind: "sop",
+    responseLevel: "advisory",
     summary: "서항지구 수위 주의보",
     channels: ["broadcast"],
     recipients: 412,
     durationMin: 5,
+    recordedBy: "시스템",
   },
   {
     id: "DSP-260804-002",
-    at: "2026-08-04T13:43:00",
+    sentAt: "2026-08-04T13:43:00",
     eventId: "EVT-260804-001",
+    dispatchKind: "sop",
+    responseLevel: "warning",
     summary: "봉암지구 강우 경보",
     channels: ["sms", "broadcast"],
     recipients: 328,
     durationMin: 3,
+    recordedBy: "시스템",
   },
   {
     id: "DSP-260730-001",
-    at: "2026-07-30T06:31:00",
+    sentAt: "2026-07-30T06:31:00",
     eventId: "EVT-260730-001",
+    dispatchKind: "sop",
+    responseLevel: "advisory",
     summary: "팔용지구 수위 주의보",
     channels: ["broadcast"],
     recipients: 119,
     durationMin: 6,
+    recordedBy: "시스템",
   },
   {
     id: "DSP-260729-004",
-    at: "2026-07-29T04:07:00",
+    sentAt: "2026-07-29T04:07:00",
     eventId: "EVT-260729-003",
+    dispatchKind: "sop",
+    responseLevel: "advisory",
     summary: "구항지구 수위 주의보",
     channels: ["broadcast"],
     recipients: 187,
     durationMin: 5,
+    recordedBy: "시스템",
   },
   {
     id: "DSP-260729-002",
-    at: "2026-07-29T03:17:00",
+    sentAt: "2026-07-29T03:17:00",
     eventId: "EVT-260729-001",
+    dispatchKind: "sop",
+    responseLevel: "evacuate",
     summary: "서항지구 수위 대피",
     channels: ["sms", "broadcast", "sign", "projector"],
     recipients: 412,
     durationMin: 2,
+    recordedBy: "시스템",
   },
   {
     id: "DSP-260728-003",
-    at: "2026-07-28T21:13:00",
+    sentAt: "2026-07-28T21:13:00",
     eventId: "EVT-260728-002",
+    dispatchKind: "sop",
+    responseLevel: "warning",
     summary: "서항지구 수위 경보",
     channels: ["sms", "broadcast"],
     recipients: 412,
     durationMin: 3,
+    recordedBy: "시스템",
   },
   {
     id: "DSP-260718-001",
-    at: "2026-07-18T15:09:00",
+    sentAt: "2026-07-18T15:09:00",
     eventId: "EVT-260718-001",
+    dispatchKind: "sop",
+    responseLevel: "advisory",
     summary: "여좌천 강우 주의보",
     channels: ["broadcast"],
     recipients: 176,
     durationMin: 4,
+    recordedBy: "시스템",
   },
   {
     id: "DSP-260716-003",
-    at: "2026-07-16T05:44:00",
+    sentAt: "2026-07-16T05:44:00",
     eventId: "EVT-260716-002",
+    dispatchKind: "sop",
+    responseLevel: "advisory",
     summary: "봉암지구 수위 주의보",
     channels: ["broadcast"],
     recipients: 328,
     durationMin: 4,
+    recordedBy: "시스템",
   },
 ];
 

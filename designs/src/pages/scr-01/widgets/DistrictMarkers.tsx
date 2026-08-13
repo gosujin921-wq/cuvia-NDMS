@@ -73,10 +73,24 @@ function DistrictMarker({
   const event = activeEventOfAt(district.id, now);
   const spec = event ? levelSpec(eventViewAt(event, now).level) : null;
 
+  /* 시 전체 배율에서 이름표끼리 겹친다. 가리키는 지구를 z 1 로 올려 뒤에 깔린 이름표가
+     읽히게 한다(호버 확대 105% 도 잘리지 않는다). 손을 떼면 원래 층으로 돌아가고,
+     팝업 z 2 는 넘지 않는다 (03 §0-5 층서) */
+  const raise = () => {
+    host.style.zIndex = "1";
+  };
+  const drop = () => {
+    host.style.zIndex = "";
+  };
+
   return createPortal(
     <button
       type="button"
       onClick={() => onOpen(district)}
+      onMouseEnter={raise}
+      onMouseLeave={drop}
+      onFocus={raise}
+      onBlur={drop}
       aria-label={`${district.name} ${district.kind}${spec ? ` · ${spec.label} 발생 중` : ""}`}
       className={cn(
         "glass-light pointer-events-auto flex cursor-pointer items-center gap-1.5 whitespace-nowrap",

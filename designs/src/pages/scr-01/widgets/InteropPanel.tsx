@@ -12,8 +12,8 @@ import { useScenario } from "../../../state/ScenarioProvider";
 
 export function InteropPanel() {
   /* 정상 3곳은 시계를 따라 흐르고 경남만 09:02 에 멈춰 격차가 벌어진다 (04 §6) */
-  const { now } = useScenario();
-  const links = interopLinksAt(now);
+  const { now, track } = useScenario();
+  const links = interopLinksAt(now, track);
   const broken = links.filter((link) => link.status === "끊김").length;
 
   return (

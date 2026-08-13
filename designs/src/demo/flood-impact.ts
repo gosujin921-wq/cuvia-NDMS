@@ -32,15 +32,36 @@ const SEOHANG_IMPACT: FloodImpactRow[] = [
   { level: 4.31, areaHa: 3.4, buildings: 52, roadM: 700, wharfRoad: true, evacuees: 412 },
 ];
 
-/** 표의 시작점 아래로는 주의보 기준(2.9)에서 0 으로 잦아든다 — 표에 없는 구간의 보간 앵커 */
-const ZERO_ANCHOR: FloodImpactRow = {
-  level: 2.9,
-  areaHa: 0,
-  buildings: 0,
-  roadM: 0,
-  wharfRoad: false,
-  evacuees: 0,
+/** 04 §15-8 표 그대로 — 봉암 배수구역. 대피 대상은 저지대 영향 시작(4.30)에서 뜬다 */
+const BONGAM_IMPACT: FloodImpactRow[] = [
+  { level: 4.02, areaHa: 0.6, buildings: 2, roadM: 150, wharfRoad: false, evacuees: 0 },
+  { level: 4.3, areaHa: 1.4, buildings: 11, roadM: 240, wharfRoad: true, evacuees: 328 },
+  { level: 4.68, areaHa: 2.9, buildings: 41, roadM: 470, wharfRoad: true, evacuees: 328 },
+  { level: 5.83, areaHa: 5.1, buildings: 118, roadM: 890, wharfRoad: true, evacuees: 328 },
+];
+
+/**
+ * 지구별 표와 그 지구의 임계값 (04 §12 · §15-8).
+ *
+ *   zeroLevel     — 이 아래로는 영향이 0 으로 잦아든다(표에 없는 구간의 보간 앵커)
+ *   evacueeLevel  — 대피 대상이 뜨는 수위. 서항은 계측 대피 기준(4.2)과 같고,
+ *                   봉암은 **계측 기준(5.83)이 아니라 저지대 영향 시작 조건(4.30)** 이다.
+ *                   봉암에서 계측이 끝내 대피 기준에 닿지 않는데도 대피를 권고하는
+ *                   근거가 이 한 줄이다(04 §15-9)
+ *   evacuees      — 대피 대상 수. 사람 수는 "기준을 넘으면 전체"지 비례가 아니라 보간하지 않는다
+ *   roadNote      — 도로 전 구간 통제 여부의 기준 수위
+ */
+const TABLES: Record<
+  string,
+  { rows: FloodImpactRow[]; zeroLevel: number; evacueeLevel: number; evacuees: number }
+> = {
+  seohang: { rows: SEOHANG_IMPACT, zeroLevel: 2.9, evacueeLevel: 4.2, evacuees: 412 },
+  bongam: { rows: BONGAM_IMPACT, zeroLevel: 3.83, evacueeLevel: 4.3, evacuees: 328 },
 };
+
+function zeroAnchor(level: number): FloodImpactRow {
+  return { level, areaHa: 0, buildings: 0, roadM: 0, wharfRoad: false, evacuees: 0 };
+}
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -51,8 +72,10 @@ function lerp(a: number, b: number, t: number): number {
  * 대피 대상은 보간하지 않는다 — 사람 수는 "기준을 넘으면 전체"지 비례가 아니다.
  */
 export function floodImpactAt(districtId: string, level: number): FloodImpactRow | null {
-  if (districtId !== "seohang") return null;
-  const rows = [ZERO_ANCHOR, ...SEOHANG_IMPACT];
+  const table = TABLES[districtId];
+  if (!table) return null;
+  const rows = [zeroAnchor(table.zeroLevel), ...table.rows];
+  const evacuated = level >= table.evacueeLevel;
 
   if (level <= rows[0].level) return { ...rows[0], level };
   const last = rows[rows.length - 1];
@@ -68,8 +91,8 @@ export function floodImpactAt(districtId: string, level: number): FloodImpactRow
       areaHa: Number(lerp(lo.areaHa, hi.areaHa, t).toFixed(1)),
       buildings: Math.round(lerp(lo.buildings, hi.buildings, t)),
       roadM: Math.round(lerp(lo.roadM, hi.roadM, t) / 10) * 10,
-      wharfRoad: level >= 4.2,
-      evacuees: level >= 4.2 ? 412 : 0,
+      wharfRoad: evacuated,
+      evacuees: evacuated ? table.evacuees : 0,
     };
   }
   return null;

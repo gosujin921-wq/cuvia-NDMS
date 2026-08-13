@@ -7,7 +7,8 @@
 
 import { Icon } from "@iconify/react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ds";
-import { WEATHER } from "../../../demo/weather";
+import { weatherOf } from "../../../demo/weather";
+import { useScenario } from "../../../state/ScenarioProvider";
 import { hourlyForecast, type ForecastSlot } from "../../../demo/measurements";
 
 /** 표의 세 줄 — 시각 열은 헤더가 맡고, 여기는 값 줄만 정의한다 */
@@ -19,6 +20,9 @@ const ROWS: { label: string; value: (slot: ForecastSlot) => string }[] = [
 
 export function TwinWeather({ districtId }: { districtId: string }) {
   const slots = hourlyForecast(districtId).slice(0, 6);
+  /* 기상은 트랙이 정한다 (04 §15-4). 트윈의 날씨효과도 이 값을 따라간다 */
+  const { track } = useScenario();
+  const WEATHER = weatherOf(track);
 
   return (
     <section className="flex flex-col gap-2 p-3" aria-label="날씨">

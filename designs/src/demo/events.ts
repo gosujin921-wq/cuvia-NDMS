@@ -78,7 +78,48 @@ export interface AlertEvent {
   stages?: StageChange[];
 }
 
+/** 주인공 사건 id — 승인·SOP·타임라인의 무대 (04 §4-2) */
+export const HERO_EVENT_ID = "EVT-260812-006";
+
 export const EVENTS: AlertEvent[] = [
+  {
+    /* 트랙 B 주인공 (04 §15-3) — 내수침수. 주의보(08:26) → 경보 격상(08:52 · B3 발사)
+       → 최고 4.83(10:12 · 단계는 경보 유지) → 해제(11:52). 계측이 끝내 대피 기준(5.83)에
+       닿지 않는 것이 이 트랙의 정체성이다 — 승인 대응등급만 대피로 오른다 */
+    id: "EVT-260813-002",
+    districtId: "bongam",
+    deviceId: "bongam-WL-002",
+    device: "수위계 2호기",
+    type: "수위",
+    hazardType: "내수침수",
+    level: "advisory",
+    raisedAt: "2026-08-13T08:26:00",
+    clearedAt: "2026-08-13T11:52:00",
+    value: 3.47,
+    unit: "EL.m",
+    stages: [
+      { at: "2026-08-13T08:26:00", level: "advisory", value: 3.47 },
+      { at: "2026-08-13T08:52:00", level: "warning", value: 4.02 },
+    ],
+  },
+  {
+    /* 트랙 B 선행 사건 (04 §15-3) — 집중호우. 비가 먼저, 물이 나중 (그 사이 21분) */
+    id: "EVT-260813-001",
+    districtId: "bongam",
+    deviceId: "bongam-RN-001",
+    device: "강우량계 1호기",
+    type: "강우",
+    hazardType: "집중호우",
+    level: "advisory",
+    raisedAt: "2026-08-13T08:14:00",
+    clearedAt: "2026-08-13T10:35:00",
+    value: 32,
+    unit: "mm/h",
+    stages: [
+      { at: "2026-08-13T08:14:00", level: "advisory", value: 32 },
+      { at: "2026-08-13T08:31:00", level: "warning", value: 54 },
+    ],
+  },
   {
     /* 주인공 사건 — 주의보(17:05) → 경보 격상(17:22 · 시연 중 목격) → 대피 도달(19:22)
        → 해제(21:48). 시연 시계(S0=17:16)에서는 아직 주의보고, S8(22:10)에서는 해제다 */
@@ -107,8 +148,10 @@ export const EVENTS: AlertEvent[] = [
     type: "수위",
     hazardType: "폭풍해일",
     level: "advisory",
+    /* 8/12 밤 해제 — 서항 S8(22:10)의 "상황 종료 후"와 맞고, 봉암 트랙(8/13)에
+       폭풍해일 사건이 남지 않는다 (04 §15) */
     raisedAt: "2026-08-12T17:05:00",
-    clearedAt: null,
+    clearedAt: "2026-08-12T21:20:00",
     value: 2.81,
     unit: "EL.m",
   },
@@ -121,7 +164,7 @@ export const EVENTS: AlertEvent[] = [
     hazardType: "폭풍해일",
     level: "advisory",
     raisedAt: "2026-08-12T16:48:00",
-    clearedAt: null,
+    clearedAt: "2026-08-12T21:05:00",
     value: 2.84,
     unit: "EL.m",
   },
@@ -363,14 +406,60 @@ export function activeEventsAt(now: Date): AlertEvent[] {
   return EVENTS.filter((e) => eventViewAt(e, now).active);
 }
 
-/** 지구별 진행 중 이벤트. 지도·목록에서 지구를 단계 색으로 세울 때 쓴다 */
+/** 지구별 **대표** 진행 이벤트 (04 §15-3 대표 사건 규칙 · 전 트랙 공통).
+ *  높은 계측 단계 우선, 동률이면 가장 최근 격상 사건 우선. 봉암 트랙에서 B3 격상
+ *  순간 대표가 집중호우 → 내수침수로 갈아타는 것이 이 규칙 하나에서 나온다 */
 export function activeEventOfAt(districtId: string, now: Date): AlertEvent | undefined {
-  return activeEventsAt(now).find((e) => e.districtId === districtId);
+  const RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
+  return activeEventsAt(now)
+    .filter((e) => e.districtId === districtId)
+    .map((e) => ({ e, view: eventViewAt(e, now) }))
+    .sort(
+      (a, b) =>
+        RANK[b.view.level] - RANK[a.view.level] ||
+        new Date(b.view.stageAt).getTime() - new Date(a.view.stageAt).getTime(),
+    )[0]?.e;
 }
 
 /** 장비별 진행 중 이벤트. 그 장비 자리에 이벤트 핀을 세울지 판단한다 (03 §0-5) */
 export function activeEventOfDeviceAt(deviceId: string, now: Date): AlertEvent | undefined {
   return activeEventsAt(now).find((e) => e.deviceId === deviceId);
+}
+
+/* ── 현재 주요 재난 (04 §4-7) ──────────────────────────────
+ * SCR-01 좌측 카드. 진행 중 사건을 재난유형으로 묶어 사건 수가 가장 많은 유형을
+ * 세운다(동률이면 최고 계측 단계가 높은 쪽). 시연 내내 폭풍해일 하나다.
+ * ───────────────────────────────────────────────────────── */
+
+const LEVEL_RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
+
+export interface MajorDisaster {
+  hazardType: HazardType;
+  /** 표시명. hazardLabel() 결과 */
+  label: string;
+  /** 이 유형의 진행 중 사건. 원장 순서(최신순) */
+  events: AlertEvent[];
+  /** 진행 중 사건들의 최고 계측 단계 (now 기준) */
+  topLevel: AlertLevel;
+}
+
+export function majorDisasterAt(now: Date): MajorDisaster | null {
+  const active = activeEventsAt(now);
+  if (active.length === 0) return null;
+
+  const groups = new Map<HazardType, AlertEvent[]>();
+  for (const event of active) {
+    groups.set(event.hazardType, [...(groups.get(event.hazardType) ?? []), event]);
+  }
+  const topOf = (events: AlertEvent[]): AlertLevel =>
+    events
+      .map((e) => eventViewAt(e, now).level)
+      .reduce((a, b) => (LEVEL_RANK[b] > LEVEL_RANK[a] ? b : a));
+
+  const [hazardType, events] = [...groups.entries()].sort(
+    (a, b) => b[1].length - a[1].length || LEVEL_RANK[topOf(b[1])] - LEVEL_RANK[topOf(a[1])],
+  )[0];
+  return { hazardType, label: hazardLabel(hazardType), events, topLevel: topOf(events) };
 }
 
 /* ── 최근 30일 통계 (04 §4-3) ──────────────────────────────
@@ -384,9 +473,22 @@ export function activeEventOfDeviceAt(deviceId: string, now: Date): AlertEvent |
 
 export const STATS_PERIOD_DAYS = 30;
 
-function countBy<K extends string | number>(pick: (event: AlertEvent) => K): Map<K, number> {
+/** 통계 창(최근 30일)에 드는 원장 — 트랙 시계 기준이다(04 §15). 서항 시계(8/12)에서는
+ *  봉암 8/13 사건이 미래라 빠지고, 봉암 시계에서는 창이 하루 밀려 함께 든다 */
+export function statsEventsAt(now: Date): AlertEvent[] {
+  const from = new Date(now.getTime() - STATS_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+  return EVENTS.filter((e) => {
+    const raised = new Date(e.raisedAt);
+    return raised <= now && raised > from;
+  });
+}
+
+function countBy<K extends string | number>(
+  now: Date,
+  pick: (event: AlertEvent) => K,
+): Map<K, number> {
   const acc = new Map<K, number>();
-  for (const event of EVENTS) {
+  for (const event of statsEventsAt(now)) {
     const key = pick(event);
     acc.set(key, (acc.get(key) ?? 0) + 1);
   }
@@ -396,15 +498,17 @@ function countBy<K extends string | number>(pick: (event: AlertEvent) => K): Map
 const TYPE_ORDER: EventType[] = ["수위", "강우", "변위"];
 const LEVEL_ORDER: AlertLevel[] = ["advisory", "warning", "evacuate"];
 
-export const STATS_BY_TYPE: { type: EventType; count: number }[] = (() => {
-  const counted = countBy((event) => event.type);
+export function statsByTypeAt(now: Date): { type: EventType; count: number }[] {
+  const counted = countBy(now, (event) => event.type);
   return TYPE_ORDER.map((type) => ({ type, count: counted.get(type) ?? 0 }));
-})();
+}
 
 /** 재난유형별 집계 (04 §4-3) — 도넛은 이 축으로 돌린다. 관측 축(수위·강우·변위)은
  *  재난 집계가 아니라 통계 화면의 관측 분석 축이다 */
-export function statsByHazardType(): { type: HazardType; label: string; count: number }[] {
-  const counted = countBy((event) => event.hazardType);
+export function statsByHazardTypeAt(
+  now: Date,
+): { type: HazardType; label: string; count: number }[] {
+  const counted = countBy(now, (event) => event.hazardType);
   return HAZARD_ORDER.map((type) => ({
     type,
     label: hazardLabel(type),
@@ -427,11 +531,13 @@ export function confirmedLevelAt(event: AlertEvent, now: Date): AlertLevel {
  *  버그가 아니라 사건이 진행한 결과다 */
 export function statsByLevelAt(now: Date): { level: AlertLevel; count: number }[] {
   const acc = new Map<AlertLevel, number>();
-  for (const event of EVENTS) {
+  for (const event of statsEventsAt(now)) {
     const level = confirmedLevelAt(event, now);
     acc.set(level, (acc.get(level) ?? 0) + 1);
   }
   return LEVEL_ORDER.map((level) => ({ level, count: acc.get(level) ?? 0 }));
 }
 
-export const STATS_TOTAL = EVENTS.length;
+export function statsTotalAt(now: Date): number {
+  return statsEventsAt(now).length;
+}

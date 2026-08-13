@@ -22,6 +22,11 @@ export interface NavItem {
    * 지도·3D 가 배경인 화면이 여기 해당하고, 화면 요소는 페이지가 오버레이로 얹는다.
    */
   fullBleed?: boolean;
+  /**
+   * 하단 중앙 도크가 서는 화면 — 현장영상 스트립(SCR-02 · 03 §2). 좌우 레일 사이 바닥을
+   * 도크가 쓰므로, 화면 위에 떠 있는 질의 버튼이 그 자리를 비켜 선다(AgentFab).
+   */
+  bottomDock?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -40,15 +45,9 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/scr-02",
     icon: "mdi:map-marker-radius-outline",
     fullBleed: true,
+    bottomDock: true,
   },
-  {
-    id: "event",
-    scr: "SCR-03",
-    label: "상황대응",
-    route: "/scr-03",
-    icon: "mdi:bell-ring-outline",
-    fullBleed: true,
-  },
+  /* SCR-03 상황대응은 차수 N 에서 SCR-02 재난관제로 통합 — 번호는 결번(02 §4) */
   {
     id: "statistics",
     scr: "SCR-04",

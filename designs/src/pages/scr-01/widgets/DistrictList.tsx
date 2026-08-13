@@ -1,8 +1,9 @@
 /* ─────────────────────────────────────────────
- * 위험지구 목록 — 03 화면정의서 §1 좌측
+ * 그 외 위험지구 목록 — 03 화면정의서 §1 좌측
  *
- * 12개 지구를 세로로 놓고, 진행 중인 이벤트가 있는 지구를 위로 올린다. 아침에 화면을
- * 켠 담당자가 목록을 훑어 내려가지 않고 맨 위에서 오늘 볼 것을 만나야 한다.
+ * 주요 재난 카드에 선 지구를 뺀 나머지를 세로로 놓고, 진행 중인 이벤트가 있는 지구를
+ * 위로 올린다. 아침에 화면을 켠 담당자가 목록을 훑어 내려가지 않고 맨 위에서 오늘 볼
+ * 것을 만나야 한다.
  *
  * 항목을 누르면 그 지구의 조기경보 화면(SCR-02)으로 넘어간다.
  * ───────────────────────────────────────────── */
@@ -10,7 +11,7 @@
 import { useMemo } from "react";
 import { Icon } from "@iconify/react";
 import { DISTRICTS, type District } from "../../../demo/districts";
-import { activeEventOfAt, eventViewAt, hazardLabel } from "../../../demo/events";
+import { HERO_EVENT_ID, activeEventOfAt, eventViewAt } from "../../../demo/events";
 import { processStateAt } from "../../../demo/sop";
 import { useScenario } from "../../../state/ScenarioProvider";
 import { levelSpec } from "../../../demo/levels";
@@ -19,11 +20,18 @@ import { levelSpec } from "../../../demo/levels";
 /** 정렬 가중치 — 단계가 높은 지구를 위로 */
 const LEVEL_WEIGHT: Record<string, number> = { evacuate: 3, warning: 2, advisory: 1 };
 
-export function DistrictList({ onOpen }: { onOpen: (district: District) => void }) {
+export function DistrictList({
+  onOpen,
+  excludeIds,
+}: {
+  onOpen: (district: District) => void;
+  /** 주요 재난 카드에 이미 선 지구. 같은 지구를 화면에 두 번 세우지 않는다(03 §1) */
+  excludeIds?: string[];
+}) {
   const { now, approvedResponseLevel } = useScenario();
   const ordered = useMemo(
     () =>
-      [...DISTRICTS].sort((a, b) => {
+      DISTRICTS.filter((district) => !excludeIds?.includes(district.id)).sort((a, b) => {
         const ea = activeEventOfAt(a.id, now);
         const eb = activeEventOfAt(b.id, now);
         const wa = ea ? LEVEL_WEIGHT[eventViewAt(ea, now).level] : 0;
@@ -35,7 +43,7 @@ export function DistrictList({ onOpen }: { onOpen: (district: District) => void 
         if (tb !== ta) return tb - ta;
         return a.id === "seohang" ? -1 : b.id === "seohang" ? 1 : 0;
       }),
-    [now],
+    [now, excludeIds],
   );
 
   return (
@@ -68,7 +76,8 @@ export function DistrictList({ onOpen }: { onOpen: (district: District) => void 
                 </span>
                 <span className="truncate text-caption text-foreground-muted">
                   {event && view && spec
-                    ? `${hazardLabel(event.hazardType)} ${spec.label} · ${view.value} ${event.unit} · ${processStateAt(event, now, event.id === "EVT-260812-006" ? approvedResponseLevel : null)}`
+                    ? /* 재난유형은 행에서 반복하지 않는다(03 §1). 주요 재난 카드가 이미 말했다 */
+                      `${spec.label} ${view.value} ${event.unit} · ${processStateAt(event, now, event.id === HERO_EVENT_ID ? approvedResponseLevel : null)}`
                     : district.target}
                 </span>
               </span>

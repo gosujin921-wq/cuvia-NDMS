@@ -8,13 +8,15 @@
  * 상태로 올리면 드래그 내내 리렌더가 돌아 마커가 한 프레임씩 밀린다.
  * ───────────────────────────────────────────── */
 
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import maplibregl from "maplibre-gl";
-import { activeEventOfDeviceAt, eventViewAt } from "../../../demo/events";
+import { activeEventOfAt, activeEventOfDeviceAt, eventViewAt } from "../../../demo/events";
 import { useScenario } from "../../../state/ScenarioProvider";
 import type { Device } from "../../../demo/devices";
 import { DevicePin, EventPin } from "../../../components/MapPins";
+import { ClusterMarkers, clusterDevices, useMapZoom } from "../../../components/MapClusters";
+import { DISTRICT_ZOOM } from "../../../lib/map-config";
 
 interface DeviceMarkersProps {
   map: RefObject<maplibregl.Map | null>;
@@ -25,11 +27,26 @@ interface DeviceMarkersProps {
 }
 
 export function DeviceMarkers({ map, ready, devices, selectedId, onSelect }: DeviceMarkersProps) {
+  const { now } = useScenario();
+  const zoom = useMapZoom(map, ready);
+
+  /* 겹치면 묶는다(03 §0-5). 이벤트를 낸 장비와 선택(팝업 열린) 장비는 묶지 않는다 —
+     사건과 지금 보는 장비는 항상 낱개로 선다 */
+  const { singles, clusters } = useMemo(() => {
+    const exclude = new Set<string>();
+    for (const device of devices) {
+      if (device.id === selectedId || activeEventOfDeviceAt(device.id, now)) {
+        exclude.add(device.id);
+      }
+    }
+    return clusterDevices(devices, zoom ?? DISTRICT_ZOOM, exclude);
+  }, [devices, zoom, selectedId, now]);
+
   if (!ready) return null;
 
   return (
     <>
-      {devices.map((device) => (
+      {singles.map((device) => (
         <DeviceMarkerItem
           key={device.id}
           map={map}
@@ -38,6 +55,7 @@ export function DeviceMarkers({ map, ready, devices, selectedId, onSelect }: Dev
           onSelect={onSelect}
         />
       ))}
+      <ClusterMarkers map={map} clusters={clusters} />
     </>
   );
 }
@@ -71,8 +89,20 @@ function DeviceMarkerItem({
   }, [map, host, device]);
 
   const { now } = useScenario();
-  const event = activeEventOfDeviceAt(device.id, now);
+  /* 이벤트 핀은 **지구당 대표 사건 하나**만 세운다 (04 §15-3 대표 사건 규칙).
+     한 지구에 사건이 둘인 트랙(봉암 · 집중호우 + 내수침수)에서 핀을 둘 다 세우면
+     "지금 무엇을 보는 화면인가"가 지도에서 갈리고, 격상 순간 대표가 갈아타도 앞
+     사건의 핀이 남아 아무것도 바뀌지 않은 것처럼 보인다. 대표에서 밀린 사건은
+     장치 핀으로 돌아가고, 그 사건은 상단 사건 바의 진행 사건 전환이 맡는다 */
+  const lead = activeEventOfAt(device.districtId, now);
+  const own = activeEventOfDeviceAt(device.id, now);
+  const event = own && lead && own.id === lead.id ? own : undefined;
   const view = event ? eventViewAt(event, now) : null;
+
+  /* 이벤트 핀은 장치·클러스터 핀 위에 선다(03 §0-5). 팝업(z 2)은 그 위 */
+  useEffect(() => {
+    host.style.zIndex = event ? "1" : "";
+  }, [host, event]);
 
   /* 지도 클릭으로 전파되면 팝업이 열리자마자 닫힌다 */
   const handleClick = (e: React.MouseEvent) => {

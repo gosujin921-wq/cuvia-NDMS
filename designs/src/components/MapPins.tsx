@@ -11,6 +11,10 @@
  *
  * 장비 상태(점검중·통신끊김)는 이벤트가 아니다. 핀을 흐리게 눕히고 배지로만 알린다.
  *
+ * 장치 핀 호버 = 피커 팝오버(장비명·종류·상태·설치 지점). 클릭 팝업 전에 "이게 무슨
+ * 장비인가"만 빠르게 확인하는 요약 층이라 측정값은 싣지 않는다(03 §0-5). DS picker prop
+ * 하나로 붙어서 장치 핀을 쓰는 세 화면(SCR-02·03·05)에 같은 문법으로 적용된다.
+ *
  * ▸ 이 파일은 DS MapMarker 를 도메인(장치/이벤트)으로 감싼 얇은 층이다 — 마커 렌더 자체는
  *   DS 정본을 쓴다. 대응하는 제품 정본은 cuvia_platform_web kits/gis-kit 의 MapPin /
  *   MapMarkerLayer(좌표고정 WebGL 판). 마커가 수백 개로 늘면 DOM 마커 대신 그쪽으로 간다.
@@ -59,6 +63,19 @@ export function DevicePin({ device, selected, onClick }: DevicePinProps) {
             ? { icon: "mdi:wrench", tone: "var(--color-foreground-muted)", label: "점검중" }
             : undefined
       }
+      picker={{
+        title: device.name,
+        rows: [
+          { label: "종류", value: spec.label },
+          {
+            label: "상태",
+            value: device.status,
+            /* 통신끊김만 위험색 — 배지 톤과 같은 값. 점검중은 중립(§0-5 "장비 상태는 이벤트가 아니다") */
+            tone: device.status === "통신끊김" ? "var(--color-danger)" : undefined,
+          },
+          { label: "설치 지점", value: device.spot },
+        ],
+      }}
       onClick={onClick}
       aria-label={`${spec.label} · ${device.name} · ${device.status}`}
     />

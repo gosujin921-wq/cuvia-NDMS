@@ -1,27 +1,41 @@
 /* ─────────────────────────────────────────────
  * 장비 팝업 — 03 화면정의서 §2 마커 팝업
  *
- * 계측 장비는 위치·상태·최근 측정값·추이를, CCTV 는 현장 영상을 보여준다.
- * 통신끊김 장비는 마지막 수신 시각만 세우고 그래프 자리를 비운다. 끊긴 장비가 옛 값을
- * 현재값처럼 보이면 안 된다.
+ * 이벤트 핀으로 열면 **사건이 본문이다**: 사건 띠(단계·값·시각) 아래 재난유형·처리상태·
+ * 초과 기준·발생/격상이 서고, 장비 정보는 지점·상태로 압축된다 — 이벤트 핀은 감지한
+ * 장비가 사건으로 바뀐 것이라(§0-5), 눌렀을 때 장비 대장이 아니라 사건이 나와야 한다.
+ * 장치 핀(진행 사건 없음)은 장비 요약이다: 주소·지점·좌표·상태·현재값.
+ * 둘 다 [상세 측정현황 보기](장비 층의 길 · SCR-04)로 닫는다.
+ *
+ * 추이 그래프·기준선·위험도 판정·[이 사건 대응하기]는 싣지 않는다 — 추이는 좌측 계측
+ * 추이가, 판정·실행은 우측 판단·대응 레일이 이미 화면에 들고 있고, 팝업에 되풀이하면
+ * 같은 값이 두 벌씩 서서 격상 순간 함께 갱신할 자리만 는다(03 §2).
+ *
+ * CCTV 는 현장 영상을 보여준다. 통신끊김 장비는 현재값 대신 마지막 수신 시각을
+ * 세운다 — 끊긴 장비가 옛 값을 현재값처럼 보이면 안 된다.
  * ───────────────────────────────────────────── */
 
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@iconify/react";
-import { Button, GlassPanel, StatusDotLabel, cn } from "@ds";
-import { deviceKindSpec, type Device } from "../../../demo/devices";
-import { latestValue, sensorSeries } from "../../../demo/measurements";
+import { Button, GlassPanel, StatusDotLabel, Tag } from "@ds";
+import { cctvSceneOf, deviceKindSpec, type Device } from "../../../demo/devices";
+import { CctvScene } from "../../../components/CctvScene";
+import { latestValue } from "../../../demo/measurements";
+import {
+  activeEventOfDeviceAt,
+  eventViewAt,
+  hazardLabel,
+  type AlertEvent,
+  type EventView,
+} from "../../../demo/events";
 import {
   DISPLACEMENT_THRESHOLD,
   RAIN_THRESHOLD,
   WATER_THRESHOLDS,
-  ALERT_LEVELS,
   levelSpec,
 } from "../../../demo/levels";
-import { activeEventOfDeviceAt, eventViewAt } from "../../../demo/events";
-import { assessRisk } from "../../../demo/risk";
+import { processStateAt } from "../../../demo/sop";
 import { useScenario } from "../../../state/ScenarioProvider";
-import { TrendChart, chartRange } from "../../../components/TrendChart";
 import { formatClock } from "../../../lib/datetime";
 
 const STATUS_TONE = {
@@ -30,18 +44,28 @@ const STATUS_TONE = {
   통신끊김: "danger",
 } as const;
 
-export function DevicePopup({ device, onClose }: { device: Device; onClose: () => void }) {
+export function DevicePopup({
+  device,
+  onClose,
+  onRespond,
+}: {
+  device: Device;
+  onClose: () => void;
+  /** [이 사건 대응하기] — 대응 실행 집중 팝업을 연다(03 §2). 우측 [대응 실행]과 같은
+   *  팝업의 두 번째 진입로. 판정할 거리가 생긴 주인공 진행 사건에서만 온다 */
+  onRespond?: () => void;
+}) {
   const { now } = useScenario();
   const spec = deviceKindSpec(device.kind);
   const event = activeEventOfDeviceAt(device.id, now);
   const view = event ? eventViewAt(event, now) : null;
 
   return (
-    <GlassPanel className="w-[320px] overflow-hidden" borderStyle="none">
+    <GlassPanel className="w-[300px] overflow-hidden" borderStyle="none">
       <header className="flex items-start gap-2 border-b border-border px-3 py-2.5">
         <span
           className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded"
-          style={{ backgroundColor: spec.color }}
+          style={{ backgroundColor: spec.color ?? "var(--color-surface-raised)" }}
         >
           <Icon icon={spec.icon} className="size-3.5 text-white" aria-hidden />
         </span>
@@ -59,9 +83,9 @@ export function DevicePopup({ device, onClose }: { device: Device; onClose: () =
         </button>
       </header>
 
-      {/* 이벤트 핀을 눌러 연 팝업 — 무슨 일이 났는지가 장비 정보보다 먼저다 */}
+      {/* 사건 띠 — 이벤트 핀으로 연 팝업은 사건이 먼저다. 격상되면 색·라벨·값·시각이
+          함께 바뀐다. 판정·실행은 여기 없다 — 우측 판단·대응 레일이 항상 보인다(03 §2) */}
       {event && view && (
-        /* 격상되면 머리의 색·라벨·값·시각이 한 번에 바뀐다(03 §2) — 전부 view 에서 나온다 */
         <div
           className="flex items-center gap-2 border-b border-border px-3 py-2"
           style={{ borderLeft: `3px solid ${levelSpec(view.level).color}` }}
@@ -81,8 +105,118 @@ export function DevicePopup({ device, onClose }: { device: Device; onClose: () =
         </div>
       )}
 
-      {device.kind === "CV" ? <CctvBody device={device} /> : <SensorBody device={device} />}
+      {device.kind === "CV" ? (
+        <CctvBody device={device} />
+      ) : event && view ? (
+        <EventBody device={device} event={event} view={view} onRespond={onRespond} />
+      ) : (
+        <SensorBody device={device} />
+      )}
     </GlassPanel>
+  );
+}
+
+/* ── 이벤트 핀 본문 — 사건 정보가 장비 정보보다 먼저다 (03 §2 마커 팝업) ────── */
+
+function EventBody({
+  device,
+  event,
+  view,
+  onRespond,
+}: {
+  device: Device;
+  event: AlertEvent;
+  view: EventView;
+  onRespond?: () => void;
+}) {
+  const { now, approvedResponseLevel } = useScenario();
+  const navigate = useNavigate();
+  const spec = deviceKindSpec(device.kind);
+  const sample = latestValue(device, now);
+  const levelColor = levelSpec(view.level).color;
+
+  /* 초과한 발령 기준 — 단계 판정의 근거를 값 옆에 세운다 (04 §3) */
+  const base =
+    event.type === "수위"
+      ? WATER_THRESHOLDS[event.districtId]
+      : event.type === "강우"
+        ? RAIN_THRESHOLD
+        : DISPLACEMENT_THRESHOLD;
+  const threshold = base?.[view.level];
+
+  return (
+    <div className="flex flex-col gap-3 p-3">
+      <dl className="flex flex-col gap-1 text-caption">
+        <div className="flex items-center gap-2">
+          <dt className="w-14 shrink-0 text-foreground-subtle">재난유형</dt>
+          <dd className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="font-medium text-foreground">{hazardLabel(event.hazardType)}</span>
+            <Tag className="shrink-0">{processStateAt(event, now, approvedResponseLevel)}</Tag>
+          </dd>
+        </div>
+        {threshold !== undefined && (
+          <div className="flex items-baseline gap-2">
+            <dt className="w-14 shrink-0 text-foreground-subtle">초과 기준</dt>
+            <dd className="text-foreground-muted">
+              <span style={{ color: levelColor }}>{levelSpec(view.level).label}</span>{" "}
+              <span className="font-mono text-foreground">{threshold}</span> {event.unit}
+            </dd>
+          </div>
+        )}
+        <div className="flex items-baseline gap-2">
+          <dt className="w-14 shrink-0 text-foreground-subtle">발생</dt>
+          <dd className="font-mono text-foreground-muted">
+            {formatClock(new Date(event.raisedAt))}
+          </dd>
+          {view.escalated && (
+            <>
+              <dt className="shrink-0 text-foreground-subtle">격상</dt>
+              <dd className="font-mono" style={{ color: levelColor }}>
+                {formatClock(new Date(view.stageAt))}
+              </dd>
+            </>
+          )}
+        </div>
+        {/* 장비는 지점·상태로 압축 — 대장(주소·좌표)은 장치 핀 팝업·SCR-04 몫 */}
+        <div className="flex items-center gap-2">
+          <dt className="w-14 shrink-0 text-foreground-subtle">탐지 장비</dt>
+          <dd className="flex min-w-0 flex-1 items-center gap-1.5 text-foreground-muted">
+            <span className="truncate">지점 {device.spot}</span>
+            <StatusDotLabel
+              status={STATUS_TONE[device.status]}
+              label={device.status}
+              className="shrink-0"
+            />
+          </dd>
+        </div>
+      </dl>
+
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-h4 font-semibold text-foreground">{sample.value}</span>
+        <span className="text-caption text-foreground-muted">{spec.unit}</span>
+        <span className="ml-auto text-caption text-foreground-subtle">
+          {formatClock(sample.at)} 기준
+        </span>
+      </div>
+
+      {/* 사건 층의 길과 장비 층의 길이 나란히 — [이 사건 대응하기]는 우측 [대응 실행]과
+          같은 집중 팝업을 연다. 대응할 판정이 없으면(격상 전) 서지 않는다 */}
+      <div className="flex gap-1.5">
+        {onRespond && (
+          <Button size="sm" onClick={onRespond} className="flex-1">
+            이 사건 대응하기
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => navigate(`/scr-04?device=${device.id}`)}
+          className="flex-1"
+        >
+          상세 측정현황 보기
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -92,23 +226,6 @@ function SensorBody({ device }: { device: Device }) {
   const spec = deviceKindSpec(device.kind);
   const offline = device.status === "통신끊김";
   const sample = latestValue(device, now);
-  const series = offline ? [] : sensorSeries(device, now);
-
-  const base =
-    device.kind === "WL"
-      ? WATER_THRESHOLDS[device.districtId]
-      : device.kind === "RN"
-        ? RAIN_THRESHOLD
-        : DISPLACEMENT_THRESHOLD;
-
-  const thresholds = base
-    ? ALERT_LEVELS.map((level) => ({
-        value: base[level.id],
-        color: level.color,
-        label: level.label,
-      }))
-    : [];
-  const range = chartRange(series.length ? series : [{ at: sample.at, value: sample.value }], thresholds);
 
   return (
     <div className="flex flex-col gap-3 p-3">
@@ -144,59 +261,35 @@ function SensorBody({ device }: { device: Device }) {
           <span className="text-caption text-foreground-subtle">계측이 끊겨 현재값이 없습니다</span>
         </div>
       ) : (
-        <>
-          <div className="flex items-baseline gap-2">
-            <span className="font-mono text-h4 font-semibold text-foreground">{sample.value}</span>
-            <span className="text-caption text-foreground-muted">{spec.unit}</span>
-            <span className="ml-auto text-caption text-foreground-subtle">
-              {formatClock(sample.at)} 기준
-            </span>
-          </div>
-
-          <TrendChart
-            samples={series}
-            thresholds={thresholds}
-            unit={spec.unit}
-            ariaLabel={`${device.name} 최근 6시간 추이`}
-          />
-
-          {/* 그래프에 그려지지 않은 기준선은 흐리게 둔다. 값이 아직 그만큼 오르지 않아
-              축 범위 밖이라는 뜻이고, 선이 안 보이는 것이 오류로 읽히면 안 된다 */}
-          <ul className="flex items-center justify-between gap-1 text-caption">
-            {thresholds.map((t) => {
-              const drawn = t.value >= range.min && t.value <= range.max;
-              return (
-                <li key={t.label} className={cn("flex items-center gap-1", !drawn && "opacity-45")}>
-                  <span
-                    className="h-0 w-3 shrink-0 border-t border-dashed"
-                    style={{ borderColor: t.color }}
-                    aria-hidden
-                  />
-                  <span className="text-foreground-subtle">{t.label}</span>
-                  <span className="font-mono text-foreground-muted">{t.value}</span>
-                </li>
-              );
-            })}
-          </ul>
-
-          <RiskMini device={device} />
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate(`/scr-04?device=${device.id}`)}
-            className="w-full"
-          >
-            상세 측정현황 보기
-          </Button>
-        </>
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-h4 font-semibold text-foreground">{sample.value}</span>
+          <span className="text-caption text-foreground-muted">{spec.unit}</span>
+          <span className="ml-auto text-caption text-foreground-subtle">
+            {formatClock(sample.at)} 기준
+          </span>
+        </div>
       )}
+
+      {/* 장비 층의 길 — 이 장비의 측정 상세(SCR-04). 사건 층의 길([대응 실행])은
+          우측 레일이 항상 들고 있어 팝업에 싣지 않는다 */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => navigate(`/scr-04?device=${device.id}`)}
+        className="w-full"
+      >
+        상세 측정현황 보기
+      </Button>
     </div>
   );
 }
 
 function CctvBody({ device }: { device: Device }) {
+  const { now } = useScenario();
   const offline = device.status !== "정상";
+  /* 장면이 등재된 주요 CCTV(04 §2-5)는 시연 영상을 튼다. 연출임을 라벨로 밝힌다 —
+     실황처럼 팔면 "그 영상 실제냐" 한 마디에 시연이 무너진다(05 S3) */
+  const scene = cctvSceneOf(device);
 
   return (
     <div className="flex flex-col gap-2 p-3">
@@ -206,9 +299,19 @@ function CctvBody({ device }: { device: Device }) {
             <Icon icon="mdi:video-off" className="size-6 text-foreground-subtle" aria-hidden />
             <span className="text-caption text-foreground-subtle">{device.status}</span>
           </div>
+        ) : scene ? (
+          <>
+            <CctvScene kind={scene.kind} className="absolute inset-0" />
+            <span className="absolute left-2 top-2 rounded bg-surface px-1.5 py-0.5 text-caption text-foreground">
+              시연 영상
+            </span>
+            <span className="absolute bottom-1.5 right-2 font-mono text-caption text-foreground">
+              {formatClock(now)}
+            </span>
+          </>
         ) : (
           <>
-            {/* 데모에는 실제 스트림이 없다. 채널이 살아 있다는 것만 보인다 */}
+            {/* 장면 미등재 CCTV — 채널이 살아 있다는 것만 보인다 */}
             <div className="flex flex-col items-center gap-1">
               <Icon icon="mdi:cctv" className="size-7 text-foreground-subtle" aria-hidden />
               <span className="text-caption text-foreground-subtle">실시간 영상</span>
@@ -220,49 +323,10 @@ function CctvBody({ device }: { device: Device }) {
           </>
         )}
       </div>
-      <p className="text-caption text-foreground-muted">{device.address}</p>
-    </div>
-  );
-}
-
-/* ── 위험도 카드 (03 §2 · 04 §10) ──────────────────────────
- * 격상과 함께 나타난다 — 계측은 경보인데 만조 조건이면 대피 기준을 넘는다는 것이
- * 같은 팝업 안에서 읽힌다. 이 화면에서는 판정만 보인다. 절차와 실행은 상황대응 몫이다.
- * ───────────────────────────────────────────── */
-
-function RiskMini({ device }: { device: Device }) {
-  const { now } = useScenario();
-  const event = activeEventOfDeviceAt(device.id, now);
-  if (!event) return null;
-  const risk = assessRisk(event, now);
-  if (!risk.scenario) return null;
-
-  const measuredSpec = levelSpec(risk.measured.level);
-  const recommendedSpec = levelSpec(risk.recommended);
-
-  return (
-    <div className="flex flex-col gap-1 rounded border border-border p-2 text-caption">
-      <div className="flex items-baseline gap-2">
-        <span className="w-[104px] shrink-0 text-foreground-subtle">계측</span>
-        <span className="font-medium" style={{ color: measuredSpec.color }}>
-          {measuredSpec.label}
-        </span>
-        <span className="ml-auto font-mono text-foreground">
-          {risk.measured.value} {event.unit}
-        </span>
-      </div>
-      <div className="flex items-baseline gap-2">
-        <span className="w-[104px] shrink-0 text-foreground-subtle">만조 조건 시나리오</span>
-        <span className="min-w-0 flex-1 text-foreground-muted">
-          <span className="font-mono text-foreground">{risk.scenario.peak} EL.m</span> 도달 예상 ·
-          19:10
-          {risk.preemptive && (
-            <span className="ml-1 font-medium" style={{ color: recommendedSpec.color }}>
-              {recommendedSpec.label} 기준 초과
-            </span>
-          )}
-        </span>
-      </div>
+      <p className="text-caption text-foreground-muted">
+        {device.address}
+        {scene && <span className="text-foreground-subtle"> · {scene.bearing}</span>}
+      </p>
     </div>
   );
 }

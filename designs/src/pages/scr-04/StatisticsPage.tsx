@@ -4,19 +4,35 @@
  * 지난 기간에 무슨 재난이 어디서 얼마나 났고, 그래서 어떻게 대응했는지를 본다.
  * 계측 그래프는 이 화면의 마지막 단계다 — 시 전체 → 지구 순위 → 지구 상세로 좁혀 들어간다.
  *
- *   1단 핵심 지표   총 발생 · 경보 이상(계측 기준) · 선제 대응 · 최다 지구 · 전파 · 평균 소요
- *   2단 추이·분포   단계 색 누적 막대 + 도넛 둘(단계·재난유형 — SCR-01 과 같은 부품·색)
- *   3단 지구 비교   12행. 행을 누르면 4단·하단이 그 지구로 바뀐다 — 드릴다운의 입구
- *   4단 지구 상세   수위·강우 이중축 + 기준선 + 이벤트 띠 + **조건 시나리오 점선**
- *   하단 통합 이력  이벤트 한 건이 한 줄, 발생부터 전파까지. 주인공 사건은 단계 이력을 펼친다
+ * [통계 분석] · [사건 이력] 두 탭이다(03 §4 · 차수 L). 조회 조건은 두 탭이 공유한다.
  *
- * 값은 04 §4(원장) · §7-3(전파 원장) · §8(계측)에서 계산한다 — 집계 상수를 두지 않는다.
+ *   통계 분석 탭
+ *     1단 핵심 지표   총 발생 · 경보 이상(계측 기준) · 선제 대응 · 최다 지구 · 전파 · 평균 소요
+ *     2단 추이·분포   단계 색 누적 막대 + 도넛 둘(단계·재난유형 — SCR-01 과 같은 부품·색)
+ *     3단 지구 비교   12행. 행을 누르면 4단·하단이 그 지구로 바뀐다 — 드릴다운의 입구
+ *     4단 지구 상세   수위·강우 이중축 + 기준선 + 이벤트 띠 + **조건 시나리오 점선**
+ *   사건 이력 탭     이벤트 한 건이 한 줄, 발생부터 전파까지. 주인공 사건은 단계 이력을,
+ *                    전 사건이 전파·실패·대체 조치를 하위 행으로 편다 — SCR-02 가 내린
+ *                    전파 원장의 조회처다. 시연은 좌측 메뉴로 들어와 탭을 눌러 연다
+ *
+ * 값은 04 §4(원장) · §7-3·§7-5(전파 원장) · §8(계측)에서 계산한다 — 집계 상수를 두지 않는다.
  * ───────────────────────────────────────────── */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Icon } from "@iconify/react";
-import { Button, DateRangeChip, EmptyState, FilterCapsuleGroup, GlassPanel, cn } from "@ds";
+import {
+  Button,
+  DateRangeChip,
+  EmptyState,
+  FilterCapsuleGroup,
+  GlassPanel,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  cn,
+} from "@ds";
 import { FullWidthLayout } from "../../layout/FullWidthLayout";
 import { DISTRICTS, findDistrict } from "../../demo/districts";
 import { findDevice } from "../../demo/devices";
@@ -29,7 +45,7 @@ import {
   hazardLabel,
   type AlertEvent,
 } from "../../demo/events";
-import { CHANNELS, DISPATCH_HISTORY } from "../../demo/dispatch";
+import { CHANNELS, type DispatchRecord } from "../../demo/dispatch";
 import { HERO_SCENARIO, scenarioOfDistrictAt } from "../../demo/forecast";
 import { ALERT_LEVELS, WATER_THRESHOLDS, levelSpec, type AlertLevel } from "../../demo/levels";
 import { historySeries, sampleStepMinutes } from "../../demo/measurements";
@@ -38,6 +54,7 @@ import { RingDonut } from "../../components/RingDonut";
 import { LevelBadge } from "../../components/LevelBadge";
 import { HAZARD_COLOR } from "../../lib/hazard-colors";
 import { useScenario } from "../../state/ScenarioProvider";
+import { eventTimelineAt, type TimelineContext, type TimelineEntry } from "../../demo/timeline";
 import { formatClock, formatDate } from "../../lib/datetime";
 
 /** 기간 프리셋 (03 §4) */
@@ -60,9 +77,23 @@ function daysBefore(now: Date, days: number): Date {
 
 export function StatisticsPage() {
   const [params] = useSearchParams();
-  const { now, advanceTo, approvedResponseLevel, approvedAt } = useScenario();
+  const {
+    now,
+    advanceTo,
+    approvedResponseLevel,
+    approvedAt,
+    dispatches: ledger,
+    sopExecutedItemIds,
+    phoneReportedAt,
+  } = useScenario();
   const fromDevice = findDevice(params.get("device") ?? "");
   const fromDistrict = params.get("district");
+  /* URL 진입(?tab=history&event=) — 사건 이력 탭이 그 사건이 선택된 채 열린다(03 §4) */
+  const eventParam = params.get("event");
+  const fromEvent = eventParam ? EVENTS.find((e) => e.id === eventParam) : undefined;
+  const [tab, setTab] = useState<"stats" | "history">(
+    params.get("tab") === "history" ? "history" : "stats",
+  );
 
   /* 상황 종료 후 검증 = S8 (04 §0). 엔진이 선행 스텝(S7)을 가드하므로 시연 초반에
      이 화면을 열어도 시계가 22:10 으로 뛰지 않는다 */
@@ -70,9 +101,9 @@ export function StatisticsPage() {
     advanceTo(8);
   }, [advanceTo]);
 
-  /* 범위 — 전체가 기본이다. 화면 안의 길(?device·?district)로 들어오면 그 지구가 선택된
-     채 열린다(03 §4 동작) — 이미 볼 지구가 정해져 있는데 시 전체를 거치게 하지 않는다 */
-  const entryDistrict = fromDevice?.districtId ?? fromDistrict ?? null;
+  /* 범위 — 전체가 기본이다. 화면 안의 길(?event·?device·?district)로 들어오면 그 사건의
+     지구가 선택된 채 열린다(03 §4 동작) — 이미 볼 것이 정해져 있는데 시 전체를 거치게 하지 않는다 */
+  const entryDistrict = fromEvent?.districtId ?? fromDevice?.districtId ?? fromDistrict ?? null;
   const [scope, setScope] = useState<string>(entryDistrict ?? "all");
   const [rangeLabel, setRangeLabel] = useState<string>("1개월");
   const [customFrom, setCustomFrom] = useState(() => daysBefore(now, 14));
@@ -102,11 +133,12 @@ export function StatisticsPage() {
     [from, to, scope, fieldFilter, hazardFilter, levelFilter, now],
   );
 
-  /* 전파 원장 — 이벤트에 붙는다(04 §7-3). 조회 조건은 대상 이벤트를 따라 걸린다 */
+  /* 전파 원장 — 이벤트에 붙는다(04 §7-3). 조회 조건은 대상 이벤트를 따라 걸린다.
+     원장은 상태 엔진 것이라(04 §7-5) 시연 중 SOP 실행·재전파가 여기에도 바로 선다 */
   const dispatches = useMemo(() => {
     const ids = new Set(filtered.map((e) => e.id));
-    return DISPATCH_HISTORY.filter((r) => r.eventId && ids.has(r.eventId));
-  }, [filtered]);
+    return ledger.filter((r) => ids.has(r.eventId));
+  }, [filtered, ledger]);
 
   /* ── 1단 핵심 지표 — 계측 집계와 대응 지표를 섞지 않는다(04 §4-3) ── */
   const kpi = useMemo(() => {
@@ -119,6 +151,7 @@ export function StatisticsPage() {
     }
     const top = [...byDistrict.entries()].sort((a, b) => b[1] - a[1])[0];
     const recipients = dispatches.reduce((sum, r) => sum + r.recipients, 0);
+    /* 소요는 최초 전파에만 있다(04 §7-5) — 재전파를 섞으면 평균이 거짓말한다 */
     const durations = dispatches.map((r) => r.durationMin ?? 0).filter((d) => d > 0);
     return {
       total: filtered.length,
@@ -126,7 +159,11 @@ export function StatisticsPage() {
       evacuate: byLevel.get("evacuate") ?? 0,
       topDistrict: top ? findDistrict(top[0])?.name : null,
       topCount: top?.[1] ?? 0,
+      /* 실행 횟수 · 대상 사건 수 · 재전파 횟수를 가른다(04 §7-5) —
+         재전파까지 건수로 뭉뚱그리면 대응 건수가 부풀어 보인다 */
       dispatchCount: dispatches.length,
+      dispatchEvents: new Set(dispatches.map((r) => r.eventId)).size,
+      resendCount: dispatches.filter((r) => r.dispatchKind === "manual-resend").length,
       recipients,
       avgMin: durations.length
         ? durations.reduce((a, b) => a + b, 0) / durations.length
@@ -225,7 +262,9 @@ export function StatisticsPage() {
     const header = "발생,지구,재난유형,확정단계,측정값,해제,전파수단,대상,소요(분)\n";
     const body = filtered
       .map((event) => {
-        const sent = dispatches.find((r) => r.eventId === event.id);
+        const sent =
+          dispatches.find((r) => r.eventId === event.id && r.durationMin != null) ??
+          dispatches.find((r) => r.eventId === event.id);
         const channels = sent
           ? CHANNELS.filter((c) => sent.channels.includes(c.id))
               .map((c) => c.label)
@@ -254,6 +293,20 @@ export function StatisticsPage() {
   };
 
   const stepMin = sampleStepMinutes((to.getTime() - from.getTime()) / 86_400_000);
+
+  /* 사건 이력의 하위 행(전파·실패·대체 조치)은 타임라인 파생을 그대로 쓴다(04 §4-6) —
+     같은 사건을 두 화면이 다른 원장으로 말하지 않는다 */
+  const timelineCtx = useMemo<TimelineContext>(
+    () => ({
+      now,
+      dispatches: ledger,
+      approvedResponseLevel,
+      approvedAt,
+      sopExecutedItemIds,
+      phoneReportedAt,
+    }),
+    [now, ledger, approvedResponseLevel, approvedAt, sopExecutedItemIds, phoneReportedAt],
+  );
 
   return (
     <FullWidthLayout bodyClassName="flex flex-col p-3">
@@ -327,6 +380,23 @@ export function StatisticsPage() {
           </FilterRow>
         </section>
 
+        {/* 탭 — [통계 분석]은 1~4단, [사건 이력]은 전파 원장 상세(03 §4 · 차수 L).
+            조회 조건은 두 탭이 공유한다 */}
+        <Tabs
+          value={tab}
+          onValueChange={(next) => setTab(next as "stats" | "history")}
+          className="flex shrink-0 flex-col"
+        >
+          <TabsList variant="panel" className="mx-4 mt-3 w-fit shrink-0 !gap-0.5 !p-0.5">
+            <TabsTrigger value="stats" variant="panel" className="!px-3 !py-1 text-caption">
+              통계 분석
+            </TabsTrigger>
+            <TabsTrigger value="history" variant="panel" className="!px-3 !py-1 text-caption">
+              사건 이력
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="stats">
         {/* 1단 — 핵심 지표. 계측 집계와 대응 지표는 다른 축이다(04 §4-3) */}
         <section aria-label="핵심 지표" className="grid shrink-0 grid-cols-6 gap-3 px-4 pt-3">
           <KpiTile label="총 발생" value={`${kpi.total}`} unit="건" />
@@ -350,12 +420,15 @@ export function StatisticsPage() {
           <KpiTile
             label="전파"
             value={`${kpi.dispatchCount}`}
-            unit={`건 · ${kpi.recipients.toLocaleString()}명`}
+            unit={
+              `회 · 사건 ${kpi.dispatchEvents}건 · ${kpi.recipients.toLocaleString()}명` +
+              (kpi.resendCount > 0 ? ` · 재전파 ${kpi.resendCount}` : "")
+            }
           />
           <KpiTile
             label="평균 전파 소요"
             value={kpi.avgMin !== null ? kpi.avgMin.toFixed(1) : "—"}
-            unit="분 · 발생→전파"
+            unit="분 · 발생→최초 전파"
           />
         </section>
 
@@ -462,7 +535,7 @@ export function StatisticsPage() {
         </section>
 
         {/* 4단 — 선택 지구 상세 */}
-        <section aria-label="선택 지구 상세" className="shrink-0 px-4 pt-3">
+        <section aria-label="선택 지구 상세" className="shrink-0 px-4 py-3">
           <div className="overflow-hidden rounded-md border border-border bg-card">
             <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
               <h3 className="truncate text-body font-semibold text-foreground">
@@ -510,11 +583,22 @@ export function StatisticsPage() {
             </div>
           </div>
         </section>
+          </TabsContent>
 
-        {/* 하단 — 이벤트·대응 통합 이력. 발생부터 전파 결과까지 같은 줄에(03 §4) */}
-        <section aria-label="이벤트·대응 이력" className="shrink-0 p-4">
-          <HistoryTable events={filtered} dispatches={dispatches} now={now} />
-        </section>
+          <TabsContent value="history">
+            {/* 사건 이력 — 이벤트 한 건이 한 줄 + 전파·실패·대체 조치 하위 행(03 §4 · 차수 L).
+                SCR-03 이 내린 전파 원장의 조회처다 */}
+            <section aria-label="이벤트·대응 이력" className="shrink-0 p-4 pt-3">
+              <HistoryTable
+                events={filtered}
+                dispatches={dispatches}
+                now={now}
+                timelineCtx={timelineCtx}
+                highlightId={fromEvent?.id ?? null}
+              />
+            </section>
+          </TabsContent>
+        </Tabs>
       </GlassPanel>
     </FullWidthLayout>
   );
@@ -666,16 +750,21 @@ function DistributionDonut({
   );
 }
 
-/** 이벤트·대응 통합 이력 — 주인공 사건은 단계 이력을 펼친다(04 §4-2 · 03 §4).
- *  마지막 단계 하나로 접으면 "계측 도달 1시간 45분 전에 승인했다"를 뒷받침할 화면이 없다 */
+/** 이벤트·대응 통합 이력 — 주인공 사건은 단계 이력을 펼치고(04 §4-2 · 03 §4), 전 사건이
+ *  전파·실패·대체 조치를 하위 행으로 편다(차수 L). 하위 행은 타임라인 파생(04 §4-6)에서
+ *  온다. 마지막 단계 하나로 접으면 "계측 도달 1시간 45분 전에 승인했다"를 뒷받침할 화면이 없다 */
 function HistoryTable({
   events,
   dispatches,
   now,
+  timelineCtx,
+  highlightId,
 }: {
   events: AlertEvent[];
-  dispatches: typeof DISPATCH_HISTORY;
+  dispatches: DispatchRecord[];
   now: Date;
+  timelineCtx: TimelineContext;
+  highlightId: string | null;
 }) {
   if (events.length === 0)
     return <EmptyState icon="mdi:calendar-blank-outline" message="이 조건에 해당하는 이벤트가 없습니다" />;
@@ -699,7 +788,11 @@ function HistoryTable({
         <tbody>
           {events.map((event) => {
             const district = findDistrict(event.districtId);
-            const sent = dispatches.find((r) => r.eventId === event.id);
+            /* 이력 행에는 최초 전파를 단다(04 §7-5) — 재전파가 앞에 쌓여도 소요(분)가
+               있는 첫 전파가 그 사건의 대응 기록이다 */
+            const sent =
+              dispatches.find((r) => r.eventId === event.id && r.durationMin != null) ??
+              dispatches.find((r) => r.eventId === event.id);
             const view = eventViewAt(event, now);
             const hero = event.id === HERO_EVENT_ID && (event.stages?.length ?? 0) > 1;
             return (
@@ -708,8 +801,17 @@ function HistoryTable({
                 event={event}
                 districtName={district?.name ?? "-"}
                 view={view}
-                hero={hero}
                 now={now}
+                highlight={event.id === highlightId}
+                /* 주인공 사건은 파생 타임라인 전체(발생~해제)를 시간순 그대로 편다(04 §4-2·§4-6).
+                   다른 사건은 발생·해제가 본 행과 겹치므로 전파·실패·대체 조치만 */
+                detailEntries={eventTimelineAt(event, timelineCtx).filter(
+                  (entry) =>
+                    hero ||
+                    entry.kind === "dispatch" ||
+                    entry.kind === "fail" ||
+                    entry.kind === "fallback",
+                )}
                 dispatch={
                   sent
                     ? {
@@ -734,21 +836,33 @@ function HistoryRowGroup({
   event,
   districtName,
   view,
-  hero,
   now,
+  highlight,
+  detailEntries,
   dispatch,
 }: {
   event: AlertEvent;
   districtName: string;
   view: ReturnType<typeof eventViewAt>;
-  hero: boolean;
   now: Date;
+  highlight: boolean;
+  detailEntries: TimelineEntry[];
   dispatch: { channels: string; recipients: number; durationMin?: number } | null;
 }) {
   const confirmed = confirmedLevelAt(event, now);
+
+  /* ?event= 로 지정돼 들어온 그 사건 — 강조하고 화면 안으로 끌어온다(03 §4) */
+  const rowRef = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    if (highlight) rowRef.current?.scrollIntoView({ block: "center" });
+  }, [highlight]);
+
   return (
     <>
-      <tr className="border-b border-border last:border-b-0">
+      <tr
+        ref={rowRef}
+        className={cn("border-b border-border last:border-b-0", highlight && "bg-surface-raised")}
+      >
         <td className="px-3 py-1.5 font-mono text-foreground-muted">
           {formatDate(event.raisedAt)} {formatClock(event.raisedAt)}
         </td>
@@ -776,35 +890,26 @@ function HistoryRowGroup({
           )}
         </td>
       </tr>
-      {/* 주인공 사건 — 단계 이력 4행 펼침. 언제 무엇이 됐는지가 판단 검증의 재료다 */}
-      {hero &&
-        (event.stages ?? [])
-          .filter((stage) => new Date(stage.at) <= now)
-          .map((stage, index) => (
-            <tr key={stage.at} className="border-b border-border bg-surface-raised/40 last:border-b-0">
-              <td className="py-1 pl-8 pr-3 font-mono text-foreground-subtle">
-                └ {formatClock(stage.at)}
-              </td>
-              <td className="px-3 py-1 text-foreground-subtle" colSpan={2}>
-                {index === 0 ? "발생" : stage.level === "evacuate" ? "계측 대피 도달" : "경보 격상"} ·{" "}
-                {levelSpec(stage.level).label}
-              </td>
-              <td className="px-3 py-1 text-right font-mono text-foreground-subtle">
-                {stage.value} {event.unit}
-              </td>
-              <td colSpan={2} />
-            </tr>
-          ))}
-      {hero && event.clearedAt && new Date(event.clearedAt) <= now && (
-        <tr className="border-b border-border bg-surface-raised/40 last:border-b-0">
+      {/* 하위 행 — 타임라인 파생(04 §4-6)이 시간순 그대로 선다(차수 L). 주인공 사건은
+          발생부터 해제까지 전부, 다른 사건은 전파·실패·대체 조치만. 재전파는 최초 전파와
+          유형이 갈려 적히므로 대응 건수로 오독되지 않는다 */}
+      {detailEntries.map((entry, index) => (
+        <tr
+          key={`${entry.at.toISOString()}-${entry.kind}-${index}`}
+          className="border-b border-border bg-surface-raised/40 last:border-b-0"
+        >
           <td className="py-1 pl-8 pr-3 font-mono text-foreground-subtle">
-            └ {formatClock(event.clearedAt)}
+            └ {formatClock(entry.at)}
           </td>
-          <td className="px-3 py-1 text-foreground-subtle" colSpan={5}>
-            해제 · 주의보 기준 아래로 내려옴
+          <td
+            className={cn("px-3 py-1", entry.kind === "fail" ? "text-danger" : "text-foreground-subtle")}
+            colSpan={5}
+          >
+            {entry.label}
+            {entry.detail ? ` · ${entry.detail}` : ""}
           </td>
         </tr>
-      )}
+      ))}
     </>
   );
 }

@@ -27,11 +27,11 @@ import {
   RISK_ANSWER,
   districtRanking,
   queryById,
+  riskEvidence,
   type CannedQuery,
   type DistrictRisk,
   type Evidence,
 } from "../../demo/ai";
-import { findDistrict } from "../../demo/districts";
 import { levelSpec } from "../../demo/levels";
 import { LevelBadge } from "../../components/LevelBadge";
 
@@ -183,7 +183,8 @@ function AnswerPanel({
   );
 }
 
-/** 근거 목록 — 값이 어느 절에서 왔는지를 항목마다 적는다 (03 §6) */
+/** 근거 목록 — 항목마다 출처를 적는다 (03 §6). 출처는 데이터 원천의 이름(사용자
+ *  언어)이다(04 §14 · 차수 K) — 절 번호는 데이터의 참조 필드로만 남고 화면에 서지 않는다 */
 function EvidenceList({ items }: { items: readonly Evidence[] }) {
   return (
     <ul className="flex flex-col gap-1">
@@ -194,9 +195,7 @@ function EvidenceList({ items }: { items: readonly Evidence[] }) {
         >
           <span className="w-24 shrink-0 text-caption text-foreground-muted">{item.label}</span>
           <span className="min-w-0 flex-1 text-caption text-foreground">{item.value}</span>
-          <span className="shrink-0 font-mono text-caption text-foreground-subtle">
-            {item.source}
-          </span>
+          <span className="shrink-0 text-caption text-foreground-subtle">{item.source}</span>
         </li>
       ))}
     </ul>
@@ -264,28 +263,9 @@ function RiskAnswer() {
   /* 집계는 원장에서 계산한다. 상수를 두지 않는다 (04 §4-3) */
   const ranking = useMemo(() => districtRanking(), []);
   const top = ranking[0];
-  const runnerUp = ranking[1];
-  const district = findDistrict(top.districtId);
 
-  const evidence: Evidence[] = [
-    {
-      label: "되풀이 이력",
-      value: top.history
-        .map((row) => `${row.date} ${levelSpec(row.level).label}`)
-        .join(" → "),
-      source: "04 §4-1",
-    },
-    {
-      label: "2위와의 차",
-      value: `${runnerUp.name} ${runnerUp.total}건 (경보 이상 ${runnerUp.severe}건)`,
-      source: "04 §4-1",
-    },
-    {
-      label: "지구 유형",
-      value: district ? `${district.kind} · ${district.target}` : "—",
-      source: "04 §1",
-    },
-  ];
+  /* 근거는 데이터 층이 조립한다(04 §14-3) — 출처 라벨·참조 절을 화면에 하드코딩하지 않는다 */
+  const evidence = riskEvidence(ranking);
 
   return (
     <AnswerPanel headline={RISK_ANSWER.headlineOf(top)} detail={RISK_ANSWER.detail}>

@@ -1,3 +1,7 @@
+overrides:
+  '@cuvia/assets': link:../../cuvia_platform_design/packages/assets
+  '@cuvia/components': link:../../cuvia_platform_design/packages/components
+  '@cuvia/tokens': link:../../cuvia_platform_design/packages/tokens
 # 이 앱을 독립 워크스페이스 루트로 고정한다(상위 폴더 워크스페이스에 딸려 들어가지 않도록).
 #
 # verifyDepsBeforeRun: pnpm 11 은 스크립트 실행 전 의존성 최신 여부를 검사하면서 `pnpm install` 을

@@ -22,7 +22,8 @@ import { Outlet, useLocation } from "react-router-dom";
 import { cn } from "@ds";
 import { AppSidebar } from "./AppSidebar";
 import { AppTopbar } from "./AppTopbar";
-import { findNav } from "./nav";
+import { AgentFab } from "../components/AgentFab";
+import { findNav, HUB_ROUTE } from "./nav";
 
 /** 서비스명 — 화면명을 못 찾았을 때의 상단바 제목 */
 const SERVICE_NAME = "CUVIA 안전재난관제시스템";
@@ -31,6 +32,8 @@ export function AppLayout() {
   const { pathname } = useLocation();
   const item = findNav(pathname);
   const fullBleed = item?.fullBleed ?? false;
+  /* 종합상황은 질의 바가 하단 중앙에 펼쳐져 있다 — 같은 길을 두 벌 세우지 않는다(03 §1) */
+  const showAgentFab = !pathname.startsWith(HUB_ROUTE);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
@@ -46,6 +49,11 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* 질의 진입 — 종합상황 밖 모든 화면의 우측 하단 (03 §1).
+          레일이 선 화면(재난관제·디지털트윈)에서는 우측 레일 왼쪽으로 비켜 서고,
+          하단 도크가 있으면(재난관제) 도크 위로 한 칸 더 올라간다 */}
+      {showAgentFab && <AgentFab rails={fullBleed} overDock={item?.bottomDock ?? false} />}
     </div>
   );
 }

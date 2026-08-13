@@ -1,8 +1,12 @@
 /* ─────────────────────────────────────────────
- * 해당 지구 이벤트 목록 — 03 화면정의서 §5 우측
+ * 이 지구 과거 이벤트 — 03 화면정의서 §5 참고 자리
  *
- * 이 마을에서 최근에 무슨 일이 있었는지. 침수 시뮬레이션이 "만약"이라면, 이 목록은
- * "실제로 있었던 일"이다. 둘이 한 화면에 있어야 예측이 근거를 얻는다.
+ * ★ 레일의 본줄이 아니라 접힌 참고정보다. "이 지구에서 있었던 일"의 본적은 SCR-04
+ *   사건 이력이고, 트윈에서 그것과 같은 목록을 본줄에 세우면 두 화면의 역할이 겹친다.
+ *   트윈이 머리말에 세우는 것은 **지금 분석 중인 사건 하나**다(AnalysisHeader).
+ *
+ * 그래도 지우지 않는 것은, 조건을 밀어 본 뒤 "전에도 이만큼 온 적이 있나"가 바로 이
+ * 자리에서 나는 질문이기 때문이다. 묻는 사람만 펼친다.
  * ───────────────────────────────────────────── */
 
 import { EmptyState, cn } from "@ds";
@@ -24,9 +28,9 @@ export function DistrictEventList({
   const events = EVENTS.filter((event) => event.districtId === districtId);
 
   return (
-    <section className="flex flex-col gap-1.5 p-3" aria-label="해당 지구 이벤트 목록">
+    <section className="flex flex-col gap-1.5" aria-label="이 지구 과거 이벤트">
       <header className="flex items-baseline justify-between">
-        <h2 className="text-body font-semibold text-foreground">해당 지구 이벤트</h2>
+        <h3 className="text-caption font-semibold text-foreground-muted">과거 이벤트</h3>
         <span className="text-caption text-foreground-subtle">{events.length}건</span>
       </header>
 

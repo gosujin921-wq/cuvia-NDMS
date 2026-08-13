@@ -32,6 +32,7 @@ import {
   cn,
 } from "@ds";
 import { ROTATE_STEP, TILT_PITCH } from "../lib/map-config";
+import { LayerSwatch, type LegendShape } from "./LayerSwatch";
 
 /** 이 각도를 넘으면 3D 로 본다 */
 const TILT_THRESHOLD = 5;
@@ -44,6 +45,11 @@ export interface MapLayerItem {
   color?: string;
   /** 표식 글리프 — color 와 같이 준다 */
   icon?: string;
+  /**
+   * 표식 모양 — 지도에 그린 문법 그대로(03 §2 · §0-5). 장비는 `device`(원형 글라스 칩),
+   * 위험요소는 띠·점선·면·마커. 없으면 색 채움 칩(일반용)으로 세운다.
+   */
+  shape?: LegendShape;
   /** 이 레이어에 걸린 대상 수 */
   count?: number;
   visible: boolean;
@@ -239,8 +245,11 @@ function LayerSection({ spec, bordered }: { spec: MapLayerSpec; bordered: boolea
               className="flex cursor-pointer items-center gap-2 rounded-md py-1 pl-0.5 pr-1 transition-colors hover:bg-surface-raised"
             >
               <Checkbox checked={item.visible} onCheckedChange={() => spec.onToggle(item.id)} />
-              {item.color && (
-                /* 지도 표식과 같은 문법 — 색 바탕 + 흰 글리프. 한눈에 같은 것으로 읽힌다 */
+              {item.shape ? (
+                /* 지도에 그린 문법 그대로 — 장비 원형 · 이름표 알약 · 위험요소 띠·점선·면·마커 */
+                <LayerSwatch shape={item.shape} color={item.color} icon={item.icon} className="size-5" />
+              ) : item.color ? (
+                /* 모양 지정이 없는 일반 항목 — 색 채움 칩 */
                 <span
                   aria-hidden
                   className="flex size-5 shrink-0 items-center justify-center rounded"
@@ -248,7 +257,7 @@ function LayerSection({ spec, bordered }: { spec: MapLayerSpec; bordered: boolea
                 >
                   {item.icon && <Icon icon={item.icon} className="size-3 text-white" />}
                 </span>
-              )}
+              ) : null}
               <span
                 className={cn(
                   "min-w-0 flex-1 truncate text-caption",

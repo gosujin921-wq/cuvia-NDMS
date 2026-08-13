@@ -112,6 +112,14 @@ export const HAZARD_LAYERS: HazardLayerSpec[] = [
   },
 ];
 
+/** 레이어 목록 표식 모양 — 지도에 그린 문법 그대로(03 §2). geometry 에서 파생한다 */
+export type HazardSwatch = "band" | "line" | "area" | "point";
+
+export function hazardSwatchOf(spec: HazardLayerSpec): HazardSwatch {
+  const type = spec.geometry.type;
+  return type === "lines" ? "line" : type === "polygon" ? "area" : type;
+}
+
 /** 재난관제(SCR-02)에 서는 3종 */
 const CONTROL_KINDS: HazardKind[] = ["surge", "road", "lowland"];
 /** 트윈(SCR-05)에 서는 2종 */

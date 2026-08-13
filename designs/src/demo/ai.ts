@@ -15,7 +15,8 @@
 
 import { EVENTS } from "./events";
 import { findDistrict } from "./districts";
-import type { AlertLevel } from "./levels";
+import { HERO_SCENARIO } from "./forecast";
+import { levelSpec, type AlertLevel } from "./levels";
 
 /* ── 질의 3종 (04 §14-1) ──────────────────────────────────────── */
 
@@ -104,31 +105,54 @@ export interface Evidence {
   label: string;
   /** 값. 화면에서 오른쪽에 붙는다 */
   value: string;
-  /** 어느 절에서 온 값인가 — 화면에 그대로 표기한다 */
+  /** 화면에 서는 출처 — 데이터 원천의 이름(사용자 언어)이다(04 §14 · 차수 K).
+   *  절 번호가 화면에 그대로 서면 제품이 아니라 문서 목업으로 읽힌다 */
   source: string;
+  /** 참조 절 — 유지·대조용. 화면에 표기하지 않는다 */
+  ref: string;
 }
 
 /* ── `seohang-cause` — 조건 시나리오 도달 예상(4.24)의 세 항 분해 (04 §14-2)
  * "예측"으로 부르지 않는다 — 담당자 질의 문안(예측대로)은 그대로 두되, 시스템의
  * 답변은 만조 조건 시나리오라는 말만 쓴다(04 §10 · §14). ──────────────── */
 
+/* 시나리오 세 항은 `forecast.ts` HERO_SCENARIO 가 정본이다 — 판정 카드(SCR-03)와
+   AI 근거가 같은 값을 두 곳에 따로 들면 04 §10-3 을 고칠 때 한쪽이 낡는다.
+   여기서는 값(2.71 / +1.15 / +0.38)을 끌어오고, 표기 맥락만 §14-2 대로 붙인다 */
+const [TIDE_TERM, SURGE_TERM, RAIN_TERM] = HERO_SCENARIO.terms;
+
 export const CAUSE_ANSWER = {
-  headline: "만조 조건 시나리오 4.24 EL.m 도달 예상 · 19:10",
+  headline: `만조 조건 시나리오 ${HERO_SCENARIO.peak} EL.m 도달 예상 · 19:10`,
   detail: "대피 기준 4.2 EL.m 를 넘는다. 계측 단계는 아직 경보지만 대응 등급은 대피다.",
   /** 조건 시나리오 도달 예상 수위 (EL.m) */
-  scenario: 4.24,
+  scenario: HERO_SCENARIO.peak,
   scenarioAt: "19:10",
   /** 판정 시점의 계측값 */
   current: 3.41,
   currentAt: "17:22",
   currentLevel: "warning" as AlertLevel,
   evidence: [
-    { label: "천문조 만조", value: "2.71 EL.m · 19:10 대조기", source: "04 §10-3" },
-    { label: "폭풍해일 편차", value: "+1.15 m · 폭풍해일주의보 발효 중", source: "04 §10-3 · §5" },
-    { label: "유역 강우 유입", value: "+0.38 m · 시간당 18 mm 지속", source: "04 §10-3" },
-    { label: "현재 계측", value: "3.41 EL.m · 17:22 · 경보", source: "04 §4-2" },
+    {
+      label: TIDE_TERM.label,
+      value: `${TIDE_TERM.value} · 19:10 대조기`,
+      source: "천문조 정보",
+      ref: "04 §10-3",
+    },
+    {
+      label: SURGE_TERM.label,
+      value: `${SURGE_TERM.value} · 폭풍해일주의보 발효 중`,
+      source: "기상특보",
+      ref: "04 §10-3 · §5",
+    },
+    {
+      label: RAIN_TERM.label,
+      value: `${RAIN_TERM.value} · 시간당 18 mm 지속`,
+      source: "강우 관측",
+      ref: "04 §10-3",
+    },
+    { label: "현재 계측", value: "3.41 EL.m · 17:22 · 경보", source: "서항 수위계", ref: "04 §4-2" },
   ] satisfies Evidence[],
-  limit: "실측은 4.31 EL.m · 19:22 였다. 시나리오보다 7cm 높고 12분 늦었다 (04 §10-3).",
+  limit: "실측은 4.31 EL.m · 19:22 였다. 시나리오보다 7cm 높고 12분 늦었다.",
 } as const;
 
 /* ── `district-risk` — 30일 원장 집계 (04 §14-3) ──────────────── */
@@ -186,6 +210,34 @@ export const RISK_ANSWER = {
   limit: "최근 30일(2026-07-14~08-12) 원장 18건 기준. 그 이전 이력은 데모에 없다.",
 } as const;
 
+/** `district-risk` 근거 (04 §14-3) — 값은 랭킹(원장 계산)에서, 출처 라벨은 여기서.
+ *  화면 컴포넌트에 절 번호를 하드코딩하지 않는다(차수 K) */
+export function riskEvidence(ranking: DistrictRisk[]): Evidence[] {
+  const top = ranking[0];
+  const runnerUp = ranking[1];
+  const district = findDistrict(top.districtId);
+  return [
+    {
+      label: "되풀이 이력",
+      value: top.history.map((row) => `${row.date} ${levelSpec(row.level).label}`).join(" → "),
+      source: "이벤트 이력",
+      ref: "04 §4-1",
+    },
+    {
+      label: "2위와의 차",
+      value: `${runnerUp.name} ${runnerUp.total}건 (경보 이상 ${runnerUp.severe}건)`,
+      source: "이벤트 이력",
+      ref: "04 §4-1",
+    },
+    {
+      label: "지구 유형",
+      value: district ? `${district.kind} · ${district.target}` : "—",
+      source: "위험지구 정보",
+      ref: "04 §1",
+    },
+  ];
+}
+
 /* ── `flood-impact` — 침수 영향 비교 (04 §14-4) ───────────────── */
 
 export interface FloodImpactRow {
@@ -230,6 +282,5 @@ export const IMPACT_ANSWER = {
       emphasis: true,
     },
   ] satisfies FloodImpactRow[],
-  limit:
-    "침수 영향은 시연용 고정값이다. 실제 산정은 DEM·건물 데이터를 겨뤄야 한다 (03 §7).",
+  limit: "침수 영향은 시연용 고정값이다. 실제 산정은 DEM·건물 데이터를 겨뤄야 한다.",
 } as const;
