@@ -46,6 +46,7 @@ import {
   type AlertEvent,
 } from "../../demo/events";
 import { CHANNELS, type DispatchRecord } from "../../demo/dispatch";
+import { HEAT_THRESHOLD, heatSpotLabel } from "../../demo/events";
 import { HERO_SCENARIO, scenarioOfDistrictAt } from "../../demo/forecast";
 import { ALERT_LEVELS, WATER_THRESHOLDS, levelSpec, type AlertLevel } from "../../demo/levels";
 import { historySeries, sampleStepMinutes } from "../../demo/measurements";
@@ -56,6 +57,10 @@ import { HAZARD_COLOR } from "../../lib/hazard-colors";
 import { useScenario } from "../../state/ScenarioProvider";
 import { eventTimelineAt, type TimelineContext, type TimelineEntry } from "../../demo/timeline";
 import { formatClock, formatDate } from "../../lib/datetime";
+import { SeaTempChart } from "../../components/SeaTempChart";
+import { domeSummaryAt } from "../../demo/heat-dome";
+import { useSeaTemp } from "../../lib/useSeaTemp";
+import { SEA_STAGE_LABEL, formatShortDate, holdOutlook } from "../../demo/sea-temp";
 
 /** 기간 프리셋 (03 §4) */
 const RANGES = [
@@ -70,6 +75,7 @@ const RANGES = [
 const RANGE_LABELS = RANGES.map((r) => r.label);
 const FIELD_OPTIONS = ["전체", "풍수해", "기상·기후", "수자원", "산지·지반"] as const;
 const HERO_EVENT_ID = "EVT-260812-006";
+
 
 function daysBefore(now: Date, days: number): Date {
   return new Date(now.getTime() - days * 86_400_000);
@@ -111,6 +117,11 @@ export function StatisticsPage() {
   const [fieldFilter, setFieldFilter] = useState<string>("전체");
   const [hazardFilter, setHazardFilter] = useState<string>("전체");
   const [levelFilter, setLevelFilter] = useState<string>("전체");
+
+  /* 열돔 모드 — 유형을 폭염으로 좁혔거나 분야를 기상·기후로 좁혔을 때.
+     "전체" 로 보는 중에는 갈아 끼우지 않는다. 다른 유형과 섞여 있는데 열돔만 그리면
+     화면이 지금 무엇을 보고 있는지를 흐린다 */
+  const heatMode = hazardFilter === hazardLabel("열돔") || fieldFilter === "기상·기후";
 
   const custom = rangeLabel === "직접 지정";
   const preset = RANGES.find((r) => r.label === rangeLabel);
@@ -193,12 +204,20 @@ export function StatisticsPage() {
         const sent = dispatches.filter(
           (r) => EVENTS.find((e) => e.id === r.eventId)?.districtId === district.id,
         );
+        /* 폭염은 물을 재지 않는다 — 이 지구가 얼마나 뜨거웠나(체감온도 최고)를 센다.
+           단계 이력의 값이 곧 그때 체감온도다 (demo/events.ts 폭염 원장) */
+        const heatValues = events
+          .filter((e) => e.hazardType === "열돔")
+          .flatMap((e) => (e.stages?.map((st) => st.value) ?? [e.value]));
+        const heatPeak = heatValues.length ? Math.max(...heatValues) : 0;
+
         return {
           district,
           count: events.length,
           warnPlus: events.filter((e) => confirmedLevelAt(e, now) !== "advisory").length,
           peak,
           peakLevel: levelOf(district.id, peak),
+          heatPeak,
           rain,
           dispatchCount: sent.length,
           recipients: sent.reduce((sum, r) => sum + r.recipients, 0),
@@ -207,6 +226,33 @@ export function StatisticsPage() {
     [filtered, dispatches, from, to, now],
   );
   const maxCount = Math.max(1, ...districtRows.map((r) => r.count));
+  /* 폭염 막대의 눈금 — 경보선 위로 가장 많이 올라간 값. 0℃ 부터 채우면 열두 줄이
+     다 꽉 차 차이가 안 보인다 */
+  /* 폭염 요약 — 건수가 아니라 온도와 그 갈림을 센다 */
+  const dome = domeSummaryAt(now);
+  const heatKpi = useMemo(() => {
+    const rows = districtRows
+      .filter((r) => r.heatPeak > 0)
+      .map((r) => ({ name: r.district.name, value: r.heatPeak }))
+      .sort((a, b) => b.value - a.value);
+    const heatEvents = filtered.filter((e) => e.hazardType === "열돔");
+    const from = heatEvents.map((e) => e.raisedAt).sort()[0] ?? null;
+    const to = heatEvents.map((e) => e.clearedAt ?? "").sort().at(-1) || null;
+    const short = (iso: string) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
+    return {
+      districts: rows.length,
+      hottest: rows[0] ?? null,
+      coolest: rows[rows.length - 1] ?? null,
+      spread: rows.length ? rows[0].value - rows[rows.length - 1].value : 0,
+      stageLabel: rows.length ? levelSpec("warning").label : "—",
+      period: from && to ? `${short(from)} ~ ${short(to)}` : from ? `${short(from)} ~ 진행 중` : "",
+    };
+  }, [districtRows, filtered]);
+
+  const heatSpan = Math.max(
+    0.1,
+    ...districtRows.map((r) => (r.heatPeak > 0 ? r.heatPeak - HEAT_THRESHOLD.warning : 0)),
+  );
 
   /* ── 4단 선택 지구 — 범위가 전체면 최다 발생 지구를 연다(빈 그래프로 시작하지 않는다) ── */
   const detailId = scope !== "all" ? scope : (districtRows[0]?.district.id ?? DISTRICTS[0].id);
@@ -310,11 +356,22 @@ export function StatisticsPage() {
 
   return (
     <FullWidthLayout bodyClassName="flex flex-col p-3">
+      {/*
+        ★ 스크롤은 패널이 아니라 **패널 안쪽**이 한다.
+
+        GlassPanel 의 유리 테두리 효과는 `::before` 로 그려지는데, 높이가 패널의 보이는
+        높이(client height)로 잡힌다. 패널 자신이 스크롤 컨테이너면 그 효과가 내용과 함께
+        밀려 올라가고, **효과가 끝나는 자리가 표 한가운데 가로선으로 보인다.** 스크롤할
+        때마다 선 위치가 달라지는 것이 그 증거다.
+
+        패널은 제자리에 고정하고 안쪽 상자가 스크롤하면 효과가 늘 패널 전체를 덮는다.
+      */}
       <GlassPanel
         data-slot="statistics-card"
         borderStyle="left-top"
-        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto"
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
       >
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
         {/* 제목 밴드 */}
         <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
           <div className="flex min-w-0 items-baseline gap-2">
@@ -397,7 +454,44 @@ export function StatisticsPage() {
           </TabsList>
 
           <TabsContent value="stats">
-        {/* 1단 — 핵심 지표. 계측 집계와 대응 지표는 다른 축이다(04 §4-3) */}
+        {/* 1단 — 핵심 지표. 계측 집계와 대응 지표는 다른 축이다(04 §4-3).
+            폭염은 세는 축이 다르다 — 몇 건이 났나가 아니라 **얼마나 뜨거웠고 어디가
+            갈렸나**다. 지구마다 한 건씩이라 건수를 세면 여섯 칸이 전부 12·12·0 이 된다 */}
+        {heatMode ? (
+          <section aria-label="핵심 지표" className="grid shrink-0 grid-cols-6 gap-3 px-4 pt-3">
+            <KpiTile
+              label="폭염특보"
+              value={heatKpi.stageLabel}
+              unit={heatKpi.period}
+              tone="var(--color-risk-lv4)"
+              text
+            />
+            <KpiTile label="경보 도달 지구" value={`${heatKpi.districts}`} unit="곳" />
+            <KpiTile
+              label="가장 뜨거웠던 곳"
+              value={heatKpi.hottest?.name ?? "—"}
+              unit={heatKpi.hottest ? `${heatKpi.hottest.value.toFixed(1)}℃` : ""}
+              tone="var(--color-danger)"
+              text
+            />
+            <KpiTile
+              label="가장 덜한 곳"
+              value={heatKpi.coolest?.name ?? "—"}
+              unit={heatKpi.coolest ? `${heatKpi.coolest.value.toFixed(1)}℃` : ""}
+              text
+            />
+            <KpiTile
+              label="지구 간 차"
+              value={heatKpi.spread.toFixed(1)}
+              unit="℃ · 같은 뚜껑 아래"
+            />
+            <KpiTile
+              label="열돔 — 두 층 모두 안쪽"
+              value={`${dome.deepDays}`}
+              unit={dome.peak ? `일 · 최고 ${dome.peak.lower.toLocaleString()}gpm` : "일"}
+            />
+          </section>
+        ) : (
         <section aria-label="핵심 지표" className="grid shrink-0 grid-cols-6 gap-3 px-4 pt-3">
           <KpiTile label="총 발생" value={`${kpi.total}`} unit="건" />
           <KpiTile
@@ -431,6 +525,7 @@ export function StatisticsPage() {
             unit="분 · 발생→최초 전파"
           />
         </section>
+        )}
 
         {/* 2단 — 발생 추이 + 분포 도넛 (SCR-01 과 같은 부품·같은 색) */}
         <section aria-label="발생 추이와 분포" className="grid shrink-0 grid-cols-[1fr_320px] gap-3 px-4 pt-3">
@@ -466,10 +561,22 @@ export function StatisticsPage() {
               <thead>
                 <tr className="border-b border-border text-foreground-subtle">
                   <th className="px-3 py-2 text-left font-medium">지구</th>
-                  <th className="px-3 py-2 text-left font-medium">발생</th>
-                  <th className="px-3 py-2 text-right font-medium">경보 이상</th>
-                  <th className="px-3 py-2 text-right font-medium">최고 수위</th>
-                  <th className="px-3 py-2 text-right font-medium">누적 강우</th>
+                  {/* 폭염은 지구마다 한 건씩이라 발생 수를 세면 열두 줄이 전부 1 이고
+                      막대도 전부 꽉 찬다 — 아무것도 안 가른다. 그 자리에 체감온도를
+                      세워 막대가 뜻을 갖게 한다 */}
+                  <th className="px-3 py-2 text-left font-medium">
+                    {heatMode ? "최고 체감온도" : "발생"}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    {heatMode ? "자리" : "경보 이상"}
+                  </th>
+                  {/* 폭염은 물을 재지 않는다 — 같은 자리에 체감온도가 선다 */}
+                  <th className="px-3 py-2 text-right font-medium">
+                    {heatMode ? "특보" : "최고 수위"}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    {heatMode ? `경보 기준 ${HEAT_THRESHOLD.warning}℃ 대비` : "누적 강우"}
+                  </th>
                   <th className="px-3 py-2 text-right font-medium">전파</th>
                 </tr>
               </thead>
@@ -489,38 +596,86 @@ export function StatisticsPage() {
                     </td>
                     <td className="w-[26%] px-3 py-1.5">
                       <span className="flex items-center gap-2">
-                        {/* 막대 + 숫자 — 순위가 눈으로 잡힌다 */}
+                        {/* 막대 + 숫자 — 순위가 눈으로 잡힌다.
+                            폭염은 경보선(35℃) 위로 얼마나 올라갔는지를 채운다. 0℃ 부터
+                            채우면 열두 줄이 다 꽉 차 차이가 안 보인다 */}
                         <span className="h-2 flex-1 overflow-hidden rounded-sm bg-surface-raised">
                           <span
                             className="block h-full rounded-sm bg-primary-text/60"
-                            style={{ width: `${(row.count / maxCount) * 100}%` }}
+                            style={{
+                              width: heatMode
+                                ? `${Math.max(0, ((row.heatPeak - HEAT_THRESHOLD.warning) / heatSpan) * 100)}%`
+                                : `${(row.count / maxCount) * 100}%`,
+                            }}
                             aria-hidden
                           />
                         </span>
-                        <span className="w-5 shrink-0 text-right font-mono text-foreground">
-                          {row.count}
+                        <span
+                          className={cn(
+                            "shrink-0 text-right font-mono text-foreground",
+                            heatMode ? "w-14" : "w-5",
+                          )}
+                        >
+                          {heatMode
+                            ? row.heatPeak > 0
+                              ? `${row.heatPeak.toFixed(1)}℃`
+                              : "-"
+                            : row.count}
                         </span>
                       </span>
                     </td>
-                    <td className="px-3 py-1.5 text-right font-mono text-foreground">
-                      {row.warnPlus > 0 ? row.warnPlus : "-"}
+                    <td className="px-3 py-1.5 text-right text-foreground-muted">
+                      {heatMode
+                        ? row.heatPeak > 0
+                          ? heatSpotLabel(row.heatPeak)
+                          : "-"
+                        : (
+                          <span className="font-mono text-foreground">
+                            {row.warnPlus > 0 ? row.warnPlus : "-"}
+                          </span>
+                        )}
                     </td>
                     <td className="px-3 py-1.5 text-right">
                       {/* 지구마다 기준이 달라 숫자만으로는 위험도가 비교되지 않는다 —
-                          그 값이 어느 단계 구간인지 색 점을 함께 세운다(03 §4) */}
+                          그 값이 어느 단계 구간인지 색 점을 함께 세운다(03 §4).
+                          폭염은 기준이 시 전역 한 벌이라 경보선을 넘었는지로 색을 가른다 */}
                       <span className="inline-flex items-center gap-1.5 font-mono text-foreground">
-                        {row.peakLevel && (
-                          <span
-                            className="size-2 shrink-0 rounded-full"
-                            style={{ backgroundColor: levelSpec(row.peakLevel).color }}
-                            aria-hidden
-                          />
+                        {heatMode ? (
+                          row.heatPeak > 0 && (
+                            <span
+                              className="size-2 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor: levelSpec(
+                                  row.heatPeak >= HEAT_THRESHOLD.warning ? "warning" : "advisory",
+                                ).color,
+                              }}
+                              aria-hidden
+                            />
+                          )
+                        ) : (
+                          row.peakLevel && (
+                            <span
+                              className="size-2 shrink-0 rounded-full"
+                              style={{ backgroundColor: levelSpec(row.peakLevel).color }}
+                              aria-hidden
+                            />
+                          )
                         )}
-                        {row.peak.toFixed(2)}
+                        {heatMode
+                          ? row.heatPeak > 0
+                            ? levelSpec(
+                                row.heatPeak >= HEAT_THRESHOLD.warning ? "warning" : "advisory",
+                              ).label
+                            : "-"
+                          : row.peak.toFixed(2)}
                       </span>
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono text-foreground-muted">
-                      {row.rain.toFixed(0)}mm
+                      {heatMode ? (
+                        <HeatDelta peak={row.heatPeak} />
+                      ) : (
+                        `${row.rain.toFixed(0)}mm`
+                      )}
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono text-foreground-muted">
                       {row.dispatchCount > 0
@@ -534,8 +689,14 @@ export function StatisticsPage() {
           </div>
         </section>
 
-        {/* 4단 — 선택 지구 상세 */}
+        {/* 4단 — 선택 지구 상세.
+            **유형이 폭염이면 축을 갈아 끼운다.** 폭염 사건을 골라 놓고 수위·강우량을
+            보이면 화면이 답하지 않는 것을 그린다 — 물이 안 넘쳐서 더운 게 아니다.
+            그 자리에 서는 것은 **왜 더운가**, 곧 창원 상공의 열돔이다 */}
         <section aria-label="선택 지구 상세" className="shrink-0 px-4 py-3">
+          {heatMode ? (
+            <SeaTempPanel now={now} />
+          ) : (
           <div className="overflow-hidden rounded-md border border-border bg-card">
             <div className="flex items-center gap-3 border-b border-border px-4 py-2.5">
               <h3 className="truncate text-body font-semibold text-foreground">
@@ -582,6 +743,7 @@ export function StatisticsPage() {
               />
             </div>
           </div>
+          )}
         </section>
           </TabsContent>
 
@@ -599,12 +761,144 @@ export function StatisticsPage() {
             </section>
           </TabsContent>
         </Tabs>
+        </div>
       </GlassPanel>
     </FullWidthLayout>
   );
 }
 
 /* ── 부품 ─────────────────────────────────────── */
+
+/**
+ * 수온 패널 — 폭염을 골랐을 때 4단이 되는 것.
+ *
+ * 지구별 상세가 아니다. 폭염은 지구 하나가 아니라 **하늘이 지역을 통째로 덮은** 것이고,
+ * 바다는 아예 지구로 안 갈린다(격자가 약 5km 라 진해만·마산만을 못 가른다). 그래서 지구
+ * 선택과 무관하게 같은 곡선이 선다.
+ *
+ * ── 왜 지위고도가 아니라 수온인가
+ *
+ * 묻는 문장이 "수온이 왜 이렇게 높아?" 다. 물음이 온도를 가리키는데 화면이 지위고도(gpm)를
+ * 그리면 보는 사람이 답을 그림에서 못 찾는다. **그래프는 물음과 같은 것을 재야 한다.**
+ *
+ * 열돔은 그래서 곡선이 아니라 **요약 한 칸**으로 내려간다 — 그것은 물음이 아니라 답이고,
+ * 답이 펼쳐지는 자리는 AI 패널이다.
+ *
+ * ── 이 편이 세는 것은 값이 아니라 날수다
+ *
+ * 하루 30℃ 는 아무 일도 아니고, 28℃ 를 넘긴 채 보름을 가면 어가가 죽는다. 그래서 요약
+ * 넉 장의 둘째가 머문 날수고, 곡선은 28℃ 위에 있던 자리마다 띠를 깐다.
+ */
+function SeaTempPanel({ now }: { now: Date }) {
+  const sea = useSeaTemp(now);
+  const dome = domeSummaryAt(now);
+
+  if (!sea) {
+    return (
+      <div className="flex h-64 items-center justify-center gap-2 rounded-md border border-border bg-card text-body text-foreground-muted">
+        <Icon icon="mdi:loading" className="size-5 animate-spin" aria-hidden />
+        수온 자료를 읽는 중
+      </div>
+    );
+  }
+
+  const outlook = holdOutlook(sea);
+  const watch = sea.threshold.watch;
+
+  /*
+   * 기준선을 **한 배열로 두고 차트와 범례가 같이 먹는다.**
+   *
+   * 한때 범례에 `발령 기준선` 한 칸을 빨간 점선으로 그려 놓고, 차트에는 주황(주의보)·
+   * 노랑(예비특보) 두 줄을 그렸다. 범례가 화면에 없는 색을 가리키니 무엇이 무엇인지
+   * 짚을 수 없었다. 한 곳에서 나오면 다시 어긋날 수 없다.
+   */
+  const thresholds = [
+    { value: watch, label: `${watch}℃ 주의보`, color: "var(--color-risk-lv4)" },
+    {
+      value: sea.threshold.advisory,
+      label: `${sea.threshold.advisory}℃ 예비특보`,
+      color: "var(--color-risk-lv3)",
+    },
+  ];
+
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-card">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
+        <h3 className="truncate text-body font-semibold text-foreground">창원 앞바다 표층수온</h3>
+        <div className="ml-auto flex shrink-0 flex-wrap items-center gap-3 text-caption text-foreground-subtle">
+          <span className="flex items-center gap-1.5">
+            <span
+              className="h-0.5 w-3 rounded-full"
+              style={{ background: "var(--color-risk-lv5)" }}
+              aria-hidden
+            />
+            실측 수온
+          </span>
+          {/* 기준선은 줄마다 색이 달라 한 칸으로 묶지 않는다 — 묶으면 어느 색이 어느
+              기준인지 화면에서 못 짚는다 */}
+          {thresholds.map((line) => (
+            <span key={line.label} className="flex items-center gap-1.5">
+              <span
+                className="h-0 w-4 border-t-2 border-dashed"
+                style={{ borderColor: line.color }}
+                aria-hidden
+              />
+              {line.label}
+            </span>
+          ))}
+          <span className="flex items-center gap-1.5">
+            <span
+              className="h-3 w-3 rounded-sm"
+              style={{ background: "var(--color-risk-lv5)", opacity: 0.25 }}
+              aria-hidden
+            />
+            {watch}℃ 위에 머문 자리
+          </span>
+        </div>
+      </div>
+
+      {/* 요약 넉 장 — 둘째가 이 편의 값이다(머문 날수). 넷째는 온도가 아니라 그 온도의 이유 */}
+      <div className="grid grid-cols-4 gap-3 px-4 pt-3">
+        <KpiTile label="최고 수온" value={`${sea.peak}`} unit={`℃ · ${formatShortDate(sea.peakDate)}`} />
+        <KpiTile
+          label={`${watch}℃ 위에 머문 날`}
+          value={`${sea.hotDays}`}
+          unit="일"
+          tone="var(--color-risk-lv5)"
+        />
+        <KpiTile
+          label="현재 수온"
+          value={`${sea.current}`}
+          unit={`℃ · 고수온 ${SEA_STAGE_LABEL[sea.stage]}`}
+        />
+        <KpiTile
+          label="열돔 — 두 층 모두 안쪽"
+          value={`${dome.deepDays}`}
+          unit={dome.peak ? `일 · 최고 ${dome.peak.lower.toLocaleString()}gpm` : "일"}
+          tone="var(--color-risk-lv5)"
+        />
+      </div>
+
+      {/* 좌우 여백을 머리말·요약과 같은 px-4 로 맞춘다 — 범례(머리말 오른쪽)와 곡선의
+          오른쪽 끝이 한 줄에 서야 범례가 무엇을 가리키는지가 눈으로 붙는다 */}
+      <div className="px-4 pb-4 pt-3">
+        <SeaTempChart
+          points={sea.points}
+          thresholds={thresholds}
+          shadeAbove={watch}
+          hold={
+            outlook
+              ? { days: outlook.floorDays, label: `조건이 유지되면 ${formatShortDate(outlook.floorDate)}` }
+              : null
+          }
+          height={280}
+          ariaLabel={`창원 앞바다 표층수온 ${sea.points[0].date}부터 ${sea.today}까지`}
+        />
+      </div>
+
+    </div>
+  );
+}
 
 function levelOf(districtId: string, value: number): AlertLevel | null {
   const threshold = WATER_THRESHOLDS[districtId];
@@ -613,6 +907,40 @@ function levelOf(districtId: string, value: number): AlertLevel | null {
   if (value >= threshold.warning) return "warning";
   if (value >= threshold.advisory) return "advisory";
   return null;
+}
+
+/**
+ * 경보 기준에서 얼마나 벗어났나 — 삼각형과 색으로 방향을 말한다.
+ *
+ * `+2.4` 처럼 부호만 붙이면 눈이 숫자를 읽어야 방향을 안다. 삼각형은 읽기 전에 보인다.
+ *
+ * 색은 **넘었을 때만** 준다. 기준에 딱 닿았거나(0.0) 아래인 값까지 붉히면 열두 줄이
+ * 통째로 붉어져 어디가 심한지를 못 가린다. 단계 색(노랑·주황·빨강)이 아니라 위험색을
+ * 쓰는 것은 이 값이 계측 단계가 아니라 **기준선과의 거리**이기 때문이다.
+ */
+function HeatDelta({ peak }: { peak: number }) {
+  if (peak <= 0) return <span className="text-foreground-subtle">-</span>;
+
+  const delta = peak - HEAT_THRESHOLD.warning;
+  const over = delta > 0;
+  const under = delta < 0;
+
+  return (
+    <span
+      className="inline-flex items-center justify-end gap-1 tabular-nums"
+      style={over ? { color: "var(--color-danger)" } : undefined}
+    >
+      {(over || under) && (
+        <Icon
+          icon={over ? "mdi:menu-up" : "mdi:menu-down"}
+          className="size-4 shrink-0"
+          aria-hidden
+        />
+      )}
+      {Math.abs(delta).toFixed(1)}℃
+      <span className="sr-only">{over ? "기준 초과" : under ? "기준 미만" : "기준과 같음"}</span>
+    </span>
+  );
 }
 
 function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {

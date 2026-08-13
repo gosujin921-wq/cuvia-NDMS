@@ -362,9 +362,12 @@ function ImpactAnswer() {
 
 /* ── 답변 꼬리 — 한계 문구와 바로가기 ────────────────────────── */
 
-const LIMIT_TEXT: Record<CannedQuery["kind"], string> = {
+/* 이 화면이 답하는 세 짜임. 패널 전용 질의(panelOnly)는 목록에서 빠지므로 여기 없다 */
+type LegacyKind = "cause" | "risk" | "impact";
+
+const LIMIT_TEXT: Record<LegacyKind, string> = {
   cause: CAUSE_ANSWER.limit,
-  risk: RISK_ANSWER.limit,
+  risk: RISK_ANSWER.limitOf(districtRanking().reduce((sum, row) => sum + row.total, 0)),
   impact: IMPACT_ANSWER.limit,
 };
 
@@ -378,7 +381,7 @@ function AnswerFooter({ active }: { active: CannedQuery }) {
         aria-hidden
       />
       <span className="min-w-0 flex-1 text-caption text-foreground-muted">
-        {LIMIT_TEXT[active.kind]}
+        {LIMIT_TEXT[active.kind as LegacyKind]}
       </span>
       <Button className="shrink-0" onClick={() => navigate(active.route)}>
         {active.routeLabel}
@@ -405,9 +408,9 @@ function NextQuestions({
   onSelect: (query: CannedQuery) => void;
 }) {
   const ranking = useMemo(() => districtRanking(), []);
-  const rest = CANNED_QUERIES.filter((query) => query.id !== active.id);
+  const rest = CANNED_QUERIES.filter((query) => query.id !== active.id && !query.panelOnly);
 
-  const teaser: Record<CannedQuery["kind"], string> = {
+  const teaser: Record<LegacyKind, string> = {
     cause: CAUSE_ANSWER.headline,
     risk: RISK_ANSWER.headlineOf(ranking[0]),
     impact: IMPACT_ANSWER.headline,
@@ -438,7 +441,7 @@ function NextQuestions({
                 />
               </span>
               <span className="w-full truncate text-caption text-foreground-muted">
-                {teaser[query.kind]}
+                {teaser[query.kind as LegacyKind]}
               </span>
             </button>
           </li>

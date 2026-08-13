@@ -24,7 +24,7 @@ import { majorDisasterAt } from "../../demo/events";
 import { useScenario } from "../../state/ScenarioProvider";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import { CENTER_LEFT, CENTER_RIGHT, LEFT_RAIL, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP } from "../../lib/layout";
-import { AgentBar } from "./widgets/AgentBar";
+import { PILL_SLOT_ID } from "../../agent";
 import { CctvLiveStrip } from "./widgets/CctvLiveStrip";
 import { DistrictList } from "./widgets/DistrictList";
 import { DistrictMarkers } from "./widgets/DistrictMarkers";
@@ -229,15 +229,15 @@ export function OverviewDashboardPage() {
         </div>
       </div>
 
-      {/* 하단 중앙 — 자연어 질의 바 (03 §1). 이 화면의 조연이라 폭 560px 로 낮게 서고,
-          CCTV 스트립 바로 위에 앉는다 */}
+      {/* 하단 중앙 — 자연어 질의 바 (03 §1). 이 화면의 조연이라 낮게 서고,
+          CCTV 스트립 바로 위에 앉는다.
+          바 자체는 여기서 그리지 않는다 — **자리만 내주고 AI 패널이 포털로 그려 넣는다.**
+          양쪽이 서로를 import 하지 않으므로 패널을 떼도 이 화면은 멀쩡히 돈다 */}
       <div
         className="pointer-events-none absolute z-30 flex justify-center"
         style={{ left: CENTER_LEFT, right: CENTER_RIGHT, bottom: ABOVE_STRIP }}
       >
-        <div className="pointer-events-auto w-full max-w-[560px]">
-          <AgentBar />
-        </div>
+        <div id={PILL_SLOT_ID} className="pointer-events-auto w-full max-w-[680px]" />
       </div>
 
       {/* 하단 중앙: 주요 CCTV 스트립 (03 §1 · 04 §2-5). 좌우 레일 사이에만 선다 —

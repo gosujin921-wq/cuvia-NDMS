@@ -37,6 +37,8 @@ export const EVENT_TYPE_ICON: Record<EventType, string> = {
   수위: "mdi:waves-arrow-up",
   강우: "mdi:weather-pouring",
   변위: "mdi:arrow-expand-horizontal",
+  /* 기온만 우리 계측이 아니라 기상청 특보다 — 그래도 핀 어법은 같다 */
+  기온: "mdi:thermometer-high",
 };
 
 interface DevicePinProps {

@@ -37,7 +37,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Icon } from "@iconify/react";
-import { Badge, Button, CollapsibleSection, EmptyState, GlassPanel, toast } from "@ds";
+import { Button, CollapsibleSection, EmptyState, GlassPanel, toast } from "@ds";
 import { useMapLibre } from "../../lib/useMapLibre";
 import { useWindLayer } from "../../lib/useWindLayer";
 import {
@@ -104,6 +104,8 @@ import { DistrictEventList } from "./widgets/DistrictEventList";
 import { MiniMap } from "./widgets/MiniMap";
 import { TwinDeviceMarkers } from "./widgets/TwinDeviceMarkers";
 import { TwinWeather } from "./widgets/TwinWeather";
+import { HeatDomeCard, useHeatDomeData } from "../../components/heat-dome";
+import { HeatDomeScene } from "./widgets/HeatDomeScene";
 import { useScenario } from "../../state/ScenarioProvider";
 import { DEMO_USER } from "../../demo/user";
 
@@ -147,11 +149,6 @@ const IMPACT_ITEMS: { id: keyof LayerState; label: string; color: string; icon: 
   { id: "floodLine", label: "침수선 보기", color: "#7cc4ff", icon: "mdi:vector-polyline" },
   { id: "floodOfficial", label: "해안침수예상도", color: "#64748b", icon: "mdi:map-legend" },
 ];
-
-const MODE_LABEL: Record<AnalysisMode, string> = {
-  event: "사건 연계 분석",
-  drill: "사전 모의분석",
-};
 
 export function DigitalTwinPage() {
   const navigate = useNavigate();
@@ -217,14 +214,35 @@ export function DigitalTwinPage() {
   /* 모의분석의 재난유형 — 원장에 이 지구 사건으로 등재된 것 중에서 고른다 */
   const hazardTypes = useMemo(() => hazardTypesOf(district.id), [district.id]);
   const [drillHazard, setDrillHazard] = useState<HazardType | null>(null);
+  /* 주소로 유형을 지정해 열 수 있다 — `?hazard=열돔`. 그 값이 원장에 있는 유형일 때만 받는다 */
+  const hazardParam = params.get("hazard") as HazardType | null;
   useEffect(() => {
+    if (hazardParam && hazardTypes.includes(hazardParam)) {
+      setDrillHazard(hazardParam);
+      return;
+    }
     /* 시간축이 설 수 있는 유형을 먼저 세운다 — 지구를 바꾸자마자 "미등재"가 뜨면
        무엇을 잘못 골랐나 싶어진다. 없으면 첫 유형으로 두고 레일이 미등재를 말한다 */
     const usable = hazardTypes.find((type) => progressionSpecOf(district.id, type));
     setDrillHazard(usable ?? hazardTypes[0] ?? null);
-  }, [district.id, hazardTypes]);
+  }, [district.id, hazardTypes, hazardParam]);
 
   const hazardType = mode === "event" ? (activeEvent?.hazardType ?? null) : drillHazard;
+
+  /* 열돔 동안 가운데 그림이 도시 3D 에서 열돔 지구본으로 바뀐다 — widgets/HeatDomeScene 머리말.
+     씬을 바꾸는 유형은 지금 이것 하나뿐이라 불리언 하나로 둔다. 늘면 그때 갈래를 만든다 */
+  const heat = hazardType === "열돔";
+
+  /* 상층장은 열돔일 때만 읽는다(0.9MB). 가운데 지구본과 레일 판이 같은 번호를 봐야 하므로
+     페이지가 하나만 들고 둘에 나눠 준다 — widgets/HeatDomeScene 머리말 */
+  const dome = useHeatDomeData(undefined, heat);
+
+  /* 재우고 깨울 때 크기를 다시 잡아 준다 — 숨은 동안 컨테이너가 0×0 이라, 그대로 두면
+     돌아왔을 때 지도가 한 점으로 접힌 채 뜬다 */
+  useEffect(() => {
+    if (!heat) map.current?.resize();
+  }, [heat, map]);
+
   const threshold = WATER_THRESHOLDS[district.id] ?? null;
   const conditionSpec = hazardType ? conditionSpecOf(district.id, hazardType) : null;
   const unit = conditionSpec?.unit ?? activeEvent?.unit ?? "";
@@ -540,7 +558,10 @@ export function DigitalTwinPage() {
         style={{ isolation: "isolate" }}
         aria-label={`${district.name} 3D 씬`}
       >
-        <div ref={mapContainer} className="h-full w-full" />
+        {/* 열돔이면 도시 지도를 재운다 — 위를 열돔 지구본이 통째로 덮어 한 픽셀도 안 보이는데
+            전체 화면 3D 지도(지형·건물·침수면)가 계속 그려지면 그 몫만큼 지구본이 버벅인다.
+            display:none 이면 브라우저가 합성에서 빼므로 지도는 살아 있되 그리지 않는다 */}
+        <div ref={mapContainer} className="h-full w-full" hidden={heat} />
         <TwinDeviceMarkers
           map={map}
           ready={ready}
@@ -549,6 +570,9 @@ export function DigitalTwinPage() {
         />
         <HazardLayers map={map} ready={ready} layers={hazards} visible={hazardOn} />
 
+        {/* 열돔 — 도시 3D 대신 열돔 지구본이 이 자리를 쓴다. 아래 지도는 그대로 살아 있어
+            재난유형을 되돌리면 도시가 다시 보인다(다시 만들지 않는다) */}
+        {heat && <HeatDomeScene dome={dome} />}
 
         {!ready && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-surface">
@@ -577,22 +601,21 @@ export function DigitalTwinPage() {
               <Icon icon="mdi:arrow-left" className="size-4" aria-hidden />
               {mode === "event" ? "재난관제" : "종합상황"}
             </button>
-            <Icon
-              icon="mdi:chevron-right"
-              className="size-4 shrink-0 text-foreground-subtle"
-              aria-hidden
-            />
-            <span className="shrink-0 text-foreground-muted">디지털트윈</span>
+            {/* 화면 이름은 마디로 세우지 않는다 — 좌측 메뉴에서 [디지털트윈]이 켜져 있고
+                화면 전체가 3D 씬이라, 여기서 한 번 더 이름을 대도 새로 알려 주는 것이 없다.
+                브레드크럼이 할 일은 "돌아갈 곳"과 "지금 무엇을 보는가" 둘이다 */}
             <Icon
               icon="mdi:chevron-right"
               className="size-4 shrink-0 text-foreground-subtle"
               aria-hidden
             />
             <h1 className="min-w-0 truncate font-semibold text-foreground">{subject}</h1>
-            {/* 모드는 마디가 아니라 지금 화면의 성격이라 끝에 붙인다 */}
-            <Badge variant={mode === "event" ? "default" : "gray"} className="ml-0.5 shrink-0">
-              {MODE_LABEL[mode]}
-            </Badge>
+            {/* ★ 모드 뱃지를 세우지 않는다. 한때 "두 모드는 레일 모양이 거의 같아서 무엇을
+                하는 중인지가 맨 위에 없으면 못 가른다"가 근거였는데, 그 전제가 실제와 다르다.
+                레일 첫 카드가 이미 두 번 말한다 — 제목이 「현재 분석 사건」/「사전 모의분석」로
+                갈리고, 모의분석에는 고르는 칸(지구·재난유형·조건)이 서고 사건 연계에는 없다.
+                진입하는 길도 갈려 있다(SCR-02 의 [디지털트윈] / 좌측 메뉴 / AI 배경 전환).
+                여기 한 마디를 더 두면 같은 말의 세 번째 자리가 된다 */}
           </nav>
         </GlassPanel>
       </div>
@@ -607,7 +630,10 @@ export function DigitalTwinPage() {
       {/* 씬 조작 — 지도 화면(SCR-01·02)과 같은 스트립을 같은 자리에 세운다.
           레이어도 여기 팝오버로 들어온다(03 §5) — 표현 설정은 분석 보조라 우측 레일의
           결론 자리를 먹으면 안 된다. "원래대로"는 트윈 기본 시점(기울인 채)으로 돌아간다 */}
-      <div className={UTIL_STRIP}>
+      {/* 열돔에는 세우지 않는다 — 이 스트립은 전부 트윈 지도를 조작하는데, 그 지도가
+          열돔 지구본에 가려 안 보인다. 안 보이는 것을 기울이고 켜고 끄는 단추가 남으면
+          "눌러도 아무 일이 없는" 자리가 된다 */}
+      <div className={UTIL_STRIP} hidden={heat}>
         <MapUtilStrip
           map={map}
           disabled={!ready}
@@ -739,6 +765,11 @@ export function DigitalTwinPage() {
                 caption={mode === "event" ? undefined : "설정 조건 지속 시"}
                 freeLabel={mode === "event" ? undefined : "사용자 시점"}
               />
+            ) : heat ? (
+              /* 열돔에는 밀 시간축이 없다 — 수위처럼 차오르는 값이 없어 이 칸이 "미등재"로
+                 빈다. 비는 칸을 두느니, 가운데 지구본이 무엇을 그린 것인지 대는 판이
+                 그 자리에 든다. 이 판은 자기 시간축(이동 경로)을 스스로 든다 */
+              <HeatDomeCard dome={dome} />
             ) : (
               /* 04 에 진행 조건·영향표가 없는 유형이다. 근거 없이 움직이는 축을 세우는
                  것보다 "아직 등재되지 않음"이 정직하다 */
@@ -807,8 +838,10 @@ export function DigitalTwinPage() {
             </GlassPanel>
           )}
 
-          {/* 참고 — 분석 보조. 접힌 채로 열리고, 묻는 사람만 펼친다(03 §5) */}
-          <div ref={referenceRef} className="shrink-0">
+          {/* 참고 — 분석 보조. 접힌 채로 열리고, 묻는 사람만 펼친다(03 §5).
+              열돔에는 세우지 않는다 — 미니맵도 과거 이벤트도 지구 한 곳을 짚는 자료인데,
+              폭염특보는 창원시 전역에 한 번 발효된다(04 §4-0). 짚을 자리가 없다 */}
+          <div ref={referenceRef} className="shrink-0" hidden={heat}>
           <CollapsibleSection
             className="pointer-events-auto border-border"
             bodyClassName="flex flex-col gap-3 p-3"

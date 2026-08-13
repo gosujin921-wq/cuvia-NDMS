@@ -12,4 +12,7 @@ export const HAZARD_COLOR: Record<HazardType, string> = {
   내수침수: "#8b5cf6",
   집중호우: "var(--color-primary-text)",
   지반변위: "var(--color-success)",
+  /* 열돔 — 더위의 색이되 단계색(노랑·주황·빨강)과 겹치면 "경보 단계"로 오독된다.
+     자홍 계열로 비켜 세운다. 확정되면 04 에 등재한다 */
+  열돔: "#e8578f",
 };

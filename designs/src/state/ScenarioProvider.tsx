@@ -30,6 +30,9 @@ import { alarmToast, dismissAllAlarms, type AlarmToast } from "../lib/alarm-toas
 import type { AlertLevel } from "../demo/levels";
 import type { GateOverride } from "../demo/facilities";
 import { DISPATCH_HISTORY, type DispatchRecord } from "../demo/dispatch";
+import type { AgentMessage } from "../agent";
+import { answerMessage, matchQuery, unknownMessage } from "../demo/ai";
+import { seaTempOnce } from "../demo/sea-temp";
 
 /** S0~S9 (04 §0). S2 는 진입(17:20)과 격상(17:22) 두 국면을 가진다 */
 export type ScenarioStep = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
@@ -185,12 +188,19 @@ const ESCALATION_PAINT_DELAY_MS = 1_200;
    시연 초반에 통계·AI 화면을 열어도 시계가 22시로 뛰지 않는다 (04 §0) */
 const STEP_GUARDS: Partial<Record<ScenarioStep, ScenarioStep>> = { 8: 7, 9: 8 };
 
+/* ── AI 패널 대화 (03 §6) ────────────────────────────────────
+   답이 즉시 튀어나오면 물음과 답의 순서가 뒤집혀 읽힌다. "분석 중" 을 잠깐 두고
+   본문을 한 글자씩 흘린다. **두 타이머 모두 엔진이 든다** — 패널이 들면 닫는 순간
+   타이핑이 끊기고, 다시 열었을 때 잘린 답이 남는다 (격상 타이머와 같은 이유) */
+const ANALYZING_MS = 700;
+const TYPING_MS = 16;
+
 export type CityStage = "상시대비" | "초기대응(보강)";
 
 interface ScenarioContextValue {
   /** 활성 시연 트랙 (04 §15). 기본 서항. 전환은 전체 리셋이다 */
   track: ScenarioTrack;
-  /** 트랙 발사 — 데모 컨트롤의 시나리오 행이 부른다. 리셋 후 발생 연출을 시작한다 */
+  /** 트랙 발사 — 데모 컨트롤의 0 키가 부른다. 리셋 후 발생 연출을 시작한다 */
   launchTrack: (track: ScenarioTrack) => void;
   /** 이 트랙의 대본이 도는 지구 (04 §15-3). 스텝 트리거가 지구 id 를 하드로 물면
    *  트랙 B 에서 같은 무대가 스텝을 못 올린다 — 트랙이 정하게 둔다 */
@@ -235,6 +245,28 @@ interface ScenarioContextValue {
   phoneReportedAt: Date | null;
   /** S7 — [유선 보고 기록] */
   logPhoneReport: () => void;
+  /* ── AI 패널 (03 §6). 열림 여부와 대화는 시연 중 변하므로 엔진이 소유한다 ── */
+  /** 패널이 열려 있나 */
+  agentOpen: boolean;
+  /** 쌓인 대화. 새로고침 = 리셋이라 대화도 함께 비워진다 */
+  agentMessages: AgentMessage[];
+  /** 답이 오는 중 — 전송 버튼이 취소 버튼이 된다 */
+  agentResponding: boolean;
+  openAgent: () => void;
+  /** 닫으면 대화를 비운다. 다음에 열면 새 대화다 (03 §6) */
+  closeAgent: () => void;
+  /** 답을 기다리지 않고 즉시 완성시킨다 */
+  cancelAgent: () => void;
+  /** 질의 전송 — 칩·알약·패널 입력창이 모두 이 하나로 들어온다 (03 §6) */
+  askAgent: (text: string) => void;
+  /**
+   * 답과 함께 뒤 화면을 갈아 끼울 자리. 옮기고 나면 골격이 비운다.
+   *
+   * 엔진은 라우터 **밖**에 산다(main.tsx). 그래서 직접 못 옮기고 갈 곳만 적어 둔다 —
+   * 옮기는 것은 라우터 안에 있는 AppLayout 이 한다.
+   */
+  agentBackdrop: string | null;
+  clearAgentBackdrop: () => void;
   /** 선택 장비 — 재난관제에서 연 센서·CCTV. 화면을 옮겨도 유지되고 트윈이 같은 핀을
    *  강조한다(03 §5 · 차수 K). URL(`?device=`)은 새로고침·직접 진입의 보조 복구다 */
   selectedDeviceId: string | null;
@@ -441,6 +473,131 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     setPhoneReportedAt(new Date(`${spec.datePrefix}${spec.stepClock[7]}:00`));
   }, []);
 
+
+  /* ── AI 패널 대화 (03 §6) ───────────────────────────────────
+     패널 부품(`src/agent/`)은 데모를 모른다. 답변을 밖에서 `messages` 로 넣어 주면
+     그대로 도는 물건이라, 엔진이 그 "밖" 노릇을 한다.
+
+     답을 만드는 시점의 시계가 필요하다 — 꺾은선이 시연 시계를 따라 자라기 때문이다
+     (04 §14-6). "분석 중" 뒤에 불리므로 그 사이 오른 스텝까지 반영된다 */
+
+  /* 수온 곡선을 미리 받아 둔다 — 답변을 만드는 쪽이 동기라 그때 가서 받으면 늦는다 */
+  useEffect(() => {
+    void seaTempOnce();
+  }, []);
+
+  const [agentBackdrop, setAgentBackdrop] = useState<string | null>(null);
+  const clearAgentBackdrop = useCallback(() => setAgentBackdrop(null), []);
+  const [agentOpen, setAgentOpen] = useState(false);
+  const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
+  const [agentResponding, setAgentResponding] = useState(false);
+  const analyzeTimer = useRef<number | null>(null);
+  const typingTimer = useRef<number | null>(null);
+  const messageSeq = useRef(0);
+  const nowRef = useRef(new Date());
+
+  const nextId = () => `agent-${(messageSeq.current += 1)}`;
+
+  const clearAgentTimers = useCallback(() => {
+    if (analyzeTimer.current !== null) window.clearTimeout(analyzeTimer.current);
+    if (typingTimer.current !== null) window.clearInterval(typingTimer.current);
+    analyzeTimer.current = null;
+    typingTimer.current = null;
+  }, []);
+
+  /** 본문을 한 글자씩 흘린다. 다 흘리면 응답이 끝난다 */
+  const runTyping = useCallback((id: string, full: string) => {
+    let cut = 0;
+    typingTimer.current = window.setInterval(() => {
+      cut += 1;
+      const done = cut >= full.length;
+      setAgentMessages((prev) =>
+        prev.map((message) =>
+          message.id === id
+            ? { ...message, isTyping: !done, displayedContent: full.slice(0, cut) }
+            : message,
+        ),
+      );
+      if (!done) return;
+      if (typingTimer.current !== null) window.clearInterval(typingTimer.current);
+      typingTimer.current = null;
+      setAgentResponding(false);
+    }, TYPING_MS);
+  }, []);
+
+  const openAgent = useCallback(() => setAgentOpen(true), []);
+
+  const closeAgent = useCallback(() => {
+    clearAgentTimers();
+    setAgentOpen(false);
+    setAgentResponding(false);
+    setAgentMessages([]);
+  }, [clearAgentTimers]);
+
+  /** 기다리지 않고 즉시 완성 — 흘리던 본문을 끝까지 채운다 */
+  const cancelAgent = useCallback(() => {
+    clearAgentTimers();
+    setAgentResponding(false);
+    setAgentMessages((prev) =>
+      prev
+        .filter((message) => message.type !== "analyzing")
+        .map((message) =>
+          message.isTyping
+            ? { ...message, isTyping: false, displayedContent: message.content }
+            : message,
+        ),
+    );
+  }, [clearAgentTimers]);
+
+  const askAgent = useCallback(
+    (text: string) => {
+      const asked = text.trim();
+      if (!asked) return;
+
+      clearAgentTimers();
+      setAgentOpen(true);
+      /* 에필로그 = S9 (04 §0). 엔진이 선행 스텝(S8)을 가드하므로 시연 초반에
+         물어도 시계는 뛰지 않고 답만 나온다 */
+      advanceTo(9);
+
+      const analyzingId = nextId();
+      setAgentResponding(true);
+      setAgentMessages((prev) => [
+        ...prev,
+        { id: nextId(), role: "user", content: asked },
+        { id: analyzingId, role: "assistant", type: "analyzing", content: "", progress: 0.35 },
+      ]);
+
+      analyzeTimer.current = window.setTimeout(() => {
+        /* 준비된 질의에 붙으면 그 답, 안 붙으면 답을 지어내지 않는다 (04 §14-5) */
+        const matched = matchQuery(asked);
+        const answerId = nextId();
+        const answer = matched
+          ? answerMessage(matched, answerId, nowRef.current)
+          : unknownMessage(asked, answerId);
+
+        /* 배경 전환 — 답과 함께 뒤가 바뀐다. 패널은 열린 채 남는다 */
+        if (matched?.backdrop) setAgentBackdrop(matched.backdrop);
+
+        setAgentMessages((prev) => [
+          ...prev.filter((message) => message.id !== analyzingId),
+          { ...answer, isTyping: true, displayedContent: "" },
+        ]);
+        runTyping(answerId, answer.content);
+      }, ANALYZING_MS);
+    },
+    [advanceTo, clearAgentTimers, runTyping],
+  );
+
+  useEffect(
+    () => () => {
+      if (analyzeTimer.current !== null) window.clearTimeout(analyzeTimer.current);
+      if (typingTimer.current !== null) window.clearInterval(typingTimer.current);
+    },
+    [],
+  );
+
+
   const value = useMemo<ScenarioContextValue>(() => {
     const spec = TRACK[track];
     /* 시계는 격상을 경계로 두 구간에 묶인다 (04 §0 · §15-2). 0 을 채운 HH:MM 이라
@@ -461,6 +618,11 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
           : stepClock < spec.preEscalationClock
             ? stepClock
             : spec.preEscalationClock;
+
+    /* 답변을 만들 때 읽는다 — 콜백 안에서 최신 시계를 보려면 ref 여야 한다 (04 §14-6) */
+    const now = new Date(`${spec.datePrefix}${clock}:00`);
+    nowRef.current = now;
+
     return {
       track,
       launchTrack,
@@ -470,7 +632,7 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
       escalated,
       escalate,
       markStageReady,
-      now: new Date(`${spec.datePrefix}${clock}:00`),
+      now,
       cityStage: step >= 6 ? "초기대응(보강)" : "상시대비",
       approvedResponseLevel,
       approvedAt,
@@ -487,6 +649,15 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
       selectDevice,
       gateOverrides,
       setGateClosed,
+      agentOpen,
+      agentMessages,
+      agentResponding,
+      openAgent,
+      closeAgent,
+      cancelAgent,
+      askAgent,
+      agentBackdrop,
+      clearAgentBackdrop,
     };
   }, [
     track,
@@ -510,6 +681,15 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     selectDevice,
     gateOverrides,
     setGateClosed,
+    agentOpen,
+    agentMessages,
+    agentResponding,
+    openAgent,
+    closeAgent,
+    cancelAgent,
+    askAgent,
+    agentBackdrop,
+    clearAgentBackdrop,
   ]);
 
   return <ScenarioContext.Provider value={value}>{children}</ScenarioContext.Provider>;

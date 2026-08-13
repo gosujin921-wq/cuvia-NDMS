@@ -277,14 +277,27 @@ export interface CctvSceneSpec {
   view: CctvView;
   /** 평시 컷 — 지정하지 않으면 두 대가 같은 풀에서 같은 장을 물 수 있다 */
   calm: string;
+  /**
+   * 실촬 영상 — 있으면 스틸 대신 이 클립을 무한 반복으로 튼다(04 §2-5).
+   *
+   * 클립은 **단계로 갈리지 않는다.** 스틸은 평시/위험 두 장이라 경보 프레임에서 갈아탈 수
+   * 있지만 영상은 그 카메라가 지금 보내는 화면 자체다 — 격상했다고 다른 촬영분으로 바꾸면
+   * 같은 자리 카메라가 딴 데를 보게 된다. 격상은 옆의 계측·판정 층이 말한다.
+   *
+   * 평시 컷(`calm`)은 그대로 둔다 — 클립이 뜨기 전 poster 자리를 받는다.
+   */
+  clip?: string;
 }
 
 export const CCTV_SCENES: CctvSceneSpec[] = [
   { districtId: "seohang", spot: "방파제", scene: "물양장 수위 상승", bearing: "남동 (외해·물양장)", view: "harbor", calm: "/cctv/03_harbor_calm_01.jpg" },
   { districtId: "seohang", spot: "해안도로", scene: "해안도로 월파", bearing: "남서 (해안도로 축)", view: "city", calm: "/cctv/05_city_normal_01.jpg" },
-  /* 트랙 B (04 §15-6) — 배수문은 이 시연의 결정적 컷이다. 영상이 없으면 옆 칸의
-     외수위·내수위 두 값과 08:47 폐쇄 로그로 대체해 말한다(봉암 대본 시연 실패 대비) */
-  { districtId: "bongam", spot: "배수문", scene: "배수문 폐쇄 · 외수위 상승", bearing: "북 (봉암천 하류)", view: "reservoir", calm: "/cctv/01_reservoir_calm_03.jpg" },
+  /* 트랙 B (04 §15-6) — 배수문·배수펌프장은 이 시연의 결정적 두 컷이라 실촬 영상이 붙는다.
+     방재시설 핀(demo/facilities.ts `deviceSpot`)이 가리키는 카메라도 이 둘이다: 08:47 폐쇄 ·
+     펌프 3대 가동 로그를 읽은 다음 "그래서 지금 어떤데"의 답이 같은 자리 영상으로 온다.
+     영상이 안 뜨면 옆 칸의 외수위·내수위 두 값과 운영 로그로 대체해 말한다(시연 실패 대비) */
+  { districtId: "bongam", spot: "배수문", scene: "배수문 폐쇄 · 외수위 상승", bearing: "북 (봉암천 하류)", view: "reservoir", calm: "/cctv/01_reservoir_calm_03.jpg", clip: "/cctv/door.mp4" },
+  { districtId: "bongam", spot: "배수펌프장", scene: "펌프 가동 · 내수 배출", bearing: "남 (배수문 안쪽)", view: "city", calm: "/cctv/05_city_normal_04.jpg", clip: "/cctv/door2.mp4" },
   { districtId: "bongam", spot: "수로 합류부", scene: "수로 합류부 수위 상승", bearing: "북동 (배수구역 수로)", view: "city", calm: "/cctv/05_city_normal_02.jpg" },
 ];
 
@@ -319,9 +332,21 @@ export function cctvStillAt(device: Device, now: Date): string {
   return pool[(districtIndex * 4 + nth) % pool.length];
 }
 
+/** 이 카메라가 트는 실촬 영상 경로 — 없으면 스틸(`cctvStillAt`)이 그 자리를 받는다 */
+export function cctvClipOf(device: Device): string | undefined {
+  return cctvSceneOf(device)?.clip;
+}
+
 /** 현장영상 패널이 세우는 지구의 주요 CCTV — 장면 등재분 우선, 없으면 앞 2대 (04 §2-5) */
 export function featuredCctvOf(districtId: string): Device[] {
   const cctvs = devicesOf(districtId).filter((d) => d.kind === "CV");
   const featured = cctvs.filter((d) => cctvSceneOf(d));
-  return (featured.length > 0 ? featured : cctvs).slice(0, 2);
+  /* 실촬 영상이 붙은 카메라를 앞세운다 — 봉암은 등재 장면이 셋(배수문·배수펌프장·수로
+     합류부)인데 도크는 두 칸이다. 장비 번호순(CV-003 배수문 → CV-006 수로 합류부)으로
+     자르면 트랙 B 의 결정적 컷인 펌프장 영상이 잘려 나간다. 정렬은 안정이라 영상이 없는
+     카메라끼리는 장비 번호순 그대로다 */
+  const ordered = [...featured].sort(
+    (a, b) => Number(!!cctvClipOf(b)) - Number(!!cctvClipOf(a)),
+  );
+  return (ordered.length > 0 ? ordered : cctvs).slice(0, 2);
 }

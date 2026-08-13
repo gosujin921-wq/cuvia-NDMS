@@ -19,7 +19,8 @@ import type { AlertLevel } from "./levels";
  *  "지금"으로 쓰지 않는다 — 지금은 ScenarioProvider.now 다 */
 export const DEMO_DAY = new Date("2026-08-12T17:16:00");
 
-export type EventType = "수위" | "강우" | "변위";
+/** 관측 종류 — 무엇을 재서 이 사건이 났나. 열돔만 우리 계측이 아니라 기상청 특보다 */
+export type EventType = "수위" | "강우" | "변위" | "기온";
 
 /* ── 재난 분류 (04 §4-0) ──────────────────────────────────
  * 재난 분야 → 재난유형(위험현상) → 관측 → 계측 단계.
@@ -28,7 +29,7 @@ export type EventType = "수위" | "강우" | "변위";
  * 분류 기준은 시설이 아니라 발생 현상 — 주남 변위는 저수지 지구지만 산지·지반이다.
  * ───────────────────────────────────────────────────────── */
 
-export type HazardType = "폭풍해일" | "하천범람" | "내수침수" | "집중호우" | "지반변위";
+export type HazardType = "폭풍해일" | "하천범람" | "내수침수" | "집중호우" | "지반변위" | "열돔";
 export type HazardField = "풍수해" | "기상·기후" | "수자원" | "산지·지반";
 
 /** 분야는 유형에서 1:1 로 정해진다. 데이터 필드는 둘 다 갖되 원장 표기는 유형만 적는다 */
@@ -38,9 +39,38 @@ export const HAZARD_FIELD: Record<HazardType, HazardField> = {
   내수침수: "풍수해",
   집중호우: "풍수해",
   지반변위: "산지·지반",
+  /* 기상·기후 분야의 첫 유형이다. 이름만 있고 비어 있던 칸을 열돔이 채운다 */
+  열돔: "기상·기후",
 };
 
-export const HAZARD_ORDER: HazardType[] = ["폭풍해일", "하천범람", "내수침수", "집중호우", "지반변위"];
+/**
+ * 폭염특보 발령 기준 — 체감온도(℃), 2025 개편.
+ *
+ * 수위 기준(WATER_THRESHOLDS)이 지구마다 다른 것과 달리 이것은 **시 전역 한 벌**이다.
+ * 특보를 우리가 아니라 기상청이 내기 때문이다.
+ */
+export const HEAT_THRESHOLD = { advisory: 33, warning: 35 } as const;
+
+/**
+ * 체감온도로 자리를 가른다 — 같은 뚜껑 아래라도 어디에 앉았느냐로 2℃ 넘게 갈린다.
+ *
+ * 나누는 자리를 한 곳에 둔다 — 표·답변·팝업이 각자 나누면 같은 지구를 한쪽은 분지,
+ * 한쪽은 내륙이라 부르게 된다.
+ */
+export function heatSpotLabel(feels: number): string {
+  if (feels >= 36.5) return "분지 안쪽";
+  if (feels >= 35.5) return "내륙";
+  return "바다에 면함";
+}
+
+export const HAZARD_ORDER: HazardType[] = [
+  "폭풍해일",
+  "하천범람",
+  "내수침수",
+  "집중호우",
+  "지반변위",
+  "열돔",
+];
 
 /** 표시명 규칙(04 §4-0) — 하천범람·내수침수는 센서 임계 초과지 확인된 범람·침수가 아니라
  *  "위험"을 붙여 표시한다. 폭풍해일(특보)·집중호우(실측)·지반변위(실측)는 그대로 쓴다 */
@@ -327,6 +357,240 @@ export const EVENTS: AlertEvent[] = [
     clearedAt: "2026-07-29T01:25:00",
     value: 3.47,
     unit: "EL.m",
+  },
+  /* ── 열돔 (04 §4-0 · 신설) ──────────────────────────────────
+   * 폭염특보는 **창원시 전역**에 한 번 발효되고, 위험지구 12곳이 저마다 한 줄을 든다.
+   * 지구마다 체감온도가 다르기 때문이다 — 산으로 둘린 분지 안쪽이 가장 뜨겁고 바다에
+   * 면한 자리가 가장 덜하다. 시 전체로 한 줄만 들면 그 차이가 원장에서 사라진다.
+   *
+   * ★ 우리 장비가 낸 사건이 아니다. 수위계·강우량계와 달리 **기상청 특보**가 낸다.
+   *   그래서 `deviceId` 가 비어 있다 — 없는 장비 ID 를 지어내면 지도·팝업이 찾다 만다.
+   *
+   * ★ 재난유형 이름은 `열돔` 이고 발령되는 것은 `폭염특보` 다. 둘이 갈리는 것이 맞다 —
+   *   특보를 내는 것은 기상청이고, 왜 이렇게 더운지(북태평양고기압이 상층을 눌러 앉은
+   *   것)를 대는 이름이 열돔이다. SCR-05 트윈이 그리는 것도 그 상층장이다.
+   *
+   * 기간은 7/20~7/26. 비가 온 날(7/28~8/05)과 겹치지 않는 자리를 골랐다 — 폭염경보와
+   * 호우경보가 같은 날 같은 지구에 서면 원장이 서로를 부정한다.
+   *
+   * 기준(2025 개편) — 주의보 체감 33℃ · 경보 체감 35℃, 각 2일 이상 지속 예상.
+   * 아래 값은 전부 그 선을 넘는다.
+   * ───────────────────────────────────────────── */
+  {
+    id: "EVT-260720-001",
+    districtId: "changwoncheon",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 34.1,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 34.1 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 37.4 },
+    ],
+  },
+  {
+    id: "EVT-260720-002",
+    districtId: "gwangryeo",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 33.9,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 33.9 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 37.1 },
+    ],
+  },
+  {
+    id: "EVT-260720-003",
+    districtId: "paryong",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 33.8,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 33.8 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 36.9 },
+    ],
+  },
+  {
+    id: "EVT-260720-004",
+    districtId: "bongam",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 33.7,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 33.7 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 36.8 },
+    ],
+  },
+  {
+    id: "EVT-260720-005",
+    districtId: "namcheon",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 33.6,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 33.6 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 36.6 },
+    ],
+  },
+  {
+    id: "EVT-260720-006",
+    districtId: "yangdeok",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 33.5,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 33.5 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 36.5 },
+    ],
+  },
+  {
+    id: "EVT-260720-007",
+    districtId: "junam",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 33.4,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 33.4 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 36.2 },
+    ],
+  },
+  {
+    id: "EVT-260720-008",
+    districtId: "yeojwa",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 33.2,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 33.2 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 35.8 },
+    ],
+  },
+  {
+    id: "EVT-260720-009",
+    districtId: "guhang",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 33.1,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 33.1 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 35.4 },
+    ],
+  },
+  {
+    id: "EVT-260720-010",
+    districtId: "seohang",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 33.0,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 33.0 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 35.2 },
+    ],
+  },
+  {
+    id: "EVT-260720-011",
+    districtId: "yongwon",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 33.0,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 33.0 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 35.1 },
+    ],
+  },
+  {
+    id: "EVT-260720-012",
+    districtId: "myeongdong",
+    /* 기상청 특보라 우리 장비가 없다 */
+    deviceId: "",
+    device: "기상청 폭염특보",
+    type: "기온",
+    hazardType: "열돔",
+    level: "advisory",
+    raisedAt: "2026-07-20T11:20:00",
+    clearedAt: "2026-07-26T20:10:00",
+    value: 33.0,
+    unit: "℃",
+    stages: [
+      { at: "2026-07-20T11:20:00", level: "advisory", value: 33.0 },
+      { at: "2026-07-22T14:40:00", level: "warning", value: 35.0 },
+    ],
   },
   {
     id: "EVT-260718-001",
