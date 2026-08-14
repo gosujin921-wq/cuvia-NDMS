@@ -29,7 +29,7 @@ import { useScenario } from "../state/ScenarioProvider";
 import { CANNED_QUERIES } from "../demo/ai";
 
 /** 서비스명 — 화면명을 못 찾았을 때의 상단바 제목 */
-const SERVICE_NAME = "CUVIA 안전재난관제시스템";
+const SERVICE_NAME = "CUVIA 재난안전관제시스템";
 
 /** 알약 입력창 위 추천 질문 · 빈 대화의 고를 수 있는 질문 — 질의 문안 그대로 (04 §14-1) */
 const PILL_PRESETS = CANNED_QUERIES.map((query) => query.text);

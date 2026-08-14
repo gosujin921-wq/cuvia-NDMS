@@ -11,15 +11,15 @@
  * 추이가, 판정·실행은 우측 판단·대응 레일이 이미 화면에 들고 있고, 팝업에 되풀이하면
  * 같은 값이 두 벌씩 서서 격상 순간 함께 갱신할 자리만 는다(03 §2).
  *
- * CCTV 는 현장 영상을 보여준다. 통신끊김 장비는 현재값 대신 마지막 수신 시각을
- * 세운다 — 끊긴 장비가 옛 값을 현재값처럼 보이면 안 된다.
+ * CCTV 는 이 팝업이 받지 않는다 — 핀을 누르면 화면 가운데 큰 오버레이가 뜬다
+ * (components/CctvBigView.tsx · KISA·SK 관제 대시보드와 같은 조작). 통신끊김 장비는
+ * 현재값 대신 마지막 수신 시각을 세운다 — 끊긴 장비가 옛 값을 현재값처럼 보이면 안 된다.
  * ───────────────────────────────────────────── */
 
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@iconify/react";
 import { Button, GlassPanel, StatusDotLabel, Tag } from "@ds";
-import { cctvSceneOf, deviceKindSpec, type Device } from "../../../demo/devices";
-import { CctvStill } from "../../../components/CctvStill";
+import { deviceKindSpec, type Device } from "../../../demo/devices";
 import { latestValue } from "../../../demo/measurements";
 import {
   activeEventOfDeviceAt,
@@ -105,9 +105,7 @@ export function DevicePopup({
         </div>
       )}
 
-      {device.kind === "CV" ? (
-        <CctvBody device={device} />
-      ) : event && view ? (
+      {event && view ? (
         <EventBody device={device} event={event} view={view} onRespond={onRespond} />
       ) : (
         <SensorBody device={device} />
@@ -284,38 +282,3 @@ function SensorBody({ device }: { device: Device }) {
   );
 }
 
-function CctvBody({ device }: { device: Device }) {
-  const { now } = useScenario();
-  const offline = device.status !== "정상";
-  /* 실촬 스틸을 LIVE 로 튼다. 등재 장면(04 §2-5)이면 촬영 방향을 아래에 덧붙인다 */
-  const scene = cctvSceneOf(device);
-
-  return (
-    <div className="flex flex-col gap-2 p-3">
-      <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded bg-black">
-        {offline ? (
-          <div className="flex flex-col items-center gap-1">
-            <Icon icon="mdi:video-off" className="size-6 text-foreground-subtle" aria-hidden />
-            <span className="text-caption text-foreground-subtle">{device.status}</span>
-          </div>
-        ) : (
-          <>
-            <CctvStill device={device} className="absolute inset-0" />
-            <span className="absolute left-2 top-2 flex items-center gap-1 rounded bg-surface px-1.5 py-0.5 text-caption text-foreground">
-              <span className="size-1.5 animate-pulse rounded-full bg-danger" aria-hidden />
-              LIVE
-            </span>
-            {/* 촬영 시각 — 스틸 위에 그냥 얹으면 밝은 화면에서 읽히지 않아 라벨과 같은 칩을 깐다 */}
-            <span className="absolute bottom-1.5 right-2 rounded bg-surface px-1.5 py-0.5 font-mono text-caption text-foreground">
-              {formatClock(now)}
-            </span>
-          </>
-        )}
-      </div>
-      <p className="text-caption text-foreground-muted">
-        {device.address}
-        {scene && <span className="text-foreground-subtle"> · {scene.bearing}</span>}
-      </p>
-    </div>
-  );
-}

@@ -60,6 +60,7 @@ import { MapPopup } from "../../components/MapPopup";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import { CCTV_DOCK, CENTER_RIGHT, EDGE, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP } from "../../lib/layout";
 import { LevelBadge } from "../../components/LevelBadge";
+import { CctvBigView } from "../../components/CctvBigView";
 import { formatClock } from "../../lib/datetime";
 import { DeviceMarkers } from "./widgets/DeviceMarkers";
 import { FacilityMarkers } from "./widgets/FacilityMarkers";
@@ -369,7 +370,13 @@ export function EarlyWarningPage() {
           facilities={visibleFacilities}
           onOpenCctv={focusDevice}
         />
-        {selected && (
+        {/* CCTV 는 마커 팝업이 아니라 화면 가운데 큰 오버레이다 — KISA·SK 관제 대시보드와
+            같은 조작이다(components/CctvBigView.tsx). 영상은 300px 팝업 칸에서 볼 것이
+            아니고, 핀이 지도 가장자리에 있어도 잘리지 않는다 */}
+        {selected?.kind === "CV" && (
+          <CctvBigView device={selected} onClose={() => setSelectedId(null)} />
+        )}
+        {selected && selected.kind !== "CV" && (
           <MapPopup
             map={map}
             lngLat={selected.center}
