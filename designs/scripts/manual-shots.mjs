@@ -10,7 +10,7 @@
  *
  * 사용:
  *   corepack pnpm dev                       # 5400 포트
- *   node scripts/manual-shots.mjs           # → ../docs/manual-capture/shots/*.png · data.json
+ *   node scripts/manual-shots.mjs           # → ../docs/매뉴얼/제작/1_캡처/shots/*.png · data.json
  *   DUMP=1 node scripts/manual-shots.mjs    # 화면별 조작 요소 목록도 함께 (라벨 고를 때)
  * ───────────────────────────────────────────── */
 
@@ -20,7 +20,7 @@ import path from "node:path";
 import { chromium } from "playwright-core";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:5400";
-const OUT = path.resolve(process.env.OUT ?? "../docs/manual-capture");
+const OUT = path.resolve(process.env.OUT ?? "../docs/매뉴얼/제작/1_캡처");
 const SHOTS = path.join(OUT, "shots");
 const WIDTH = 1600;
 const HEIGHT = 1000;

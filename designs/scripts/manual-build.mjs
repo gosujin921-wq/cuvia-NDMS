@@ -5,7 +5,7 @@
  * 한 벌로 엮는다. 그림은 JPEG 로 줄여 base64 로 박아 파일 하나로 끝낸다 —
  * 폴더째 옮기지 않아도 열리고, 브라우저 인쇄로 그대로 PDF · PPT 가 된다.
  *
- * 사용: node scripts/manual-build.mjs   # → ../docs/manual-capture/간이매뉴얼.html
+ * 사용: node scripts/manual-build.mjs   # → ../docs/매뉴얼/제작/1_캡처/간이매뉴얼.html
  * ───────────────────────────────────────────── */
 
 import fs from "node:fs";
@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
-const DIR = path.resolve(process.env.OUT ?? "../docs/manual-capture");
+const DIR = path.resolve(process.env.OUT ?? "../docs/매뉴얼/제작/1_캡처");
 const data = JSON.parse(fs.readFileSync(path.join(DIR, "data.json"), "utf8"));
 const OUT_FILE = path.join(DIR, "CUVIA_재난안전관제_간이매뉴얼.html");
 
