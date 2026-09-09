@@ -5,7 +5,7 @@ import path from "node:path";
 import { chromium } from "playwright-core";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:5400";
-const OUT = path.resolve("../manual-capture");
+const OUT = path.resolve("../docs/manual-capture");
 
 function findChromium() {
   const cache = path.join(os.homedir(), "Library/Caches/ms-playwright");

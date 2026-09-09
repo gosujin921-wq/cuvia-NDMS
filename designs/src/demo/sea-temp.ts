@@ -1,6 +1,6 @@
 /* ─────────────────────────────────────────────
  * 표층수온 — 열돔 고수온 편의 출발점
- * 정본 후보: docs/작업/열돔-고수온-시나리오.md · 열돔-고수온-AI답변.md
+ * 정본 후보: docs/레거시/정본/데모시나리오/열돔-고수온-시나리오.md · 열돔-고수온-AI답변.md
  *
  * 자료는 `public/weather/sea-temperature.json` 하나다(Open-Meteo Marine · CC BY 4.0).
  * 굽는 쪽은 `scripts/fetch-sea-temperature.mjs`.

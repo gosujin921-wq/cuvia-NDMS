@@ -6,7 +6,7 @@
  * 관통한 태풍 솔릭(2018-08-23)의 실측 바람을 데모 배경으로 쓴다.
  *
  * 실행: designs/ 에서 `node scripts/fetch-wind-field.mjs` (수십 초)
- * 규격·근거: docs/작업/외부-API-인계.md §3-1
+ * 규격·근거: docs/외부-API-인계.md §3-1
  * ───────────────────────────────────────────── */
 
 import { writeFile } from "node:fs/promises";

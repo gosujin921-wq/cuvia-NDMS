@@ -17,7 +17,7 @@
  *   04 §5 의 32.4℃ 와 어긋난다 — 이 날짜를 고른 이유가 사라진다.
  *
  * 실행: designs/ 에서 `node scripts/fetch-precipitation-field.mjs` (429 대기 포함 약 5분)
- * 규격·근거: docs/작업/외부-API-인계.md §3-2 · §3-3
+ * 규격·근거: docs/외부-API-인계.md §3-2 · §3-3
  * ───────────────────────────────────────────── */
 
 import { writeFile } from "node:fs/promises";
