@@ -113,6 +113,62 @@ export function conditionSpecOf(districtId: string, hazardType: HazardType): Con
   return { kind: "water-level", title: "예상 수위", unit: "EL.m" };
 }
 
+/* ── 트윈에 설 수 없는 유형이 그 이유를 든다 ─────────────── */
+
+/**
+ * 왜 이 유형은 시간축이 안 서나.
+ *
+ * ★ 예전에는 전부 "아직 등재되지 않았습니다" 한 문장이었다. 하천범람 · 집중호우 ·
+ *   지반변위 · 지진의 이유가 **전부 다른데** 화면이 한 문장만 알았다. 그것은 게으른
+ *   답이고, 보는 사람은 넷이 같은 사정인 줄로 읽는다.
+ *
+ *   못 서는 이유는 세 갈래다:
+ *     dormant   자리는 맞는데 스펙·영향표가 아직 없다      (등재하면 선다)
+ *     lever     자기가 아니라 다른 유형의 조건으로 산다     (세우면 축이 두 벌이 된다)
+ *     axis      미는 축이 시간이 아니다                    (골격이 다르다)
+ *
+ *   화면은 이 갈래를 그대로 말한다. 그래야 "만들다 만 것"과 "안 만드는 것"이 갈린다.
+ *   배경: docs/고도화/트윈-유형별-화면사양.md §3-4
+ */
+export type TwinAbsence = {
+  kind: "dormant" | "lever" | "axis";
+  /** 화면에 서는 한 줄 */
+  message: string;
+  /** 한 줄 더 , 왜 그런가 */
+  detail?: string;
+};
+
+export function twinAbsenceOf(hazardType: HazardType): TwinAbsence {
+  switch (hazardType) {
+    case "집중호우":
+      return {
+        kind: "lever",
+        message: "집중호우는 조건 레버로 섭니다",
+        detail:
+          "지도 위에서 커지는 것이 강우 자체가 아니라 내수침수의 수면입니다. 내수침수 분석의 강우 강도가 곧 이 유형입니다.",
+      };
+    case "지반변위":
+      return {
+        kind: "dormant",
+        message: "지반변위 조건 분석은 아직 등재되지 않았습니다",
+        detail: "사면 기울기와 붕괴 영향권을 그리는 표현이 아직 없습니다.",
+      };
+    case "열돔":
+      return {
+        kind: "axis",
+        message: "열돔은 바꿀 조건이 없습니다",
+        detail:
+          "폭염은 기상청이 내고 우리가 조건을 바꿀 대상이 아닙니다. 견디는 시간만 있습니다.",
+      };
+    default:
+      return {
+        kind: "dormant",
+        message: `${hazardType} 조건 분석은 아직 등재되지 않았습니다`,
+        detail: "이 지구의 진행 스펙과 영향표를 등재하면 섭니다.",
+      };
+  }
+}
+
 /* ── 영향 ────────────────────────────────────────────── */
 
 /**

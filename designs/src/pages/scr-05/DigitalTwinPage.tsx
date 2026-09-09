@@ -37,7 +37,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Icon } from "@iconify/react";
-import { Button, CollapsibleSection, EmptyState, GlassPanel, toast } from "@ds";
+import { Button, CollapsibleSection, EmptyState, FilterCapsuleGroup, GlassPanel, toast } from "@ds";
 import { useMapLibre } from "../../lib/useMapLibre";
 import { useWindLayer } from "../../lib/useWindLayer";
 import {
@@ -82,6 +82,7 @@ import {
   hazardTypesOf,
   impactAt,
   observedBasisOf,
+  twinAbsenceOf,
   type AnalysisMode,
   type DrillSnapshot,
 } from "../../demo/analysis";
@@ -227,7 +228,17 @@ export function DigitalTwinPage() {
     setDrillHazard(usable ?? hazardTypes[0] ?? null);
   }, [district.id, hazardTypes, hazardParam]);
 
-  const hazardType = mode === "event" ? (activeEvent?.hazardType ?? null) : drillHazard;
+  /* 사건 연계 모드에서도 유형을 갈아탈 수 있다 (트윈-유형별-화면사양 §4).
+     시연에서 "이 유형은 이렇게 보입니다"를 세 번 눌러 보이려면, 매번 모의분석 설정을
+     거치게 할 수 없다. 칩 한 줄이면 세 번의 클릭이 세 번의 장면이 된다.
+     ★ 갈아타도 사건은 그대로다 — 무엇을 분석하는가(머리 카드)는 안 바뀌고 보는 축만 바뀐다 */
+  const [hazardOverride, setHazardOverride] = useState<HazardType | null>(null);
+  useEffect(() => {
+    setHazardOverride(null);
+  }, [district.id, activeEvent?.id]);
+
+  const hazardType =
+    mode === "event" ? (hazardOverride ?? activeEvent?.hazardType ?? null) : drillHazard;
 
   /* 열돔 동안 가운데 그림이 도시 3D 에서 열돔 지구본으로 바뀐다 — widgets/HeatDomeScene 머리말.
      씬을 바꾸는 유형은 지금 이것 하나뿐이라 불리언 하나로 둔다. 늘면 그때 갈래를 만든다 */
@@ -719,6 +730,27 @@ export function DigitalTwinPage() {
           길어지면 결론 동작이 접히는데, 그러면 "설정이 먼저 보이는" 원래 문제로 돌아간다 */}
       <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+          {/* 유형 전환 칩 — 이 지구 원장에 있는 유형을 늘어놓는다.
+              모의분석은 설정 패널이 이미 유형 드롭다운을 들고 있으므로 사건 연계에서만 선다.
+              유형이 하나뿐인 지구에서는 고를 것이 없으니 서지 않는다 */}
+          {mode === "event" && hazardTypes.length > 1 && (
+            <GlassPanel className="pointer-events-auto shrink-0">
+              <div className="flex flex-col gap-1.5 p-3">
+                <span className="text-caption font-semibold text-foreground-muted">
+                  이 지구의 재난유형
+                </span>
+                <FilterCapsuleGroup
+                  options={hazardTypes.map((t) => hazardLabel(t))}
+                  value={hazardLabel(hazardType ?? hazardTypes[0])}
+                  onChange={(label: string) => {
+                    const picked = hazardTypes.find((t) => hazardLabel(t) === label);
+                    setHazardOverride(picked ?? null);
+                  }}
+                />
+              </div>
+            </GlassPanel>
+          )}
+
           {/* 레일 첫 카드 = "무엇을 분석하는가". 사건 연계는 사건이 정해 주고,
               모의분석은 사용자가 세운다 */}
           <GlassPanel className="pointer-events-auto shrink-0">
@@ -775,15 +807,34 @@ export function DigitalTwinPage() {
                  것보다 "아직 등재되지 않음"이 정직하다 */
               <section className="flex flex-col gap-1.5 p-3" aria-label="분석 조건">
                 <h2 className="text-body font-semibold text-foreground">분석 조건</h2>
-                <EmptyState
-                  variant="inline"
-                  icon="mdi:tune-variant"
-                  message={
-                    hazardType
-                      ? `${hazardType} 조건 분석은 아직 등재되지 않았습니다`
-                      : "분석할 사건이 없습니다"
+                {(() => {
+                  /* 못 서는 이유가 유형마다 다르다 — 한 문장으로 뭉뚱그리면 "만들다 만 것"과
+                     "안 만드는 것"이 같아 보인다(demo/analysis.ts twinAbsenceOf) */
+                  if (!hazardType) {
+                    return (
+                      <EmptyState
+                        variant="inline"
+                        icon="mdi:tune-variant"
+                        message="분석할 사건이 없습니다"
+                      />
+                    );
                   }
-                />
+                  const absence = twinAbsenceOf(hazardType);
+                  return (
+                    <EmptyState
+                      variant="inline"
+                      icon={
+                        absence.kind === "lever"
+                          ? "mdi:call-merge"
+                          : absence.kind === "axis"
+                            ? "mdi:timer-off-outline"
+                            : "mdi:tune-variant"
+                      }
+                      message={absence.message}
+                      description={absence.detail}
+                    />
+                  );
+                })()}
               </section>
             )}
           </GlassPanel>
