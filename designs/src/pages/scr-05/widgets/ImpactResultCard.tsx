@@ -64,6 +64,8 @@ const ROWS: ImpactRowSpec[] = [
 export interface ConditionRow {
   label: string;
   unit: string;
+  /** 소수 자리 — 유형이 정한다(demo/analysis.ts ConditionSpec). 수위 2 · 변위 1 */
+  digits: number;
   baseline: number | null;
   selected: number;
 }
@@ -113,9 +115,9 @@ export function ImpactResultCard({
       label: condition.label,
       baselineText:
         compare && condition.baseline != null
-          ? `${condition.baseline.toFixed(2)} ${condition.unit}`
+          ? `${condition.baseline.toFixed(condition.digits)} ${condition.unit}`
           : null,
-      selectedText: `${condition.selected.toFixed(2)} ${condition.unit}`,
+      selectedText: `${condition.selected.toFixed(condition.digits)} ${condition.unit}`,
       grew: condition.baseline != null && condition.selected > condition.baseline,
       alarming: false,
       /* 조건값은 영향의 원인이라 구분선을 두고 위에 세운다 */

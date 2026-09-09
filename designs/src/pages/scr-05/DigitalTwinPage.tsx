@@ -257,6 +257,8 @@ export function DigitalTwinPage() {
   const threshold = WATER_THRESHOLDS[district.id] ?? null;
   const conditionSpec = hazardType ? conditionSpecOf(district.id, hazardType) : null;
   const unit = conditionSpec?.unit ?? activeEvent?.unit ?? "";
+  /* 자릿수도 유형이 정한다 — 수위 2 · 변위 1. 화면이 2 로 박으면 mm 가 4.10 으로 나온다 */
+  const digits = conditionSpec?.digits ?? 2;
 
   /* ── 모의분석의 조건 (demo/progression.ts) ───────────────────────────────
      사람이 세우는 마지막 값이다. 이 값이 상승률을 정하고 상승률이 축 위 눈금 시각을
@@ -534,8 +536,8 @@ export function DigitalTwinPage() {
        실제로 세운 것은 조건이고 5.83 은 거기서 2시간 35분 뒤에 나온 결과다 */
     const offset = timeline && pickedAt ? formatOffset(timeline, pickedAt) : null;
     const conditionLabel = offset
-      ? `${offset} · ${level.toFixed(2)} ${unit}`
-      : `${level.toFixed(2)} ${unit}`;
+      ? `${offset} · ${level.toFixed(digits)} ${unit}`
+      : `${level.toFixed(digits)} ${unit}`;
     const snapshot: DrillSnapshot = {
       districtId: district.id,
       districtName: district.name,
@@ -853,8 +855,8 @@ export function DigitalTwinPage() {
                       ? `${axisAt(selectedMark.at)} ${selectedMark.label}`
                       : pickedAt
                         ? `${axisAt(pickedAt)} ${mode === "event" ? "사용자 시각" : "사용자 시점"}`
-                        : `사용자 조건 ${level.toFixed(2)}`
-                    : `선택 ${level.toFixed(2)}`
+                        : `사용자 조건 ${level.toFixed(digits)}`
+                    : `선택 ${level.toFixed(digits)}`
                 }
                 same={sameAsBaseline}
                 /* 예상 수위가 결과의 첫 행 — 시간축이 두 모드의 주축이 되면서 조작
@@ -864,6 +866,7 @@ export function DigitalTwinPage() {
                   conditionSpec
                     ? {
                         label: conditionSpec.title,
+                        digits: conditionSpec.digits,
                         unit: conditionSpec.unit,
                         baseline: baselineValue,
                         selected: level,

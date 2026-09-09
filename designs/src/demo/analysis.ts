@@ -92,25 +92,49 @@ export function drillDistrictAt(now: Date): District {
  * 것은 결과의 물리량이 같고(EL.m 수면 표고) 3D 씬의 수면 하나가 함께 움직이기 때문이지,
  * 셋을 같은 재난으로 보기 때문이 아니다 — **조건은 셋이 다 다르다**(progression.ts).
  */
+/**
+ * 결과의 첫 행 규격 — **유형이 고른다.**
+ *
+ * ★ 한때 이 자리가 `kind: "water-level"` 하나였다. 유형이 여섯인데 결과 열 이름이
+ *   `예상 수위` 로 고정이라, 지반변위에 수위가 서고 폭염에 EL.m 이 붙는 모양이 됐다.
+ *   그래서 수위 계열이 아닌 유형은 아예 null 로 막아 두는 것으로 버텼다.
+ *
+ *   **막는 대신 가른다.** 유형마다 자기 물리량과 이름을 들고 오면, 트윈에 세울 수 있는
+ *   유형이 곧 늘어난다. 이것이 차수 1(게이트를 연다)의 실체다.
+ *   배경: docs/고도화/트윈-유형별-화면사양.md §3-1
+ */
+export type ConditionKind = "water-level" | "displacement" | "heat" | "storage" | "radius";
+
 export interface ConditionSpec {
-  /** 결과 행 선택 키 — 유형 계열이 늘면 여기에 값이 하나 는다 */
-  kind: "water-level";
-  /** 결과 행 이름 — "예상 수위" */
+  kind: ConditionKind;
+  /** 결과 행 이름 — "예상 수위" · "누적 변위" · "체감온도" */
   title: string;
-  /** 값 단위 — "EL.m" */
+  /** 값 단위 — "EL.m" · "mm" · "℃" */
   unit: string;
+  /** 소수 자리 — 수위는 2, 변위·인원은 0 */
+  digits: number;
 }
 
 const WATER_LEVEL_HAZARDS: HazardType[] = ["폭풍해일", "하천범람", "내수침수"];
 
+/** 유형 → 결과 규격. 여기에 없는 유형은 트윈에 축이 서지 않는다(twinAbsenceOf 가 이유를 든다) */
+const CONDITION_SPEC: Partial<Record<HazardType, ConditionSpec>> = {
+  지반변위: { kind: "displacement", title: "누적 변위", unit: "mm", digits: 1 },
+  /* 열돔은 조건을 바꿀 대상이 아니라 견디는 시간이다(§2-6). 규격은 두되 축은 지속시간이
+     들어온 뒤에 선다 — 지금 세우면 밀 것이 없는 슬라이더가 생긴다 */
+};
+
 /**
- * 이 지구·이 재난유형의 결과 수위 규격. 등재되지 않은 유형은 null —
- * 영향 결과 카드에 수위 행이 서지 않는다.
+ * 이 지구·이 재난유형의 결과 첫 행 규격. 없으면 null —
+ * 영향 결과 카드에 그 행이 서지 않고, 조건 칸은 twinAbsenceOf 의 이유를 든다.
  */
 export function conditionSpecOf(districtId: string, hazardType: HazardType): ConditionSpec | null {
-  if (!WATER_LEVEL_HAZARDS.includes(hazardType)) return null;
-  if (!WATER_THRESHOLDS[districtId]) return null;
-  return { kind: "water-level", title: "예상 수위", unit: "EL.m" };
+  if (WATER_LEVEL_HAZARDS.includes(hazardType)) {
+    /* 수위 계열 셋은 지구 발령 기준을 쓰므로 기준이 등재된 지구에서만 선다 */
+    if (!WATER_THRESHOLDS[districtId]) return null;
+    return { kind: "water-level", title: "예상 수위", unit: "EL.m", digits: 2 };
+  }
+  return CONDITION_SPEC[hazardType] ?? null;
 }
 
 /* ── 트윈에 설 수 없는 유형이 그 이유를 든다 ─────────────── */
