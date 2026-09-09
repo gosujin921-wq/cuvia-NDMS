@@ -133,11 +133,15 @@ export function AppLayout() {
            질의 버튼은 오버레이 그대로다. 03 §6 의 "물음과 답이 같은 화면에 선다"는
            진행 중 물음의 규칙이고, 복기는 그 규칙이 지킬 것이 없는 자리다 */
         onSubmit={(text) => {
-          if (!onHub) {
+          const matched = matchQuery(text);
+          /* ★ panelOnly 질의는 오버레이에 남는다 (demo/ai.ts).
+               열돔이 그 예다 — 답이 흐르는 동안 왼쪽 배경이 트윈 열돔으로 바뀌는 형태라
+               전용 화면에 옮기면 그 연출이 설 자리가 없고, SCR-06 은 그 종류를 그리지 않는다.
+               데이터가 "이 질의는 패널에서만 산다"고 이미 말하고 있으므로 그것을 따른다 */
+          if (!onHub || matched?.panelOnly) {
             askAgent(text);
             return;
           }
-          const matched = matchQuery(text);
           navigate(matched ? `/scr-06?q=${matched.id}` : `/scr-06?ask=${encodeURIComponent(text)}`);
         }}
         /* 바로가기는 패널을 닫으며 보낸다 — 도착한 화면을 자기가 가리면 보러 간 뜻이 없다 */
