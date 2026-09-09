@@ -30,8 +30,8 @@ corepack pnpm dev      # http://localhost:5400
 > 있어서다. 새로 클론하면 이 폴더가 **없다.** 필요하면 별도로 받는다.
 > 안에 무엇이 있는지는 아래 "문서" 절에 적어 둔다.
 
-`designs/cctv-src/` 도 저장소에 없다(원본 PNG 40MB). 서빙본 `public/cctv/*.jpg` 는 실려 있고,
-원본을 받으면 `node scripts/cctv-build.mjs` 로 다시 굽는다.
+CCTV 스틸은 원본 PNG(`designs/cctv-src/`)와 서빙본 JPG(`designs/public/cctv/`)가 둘 다 실려 있다.
+원본을 고치면 `cd designs && node scripts/cctv-build.mjs` 로 서빙본을 다시 굽는다.
 
 ## 고치는 순서
 
