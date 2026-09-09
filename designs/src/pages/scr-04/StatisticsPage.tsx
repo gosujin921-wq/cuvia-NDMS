@@ -39,7 +39,9 @@ import { findDevice } from "../../demo/devices";
 import {
   EVENTS,
   HAZARD_FIELD,
+  HAZARD_FIELDS,
   HAZARD_ORDER,
+  HERO_EVENT_ID,
   confirmedLevelAt,
   eventViewAt,
   hazardLabel,
@@ -73,8 +75,7 @@ const RANGES = [
 ] as const;
 
 const RANGE_LABELS = RANGES.map((r) => r.label);
-const FIELD_OPTIONS = ["전체", "풍수해", "기상·기후", "수자원", "산지·지반"] as const;
-const HERO_EVENT_ID = "EVT-260812-006";
+const FIELD_OPTIONS = ["전체", ...HAZARD_FIELDS];
 
 
 function daysBefore(now: Date, days: number): Date {

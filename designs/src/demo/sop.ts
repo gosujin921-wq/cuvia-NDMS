@@ -11,7 +11,13 @@
  * ───────────────────────────────────────────── */
 
 import type { AlertLevel } from "./levels";
-import { activeEventsAt, eventViewAt, type AlertEvent, type HazardType } from "./events";
+import {
+  HERO_EVENT_ID,
+  activeEventsAt,
+  eventViewAt,
+  type AlertEvent,
+  type HazardType,
+} from "./events";
 
 export type SopMode = "auto" | "approval";
 
@@ -119,7 +125,6 @@ export type ProcessState = "신규" | "확인중" | "대응중" | "종료";
 
 /** 주인공 사건의 확인 시각 — 17:05 발생 2분 뒤 (04 §4-2 · 최초 확인 2분) */
 export const HERO_CONFIRMED_AT = new Date("2026-08-12T17:07:00");
-const HERO_EVENT_ID = "EVT-260812-006";
 
 export function processStateAt(
   event: AlertEvent,

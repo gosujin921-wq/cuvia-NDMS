@@ -44,6 +44,15 @@ export const HAZARD_FIELD: Record<HazardType, HazardField> = {
 };
 
 /**
+ * 분야 목록 — 화면 필터가 이것을 파생한다(SCR-04).
+ *
+ * ★ 타입만 두면 화면이 목록을 손으로 다시 적게 된다. 그러면 분야를 하나 늘릴 때
+ *   타입 검사는 통과하는데 필터에서 **아무 경고 없이 빠진다.** 유형 축이 HAZARD_ORDER 를
+ *   파생하는 것과 같은 이유로 분야 축도 여기서 나간다.
+ */
+export const HAZARD_FIELDS: HazardField[] = ["풍수해", "기상·기후", "수자원", "산지·지반"];
+
+/**
  * 폭염특보 발령 기준 — 체감온도(℃), 2025 개편.
  *
  * 수위 기준(WATER_THRESHOLDS)이 지구마다 다른 것과 달리 이것은 **시 전역 한 벌**이다.
