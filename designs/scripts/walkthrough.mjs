@@ -93,7 +93,9 @@ await shot("s8c-사건이력");
 // S9 — 종합상황 복귀 → 질의 바 포커스(칩은 포커스 시에만 열린다 · 03 §1) → 질의 칩 → AI 검색
 await page.getByLabel("종합상황으로 이동").click();
 await page.waitForTimeout(2500);
-await page.getByLabel("자연어 질의").click();
+/* 질의 바는 AI 패널이 포털로 그려 넣는다. 라벨은 그 부품의 기본값이다
+   (pill-chat-input inputLabel) — 03 문서의 "자연어 질의 바"는 화면 이름이지 라벨이 아니다 */
+await page.getByLabel("에이전트 메시지 입력").click();
 await page.getByText("서항지구 수위가 왜 오르고 있어?").first().click();
 await page.waitForTimeout(2000);
 await shot("s9-AI검색");
