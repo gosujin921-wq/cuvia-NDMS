@@ -23,10 +23,10 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@ds";
 import { AppSidebar } from "./AppSidebar";
 import { AppTopbar } from "./AppTopbar";
-import { findNav } from "./nav";
+import { findNav, HUB_ROUTE } from "./nav";
 import { AgentOverlay } from "../agent";
 import { useScenario } from "../state/ScenarioProvider";
-import { CANNED_QUERIES } from "../demo/ai";
+import { CANNED_QUERIES, matchQuery } from "../demo/ai";
 
 /** 서비스명 — 화면명을 못 찾았을 때의 상단바 제목 */
 const SERVICE_NAME = "CUVIA 재난안전관제시스템";
@@ -53,6 +53,9 @@ export function AppLayout() {
   const item = findNav(pathname);
   const fullBleed = item?.fullBleed ?? false;
   const onStats = pathname.startsWith(STATS_ROUTE);
+  /* 허브(종합상황)의 질의 바만 전용 화면으로 보낸다 — 아래 onSubmit 주석 참고 */
+  const onHub = pathname === HUB_ROUTE;
+  const onSearch = pathname.startsWith("/scr-06");
 
   const {
     agentOpen,
@@ -77,6 +80,14 @@ export function AppLayout() {
     navigate(agentBackdrop);
     clearAgentBackdrop();
   }, [agentBackdrop, navigate, clearAgentBackdrop]);
+
+  /* SCR-06 에 닿으면 패널을 닫는다.
+     알약이 보낼 때 패널을 여는 것은 이식본의 기본 동작이라(agent-overlay handlePillSubmit),
+     허브에서 보내면 패널이 열린 채로 SCR-06 에 도착한다. 그 화면 자체가 물음과 답의
+     자리이므로 패널이 겹치면 같은 것이 두 벌 선다. 이식본을 고치는 대신 여기서 닫는다 */
+  useEffect(() => {
+    if (onSearch && agentOpen) closeAgent();
+  }, [onSearch, agentOpen, closeAgent]);
 
   return (
     /* relative — AI 패널·질의 버튼이 absolute 로 이 골격에 얹힌다. 스크롤되지 않는
@@ -104,6 +115,9 @@ export function AppLayout() {
 
           우하단 진입 버튼은 패널이 자기 것으로 들고 있다(AgentOverlay). 종합상황처럼 하단에
           질의 바가 펼쳐진 화면에서는 그 자리(PILL_SLOT_ID)로 옮겨 붙는다 */}
+      {/* SCR-06 에서는 패널을 닫는다 — 그 화면 자체가 물음과 답의 자리라 패널이 겹치면
+          같은 것이 두 벌 선다. 알약이 보낼 때 패널을 여는 것은 이식본의 기본 동작이고
+          (agent-overlay handlePillSubmit), 그 기본은 건드리지 않는다 */}
       <AgentOverlay
         open={agentOpen}
         onOpen={openAgent}
@@ -111,7 +125,21 @@ export function AppLayout() {
         messages={agentMessages}
         isResponding={agentResponding}
         onCancel={cancelAgent}
-        onSubmit={askAgent}
+        /* ★ 물음이 두 자리에서 산다 (2026-09-09 확정 · 시나리오-검증 §3-2).
+             오버레이   사건 **진행 중** 묻는다. 지도를 왼쪽에 남겨야 하므로 화면을 안 옮긴다
+             SCR-06    S9 **사후 복기**. 사건이 해제된 뒤라 남길 지도가 없고, 근거 표와
+                       실측 대조가 전용 화면에서 크게 서야 에필로그가 선다
+           그래서 허브(종합상황) 질의 바에서 물으면 SCR-06 으로 보내고, 그 밖 화면의
+           질의 버튼은 오버레이 그대로다. 03 §6 의 "물음과 답이 같은 화면에 선다"는
+           진행 중 물음의 규칙이고, 복기는 그 규칙이 지킬 것이 없는 자리다 */
+        onSubmit={(text) => {
+          if (!onHub) {
+            askAgent(text);
+            return;
+          }
+          const matched = matchQuery(text);
+          navigate(matched ? `/scr-06?q=${matched.id}` : `/scr-06?ask=${encodeURIComponent(text)}`);
+        }}
         /* 바로가기는 패널을 닫으며 보낸다 — 도착한 화면을 자기가 가리면 보러 간 뜻이 없다 */
         onNavigate={(to) => {
           closeAgent();
