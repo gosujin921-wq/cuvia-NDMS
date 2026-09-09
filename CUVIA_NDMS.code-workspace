@@ -1,0 +1,28 @@
+{
+	"folders": [
+		{
+			"name": "▶ NDMS",
+			"path": "."
+		},
+		{
+			"name": "· ref/IDC",
+			"path": "../010_CUVIA_IDC"
+		},
+		{
+			"name": "· ref/platform_web",
+			"path": "../007_CUVIA_PLATFORM_WEB"
+		},
+		{
+			"name": "· ref/secon",
+			"path": "../001_CUVIA_SECON"
+		}
+	],
+	"settings": {
+		"files.readonlyInclude": {
+			"**/CUVIA_IDC/**": true,
+			"**/CUVIA_PLATFORM_WEB/**": true,
+			"**/CUVIA_SECON/**": true,
+			"**/from-DSMS-main/**": true
+		}
+	}
+}

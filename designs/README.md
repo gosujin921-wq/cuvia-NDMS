@@ -1,4 +1,4 @@
-# CUVIA 안전재난관제 designs
+# CUVIA 재난안전관제 designs
 
 Vite + React + Tailwind v4. 공통 부품·토큰은 `@cuvia/components` / `@cuvia/tokens`(사내 Gitea npm 레지스트리)를 사용한다.
 
@@ -17,7 +17,7 @@ corepack pnpm dev   # http://localhost:5400
 
 ## 디자인 시스템 라이브 작업 (선택)
 
-`cuvia_platform_design` 클론이 이 저장소의 형제 폴더(`../cuvia_platform_design` 기준: 상위 폴더)에 있으면, 레지스트리 버전 대신 클론 소스를 직접 물려 DS 수정을 즉시 반영할 수 있다.
+DS 클론이 `Projects/_ref/CUVIA_PLATFORM_DESIGN` 에 있으면, 레지스트리 버전 대신 클론 소스를 직접 물려 DS 수정을 즉시 반영할 수 있다.
 
 ```bash
 corepack pnpm ds:link     # DS 클론 소스로 전환. DS 수정이 dev 서버에 즉시 반영

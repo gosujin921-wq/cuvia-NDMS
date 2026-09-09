@@ -8,7 +8,7 @@
     "build": "vite build",
     "type-check": "tsc --noEmit",
     "preview": "vite preview",
-    "ds:link": "corepack pnpm link ../../cuvia_platform_design/packages/tokens && corepack pnpm link ../../cuvia_platform_design/packages/components && corepack pnpm link ../../cuvia_platform_design/packages/assets",
+    "ds:link": "corepack pnpm link ../../_ref/CUVIA_PLATFORM_DESIGN/packages/tokens && corepack pnpm link ../../_ref/CUVIA_PLATFORM_DESIGN/packages/components && corepack pnpm link ../../_ref/CUVIA_PLATFORM_DESIGN/packages/assets",
     "ds:unlink": "corepack pnpm unlink"
   },
   "dependencies": {

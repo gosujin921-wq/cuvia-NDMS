@@ -15,7 +15,7 @@ import { execFileSync } from "node:child_process";
 
 const DIR = path.resolve(process.env.OUT ?? "../manual-capture");
 const data = JSON.parse(fs.readFileSync(path.join(DIR, "data.json"), "utf8"));
-const OUT_FILE = path.join(DIR, "CUVIA_안전재난관제_간이매뉴얼.html");
+const OUT_FILE = path.join(DIR, "CUVIA_재난안전관제_간이매뉴얼.html");
 
 const SW = data.width;
 const SH = data.height;
@@ -130,7 +130,7 @@ function coverSlide(shot, total) {
       <div class="cover-art"><img src="${dataUri(shot)}" alt="" /></div>
       <div class="cover-copy">
         <span class="brand">CUVIA</span>
-        <h1>안전재난관제시스템<br />간이 사용 매뉴얼</h1>
+        <h1>재난안전관제시스템<br />간이 사용 매뉴얼</h1>
         <p>구현된 화면을 차례로 열어 두고, 누르는 버튼과 읽는 자리에 번호를 붙였습니다.
            위험지구 이벤트는 봉암지구 내수침수 하나를 예시로 씁니다.</p>
         <ul class="cover-list">
@@ -200,7 +200,7 @@ const slides = [
   ...data.stops.map((stop, i) => contentSlide(stop, i + 2, total)),
 ];
 
-const head = `<title>CUVIA 안전재난관제 간이 매뉴얼</title>
+const head = `<title>CUVIA 재난안전관제 간이 매뉴얼</title>
 <style>
   :root {
     --bg: #0a0e15; --ink: #eef2f8; --dim: #97a6bd; --line: #22304a;
@@ -314,7 +314,7 @@ const head = `<title>CUVIA 안전재난관제 간이 매뉴얼</title>
 </style>`;
 
 const body = `  <div class="bar">
-    <strong>CUVIA 안전재난관제시스템 · 간이 사용 매뉴얼</strong>
+    <strong>CUVIA 재난안전관제시스템 · 간이 사용 매뉴얼</strong>
     <button onclick="window.print()">인쇄 · PDF 로 저장</button>
   </div>
   <div class="deck">
