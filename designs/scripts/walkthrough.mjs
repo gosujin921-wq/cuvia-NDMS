@@ -42,7 +42,7 @@ await page.waitForTimeout(3500);
 await shot("s2b-격상-경보");
 
 // S4 — [디지털트윈으로 상세 분석] (S3 CCTV 는 정적 확인이라 생략)
-await page.getByRole("button", { name: /디지털트윈으로 상세 분석/ }).click();
+await page.getByRole("button", { name: /디지털트윈으로 (확인|다시 확인)하기/ }).click();
 await page.waitForTimeout(6000);
 await shot("s4-트윈");
 
@@ -56,10 +56,15 @@ await page.getByRole("button", { name: "대응 실행" }).click();
 await page.waitForTimeout(900);
 await shot("s5b-집중팝업-제안");
 
-// S6 — 팝업 안: 등급 승인 → 전체 선택 → 실행 (항목이 0.45초 간격으로 결과로 진화한다)
-await page.getByRole("button", { name: /대응등급 대피로 상향/ }).click();
-await page.waitForTimeout(800);
-await shot("s6a-승인-직후");
+/* S6 — 팝업 안: 전체 선택 → [승인 · 실행] (항목이 0.45초 간격으로 결과로 진화한다)
+   ★ 2026-09-09 수선: 예전에는 [대응등급 대피로 상향] 관문을 먼저 눌렀는데, 그 관문이
+     없어졌다 — 실행이 곧 승인이다(SopPanel 머리말 · KISA·SK 기준).
+     그리고 팝업이 [이벤트 정보] 탭으로 열리므로 SOP 버튼을 누르려면 탭부터 옮겨야 한다.
+     이 둘 때문에 주행이 S6 에서 멈춰 있었다 */
+/* 팝업은 [이벤트 정보] 탭으로 열린다. SOP 는 옆 탭이다 */
+await page.getByRole("tab", { name: "SOP 대응" }).click();
+await page.waitForTimeout(700);
+await shot("s6a-SOP탭");
 await page.getByRole("button", { name: "전체 선택" }).click();
 await page.getByRole("button", { name: "승인 · 실행" }).click();
 await page.waitForTimeout(2800);

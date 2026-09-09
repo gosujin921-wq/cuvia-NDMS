@@ -19,7 +19,7 @@
  * ───────────────────────────────────────────── */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@iconify/react";
 import {
   Button,
@@ -42,6 +42,7 @@ import {
   HAZARD_FIELDS,
   HAZARD_ORDER,
   HERO_EVENT_ID,
+  activeEventsAt,
   confirmedLevelAt,
   eventViewAt,
   hazardLabel,
@@ -84,6 +85,7 @@ function daysBefore(now: Date, days: number): Date {
 
 export function StatisticsPage() {
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const {
     now,
     advanceTo,
@@ -98,6 +100,9 @@ export function StatisticsPage() {
   /* URL 진입(?tab=history&event=) — 사건 이력 탭이 그 사건이 선택된 채 열린다(03 §4) */
   const eventParam = params.get("event");
   const fromEvent = eventParam ? EVENTS.find((e) => e.id === eventParam) : undefined;
+  /* [보고서 생성]이 들고 갈 사건 — 들어온 사건이 있으면 그것, 없으면 현재 시계에 진행 중인
+     첫 사건이다. 트랙 이름이나 사건 ID 로 가르지 않는다(CLAUDE.md 이관 규칙) */
+  const reportEvent = fromEvent ?? activeEventsAt(now)[0] ?? null;
   const [tab, setTab] = useState<"stats" | "history">(
     params.get("tab") === "history" ? "history" : "stats",
   );
@@ -381,10 +386,24 @@ export function StatisticsPage() {
               {formatDate(from)} ~ {formatDate(to)} · 표본 {stepMin >= 60 ? `${stepMin / 60}시간` : `${stepMin}분`} 간격
             </span>
           </div>
-          <Button variant="outline" size="sm" onClick={handleDownload} className="shrink-0">
-            <Icon icon="mdi:download" className="size-4" aria-hidden />
-            다운로드
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* 사후검증(S8)이 끝나는 자리에서 문서로 넘긴다 — 흐름이 통계에서 멈추지 않고
+                보고서로 닫힌다(SCR-07). 사건을 들고 가므로 저쪽에서 다시 고를 필요가 없다 */}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                navigate(reportEvent ? `/scr-07?event=${reportEvent.id}` : "/scr-07")
+              }
+            >
+              <Icon icon="mdi:file-document-outline" className="size-4" aria-hidden />
+              보고서 생성
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleDownload}>
+              <Icon icon="mdi:download" className="size-4" aria-hidden />
+              다운로드
+            </Button>
+          </div>
         </header>
 
         {/* 조회 조건 — 범위 · 기간 · 재난 분야 · 유형 · 단계 (03 §4) */}

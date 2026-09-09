@@ -15,6 +15,7 @@ import { EarlyWarningPage } from "./pages/scr-02/EarlyWarningPage";
 import { StatisticsPage } from "./pages/scr-04/StatisticsPage";
 import { DigitalTwinPage } from "./pages/scr-05/DigitalTwinPage";
 import { AiSearchPage } from "./pages/scr-06/AiSearchPage";
+import { ReportPage } from "./pages/scr-07/ReportPage";
 
 /* 구 상황대응(/scr-03) — 차수 N 에서 SCR-02 로 통합·결번(02 §4). 북마크·구 문서의
    ?event= 딥링크를 그 사건의 지구 재난관제로 넘긴다 */
@@ -44,6 +45,8 @@ export const router = createBrowserRouter([
       { path: "/scr-05/:districtId", element: <DigitalTwinPage /> },
       // 대시보드 질의 바에서 `?q={질의 ID}` 로 들어온다. 못 알아들은 문장만 `?ask=` (03 §6)
       { path: "/scr-06", element: <AiSearchPage /> },
+      // SCR-04 [보고서 생성]이 `?event=` 로 사건을 들고 온다. 레일로 들어오면 최근 사건이 선다
+      { path: "/scr-07", element: <ReportPage /> },
     ],
   },
 ]);
