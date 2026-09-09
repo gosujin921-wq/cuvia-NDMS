@@ -78,8 +78,10 @@ await page.getByRole("button", { name: "관제 화면으로 돌아가기" }).cli
 await page.waitForTimeout(900);
 await shot("s7c-레일-결과요약");
 
-// S8 — 좌측 메뉴 [통계·분석] (22:10) → 시 전체 → 서항 드릴다운 → [사건 이력] 탭
-await page.getByTitle(/SCR-04/).click();
+// S8 — 레일 [사후 검증으로] (22:10) → 시 전체 → 서항 드릴다운 → [사건 이력] 탭
+//   ★ 2026-09-09: 좌측 메뉴를 누르던 자리다. 05 §2 가 "사이드바를 누르는 자리는 없다"고
+//     못박았는데 여기만 어긋나 있었다 — 실행 결과 요약에 화면 안의 길을 냈다
+await page.getByRole("button", { name: "사후 검증으로" }).click();
 await page.waitForTimeout(3000);
 await shot("s8-통계-상단");
 await page.getByRole("row", { name: /서항지구/ }).click();

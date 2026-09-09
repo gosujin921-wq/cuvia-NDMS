@@ -648,6 +648,7 @@ export function EarlyWarningPage() {
                   executeButtonRef={executeButtonRef}
                   showResult={hero && sopExecuted}
                   twinReviewed={twinReview !== null}
+                  districtId={district.id}
                 />
               </GlassPanel>
             )}

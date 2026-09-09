@@ -15,6 +15,8 @@ import { Icon } from "@iconify/react";
 import { FLOOD_SOP_ITEMS, SOP_ITEMS, sopResultsFor } from "../../../demo/sop";
 import { formatClock } from "../../../lib/datetime";
 import { useScenario } from "../../../state/ScenarioProvider";
+import { useNavigate } from "react-router-dom";
+import { activeEventOfAt } from "../../../demo/events";
 
 interface RespondPanelProps {
   /** [대응 실행] — 주인공 진행 사건에서만 온다. 없으면 버튼이 서지 않는다 */
@@ -25,6 +27,8 @@ interface RespondPanelProps {
   showResult: boolean;
   /** 트윈 검토를 마쳤는가 — 검토 전에는 권장 문구가 선다. 승인을 막지는 않는다(03 §2) */
   twinReviewed: boolean;
+  /** 사후 검증으로 들고 갈 사건을 찾을 지구 */
+  districtId: string;
 }
 
 export function RespondPanel({
@@ -32,6 +36,7 @@ export function RespondPanel({
   executeButtonRef,
   showResult,
   twinReviewed,
+  districtId,
 }: RespondPanelProps) {
   return (
     <section className="flex flex-col gap-1.5 p-3" aria-label="대응 절차">
@@ -54,15 +59,19 @@ export function RespondPanel({
 
       {/* 실행 후 결과 요약 — 팝업이 남긴 결과를 레일이 이어서 보인다(03 §2).
           값은 전부 엔진에서 파생하므로 팝업과 어긋날 수 없다 */}
-      {showResult && <SopResultSummary />}
+      {showResult && <SopResultSummary districtId={districtId} />}
     </section>
   );
 }
 
 /* ── 실행 결과 요약 (읽기 전용) — 04 §13 을 엔진 상태로 자른 것 ────────── */
 
-function SopResultSummary() {
-  const { track, sopExecutedItemIds, approvedAt, phoneReportedAt } = useScenario();
+function SopResultSummary({ districtId }: { districtId: string }) {
+  const { track, sopExecutedItemIds, approvedAt, phoneReportedAt, now } = useScenario();
+  const navigate = useNavigate();
+  /* 사후 검증으로 들고 갈 사건 — 이 지구의 진행 사건이다. 트랙 이름이나 사건 ID 로
+     가르지 않는다(CLAUDE.md 이관 규칙) */
+  const event = activeEventOfAt(districtId, now);
   if (!approvedAt) return null;
 
   /* 결과에는 실행된 승인 항목과 자동 항목만 선다(04 §13 · §15-11) — SopPanel 과 같은 규칙.
@@ -106,6 +115,24 @@ function SopResultSummary() {
             label={`유선 보고 대체 · ${formatClock(phoneReportedAt)}`}
           />
         </div>
+      )}
+
+      {/* 사후 검증으로 가는 화면 안의 길 (2026-09-09 · 시나리오-검증 §3-3).
+          05 시나리오는 "사이드바를 누르는 자리는 없다"고 못박았는데 S7 → S8 만 좌측
+          레일을 눌러야 했다. 영향 분석 카드의 [디지털트윈으로 다시 확인하기]와 같은 문법이다.
+
+          ★ 대체 조치까지 기록된 뒤에만 선다. 그전에 세우면 아직 대응 중인데 사후 검증으로
+            가라는 말이 된다 — 대응이 닫혀야 되짚는 자리가 열린다 */}
+      {phoneReportedAt && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-2 w-full"
+          onClick={() => navigate(event ? `/scr-04?event=${event.id}` : "/scr-04")}
+        >
+          <Icon icon="mdi:chart-line" className="size-4" aria-hidden />
+          사후 검증으로
+        </Button>
       )}
     </div>
   );
