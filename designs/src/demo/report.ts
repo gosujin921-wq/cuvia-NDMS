@@ -58,7 +58,24 @@ function hhmm(d: Date): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** 장비별 현재값 한 줄 — "서항 수위계 3.41 EL.m (경보 기준 3.35 초과)" */
+/**
+ * 사건이 가장 높이 갔던 시점 — 관측상황은 이 시각으로 읽는다.
+ *
+ * ★ 현재값으로 읽으면 안 된다. 사후 보고서(S8 · 22:10)는 이미 해제된 뒤라 물이 빠져
+ *   있고, 그 값을 적으면 바로 아래 "대피 구간에 들었다"와 서로를 부정한다.
+ *   보고서가 말하는 것은 "이 사건이 어디까지 갔나"이지 "지금 얼마인가"가 아니다.
+ *
+ * 시계로 자르는 원칙은 그대로다 — 아직 안 지나간 단계는 세지 않으므로, 진행 중에 열면
+ * 그때까지의 최고값이 나온다.
+ */
+function peakAt(event: AlertEvent, now: Date): Date {
+  const passed = (event.stages ?? []).filter((s) => new Date(s.at) <= now);
+  if (passed.length === 0) return new Date(event.raisedAt);
+  const top = passed.reduce((a, b) => (b.value >= a.value ? b : a));
+  return new Date(top.at);
+}
+
+/** 장비별 값 한 줄 — "수위계 4.31EL.m (대피 기준 4.2 초과)" */
 function deviceLine(device: Device, now: Date, districtId: string): string {
   const sample = latestValue(device, now);
   const spec = deviceKindSpec(device.kind);
@@ -101,11 +118,15 @@ export function reportOf(event: AlertEvent, ctx: TimelineContext): Report {
   /* 재는 장비만 든다 — 단위가 있는 종류가 곧 계측 장비다(수위·강우·변위·조위).
      CCTV·마을방송은 단위가 없다. 종류 이름을 나열해 거르면 종류가 늘 때 여기가 뒤처진다 */
   const devices = devicesOf(event.districtId).filter((d) => deviceKindSpec(d.kind).unit);
+  const peakTime = peakAt(event, now);
   sections.push({
     id: "observed",
     title: "관측상황",
-    rows: devices.map((d) => ({ label: d.name, value: deviceLine(d, now, event.districtId) })),
-    note: `최초 확인 ${hhmm(HERO_CONFIRMED_AT)}. 이후 계측이 ${levelSpec(view.level).label} 구간에 들었다.`,
+    rows: devices.map((d) => ({
+      label: d.name,
+      value: deviceLine(d, peakTime, event.districtId),
+    })),
+    note: `최초 확인 ${hhmm(HERO_CONFIRMED_AT)}. 값은 최고 단계 시점(${hhmm(peakTime)}) 기준이고, 계측이 ${levelSpec(view.level).label} 구간에 들었다.`,
   });
 
   /* ── 2. 판단근거 ───────────────────────────────── */
