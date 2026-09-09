@@ -37,7 +37,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Icon } from "@iconify/react";
-import { Button, CollapsibleSection, EmptyState, FilterCapsuleGroup, GlassPanel, toast } from "@ds";
+import { Button, CollapsibleSection, EmptyState, GlassPanel, toast } from "@ds";
 import { useMapLibre } from "../../lib/useMapLibre";
 import { useWindLayer } from "../../lib/useWindLayer";
 import {
@@ -732,27 +732,6 @@ export function DigitalTwinPage() {
           길어지면 결론 동작이 접히는데, 그러면 "설정이 먼저 보이는" 원래 문제로 돌아간다 */}
       <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-          {/* 유형 전환 칩 — 이 지구 원장에 있는 유형을 늘어놓는다.
-              모의분석은 설정 패널이 이미 유형 드롭다운을 들고 있으므로 사건 연계에서만 선다.
-              유형이 하나뿐인 지구에서는 고를 것이 없으니 서지 않는다 */}
-          {mode === "event" && hazardTypes.length > 1 && (
-            <GlassPanel className="pointer-events-auto shrink-0">
-              <div className="flex flex-col gap-1.5 p-3">
-                <span className="text-caption font-semibold text-foreground-muted">
-                  이 지구의 재난유형
-                </span>
-                <FilterCapsuleGroup
-                  options={hazardTypes.map((t) => hazardLabel(t))}
-                  value={hazardLabel(hazardType ?? hazardTypes[0])}
-                  onChange={(label: string) => {
-                    const picked = hazardTypes.find((t) => hazardLabel(t) === label);
-                    setHazardOverride(picked ?? null);
-                  }}
-                />
-              </div>
-            </GlassPanel>
-          )}
-
           {/* 레일 첫 카드 = "무엇을 분석하는가". 사건 연계는 사건이 정해 주고,
               모의분석은 사용자가 세운다 */}
           <GlassPanel className="pointer-events-auto shrink-0">
@@ -761,6 +740,11 @@ export function DigitalTwinPage() {
                 district={district}
                 event={activeEvent ?? null}
                 view={activeView}
+                /* 사건 연계에서도 유형을 갈아탈 수 있다 — 컨트롤은 모의분석과 같은 셀렉트다.
+                   같은 일을 하는 컨트롤을 두 벌 두지 않는다 */
+                hazardTypes={hazardTypes}
+                hazardType={hazardType}
+                onHazardChange={setHazardOverride}
                 /* 만조는 목적의 이름이 아니다 — 시간축 위의 사건이고 산정 근거다(03 §5).
                    목적은 "언제까지 무엇이 오는가" 로 적는다 */
                 /* 눈금 이름(바닷물 최고)은 시간축이 이미 말한다 — 여기서 또 붙이면 340px
