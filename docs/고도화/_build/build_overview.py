@@ -1,0 +1,612 @@
+# -*- coding: utf-8 -*-
+"""docs/고도화/overview.html 생성기.
+
+다섯 정본 MD(README · 01 · 02 · 03 · IA)에서 절 · 표 · 텍스트 그림을 뽑아 한 파일로 만든다.
+사람이 타이핑하는 내용은 없다. 정본이 바뀌면 다시 돌린다:
+
+    python3 docs/고도화/_build/build_overview.py            # → docs/고도화/overview.html
+    python3 docs/고도화/_build/build_overview.py --fragment  # 아티팩트용 본문 조각(head · body 없음)
+
+정본에서 절 제목이나 표 열이 바뀌어 못 읽으면 조용히 틀린 그림을 내지 않고 여기서 실패한다.
+"""
+import html
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent  # docs/고도화
+FRAGMENT = "--fragment" in sys.argv
+OUT = Path(sys.argv[sys.argv.index("--out") + 1]) if "--out" in sys.argv else ROOT / "overview.html"
+
+DOCS = {
+    "README": "README.md",
+    "01": "01_이벤트·사건모델.md",
+    "02": "02_대표데모시나리오.md",
+    "03": "03_유형별디지털트윈.md",
+    "IA": "CUVIA_NDMS_기능및정보구조도.md",
+}
+TEXT = {k: (ROOT / v).read_text(encoding="utf-8") for k, v in DOCS.items()}
+LINES = {k: v.splitlines() for k, v in TEXT.items()}
+
+
+# ───────────────────────────────────────── 절 추출
+def section(doc, key):
+    """key: '7.4' → '### 7.4 ...', '7' → '## 7. ...', 'D2' → '### D2. ...'. 다음 같은 급 이상 제목 전까지."""
+    lines = LINES[doc]
+    if re.fullmatch(r"\d+", key):
+        pat = re.compile(r"^## " + re.escape(key) + r"\. ")
+        stop = re.compile(r"^## ")
+    elif re.fullmatch(r"\d+\.\d+", key):
+        pat = re.compile(r"^### " + re.escape(key) + r" ")
+        stop = re.compile(r"^##(#)? ")
+    else:  # D0 등
+        pat = re.compile(r"^### " + re.escape(key) + r"\. ")
+        stop = re.compile(r"^##(#)? ")
+    start = next((i for i, l in enumerate(lines) if pat.match(l)), None)
+    if start is None:
+        raise SystemExit(f"[{DOCS[doc]}] 절 '{key}' 을 찾지 못했다. 제목이 바뀌었나?")
+    end = next((i for i in range(start + 1, len(lines)) if stop.match(lines[i])), len(lines))
+    title = re.sub(r"^#+ ", "", lines[start])
+    return title, lines[start + 1:end]
+
+
+def subsection(body_lines, title_prefix):
+    """번호 없는 ### 소절(예: '### 주요 행동')을 절 본문 안에서 찾는다."""
+    start = next((i for i, l in enumerate(body_lines) if l.startswith("### " + title_prefix)), None)
+    if start is None:
+        raise SystemExit(f"소절 '{title_prefix}' 을 찾지 못했다.")
+    end = next((i for i in range(start + 1, len(body_lines)) if body_lines[i].startswith("### ")), len(body_lines))
+    return body_lines[start + 1:end]
+
+
+def head_status(doc):
+    m = re.search(r"^> 상태: (.+)$", TEXT[doc], re.M)
+    if not m:
+        raise SystemExit(f"[{DOCS[doc]}] 머리 '상태:' 줄이 없다.")
+    return m.group(1).strip()
+
+
+def head_quote(doc, key):
+    """절 안의 첫 인용 블록(> **...**)을 한 문장으로."""
+    _, body = section(doc, key)
+    q = [l[2:].strip() for l in body if l.startswith("> ")]
+    if not q:
+        raise SystemExit(f"[{DOCS[doc]}] 절 {key} 에 인용 블록이 없다.")
+    return " ".join(q).replace("**", "")
+
+
+# ───────────────────────────────────────── 표 파싱
+def tables(body_lines):
+    out, cur = [], []
+    for l in body_lines + [""]:
+        if l.startswith("|"):
+            cur.append(l)
+        elif cur:
+            out.append(cur)
+            cur = []
+    parsed = []
+    for t in out:
+        rows = [[c.strip() for c in r.strip().strip("|").split("|")] for r in t]
+        rows = [r for r in rows if not all(re.fullmatch(r":?-+:?", c) for c in r)]
+        parsed.append((rows[0], rows[1:]))
+    return parsed
+
+
+def first_table(doc, key, expect_cols=None):
+    _, body = section(doc, key)
+    ts = tables(body)
+    if not ts:
+        raise SystemExit(f"[{DOCS[doc]}] 절 {key} 에 표가 없다.")
+    header, rows = ts[0]
+    if expect_cols and header[: len(expect_cols)] != expect_cols:
+        raise SystemExit(f"[{DOCS[doc]}] 절 {key} 표 열이 바뀌었다: {header} (기대 {expect_cols})")
+    return header, rows
+
+
+# ───────────────────────────────────────── 마크다운 → HTML (필요한 만큼만)
+def inline(s):
+    s = html.escape(s, quote=False)
+    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+    s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
+    s = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', s)
+    return s
+
+
+def render_table(header, rows, cls=""):
+    th = "".join(f"<th>{inline(h)}</th>" for h in header)
+    trs = "".join("<tr>" + "".join(f"<td>{inline(c)}</td>" for c in r) + "</tr>" for r in rows)
+    return f'<div class="tbl {cls}"><table><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table></div>'
+
+
+def render_md(body_lines, skip_tables=False, skip_code=False, skip_headings=True):
+    out, i, n = [], 0, len(body_lines)
+    while i < n:
+        l = body_lines[i]
+        if l.startswith("```"):
+            j = i + 1
+            while j < n and not body_lines[j].startswith("```"):
+                j += 1
+            if not skip_code:
+                out.append("<pre class=\"tree\">" + html.escape("\n".join(body_lines[i + 1:j])) + "</pre>")
+            i = j + 1
+            continue
+        if l.startswith("|"):
+            j = i
+            while j < n and body_lines[j].startswith("|"):
+                j += 1
+            if not skip_tables:
+                h, r = tables(body_lines[i:j])[0]
+                out.append(render_table(h, r))
+            i = j
+            continue
+        if l.startswith("#"):
+            if not skip_headings:
+                out.append(f"<h4>{inline(re.sub(r'^#+ ', '', l))}</h4>")
+            i += 1
+            continue
+        if l.startswith("> "):
+            j = i
+            q = []
+            while j < n and body_lines[j].startswith(">"):
+                q.append(body_lines[j][1:].strip())
+                j += 1
+            out.append("<blockquote>" + inline(" ".join(q)) + "</blockquote>")
+            i = j
+            continue
+        if re.match(r"^\s*[-*] ", l) or re.match(r"^\s*\d+\. ", l):
+            ordered = bool(re.match(r"^\s*\d+\. ", l))
+            j = i
+            items = []
+            while j < n and (re.match(r"^\s*[-*] ", body_lines[j]) or re.match(r"^\s*\d+\. ", body_lines[j]) or (body_lines[j].startswith("  ") and items)):
+                if re.match(r"^\s*([-*]|\d+\.) ", body_lines[j]):
+                    items.append(re.sub(r"^\s*([-*]|\d+\.) ", "", body_lines[j]))
+                else:
+                    items[-1] += " " + body_lines[j].strip()
+                j += 1
+            tag = "ol" if ordered else "ul"
+            out.append(f"<{tag}>" + "".join(f"<li>{inline(x)}</li>" for x in items) + f"</{tag}>")
+            i = j
+            continue
+        if l.strip() == "":
+            i += 1
+            continue
+        j = i
+        p = []
+        while j < n and body_lines[j].strip() and not re.match(r"^(```|\||#|> |\s*[-*] |\s*\d+\. )", body_lines[j]):
+            p.append(body_lines[j].strip())
+            j += 1
+        out.append("<p>" + inline(" ".join(p)) + "</p>")
+        i = j
+    return "\n".join(out)
+
+
+# ───────────────────────────────────────── mermaid 생성
+def mm_id(s):
+    return re.sub(r"[^0-9A-Za-z가-힣]", "_", s)
+
+
+def mm_label(s):
+    return s.replace('"', "'")
+
+
+def mermaid_architecture():
+    """01 §1 텍스트 흐름도 → flowchart TD. 들여쓰기 없는 줄이 노드, '↓' 줄이 화살표(뒤의 말은 간선 라벨)."""
+    _, body = section("01", "1")
+    block, on = [], False
+    for l in body:
+        if l.startswith("```"):
+            on = not on
+            continue
+        if on:
+            block.append(l)
+    nodes, edges, prev = [], [], None
+    for l in block:
+        if not l.strip():
+            continue
+        if l.lstrip().startswith("↓"):
+            edges.append(l.lstrip()[1:].strip())
+            continue
+        m = re.match(r"^(\S+(?: \S+)*?)\s{2,}(.*)$", l)
+        name, desc = (m.group(1), m.group(2)) if m else (l.strip(), "")
+        nodes.append((name.strip(), desc.strip()))
+    out = ["flowchart TD"]
+    for i, (name, desc) in enumerate(nodes):
+        lab = name if not desc else f"{name}<br/><small>{desc}</small>"
+        out.append(f'  N{i}["{mm_label(lab)}"]')
+    for i in range(len(nodes) - 1):
+        lab = edges[i] if i < len(edges) and edges[i] else ""
+        out.append(f'  N{i} -- "{mm_label(lab)}" --> N{i+1}' if lab else f"  N{i} --> N{i+1}")
+    return "\n".join(out)
+
+
+def mermaid_state():
+    """01 §7.4 전환표 → stateDiagram-v2. 간선 라벨은 표의 행 번호. 표는 옆에 같이 낸다."""
+    header, rows = first_table("01", "7.4", ["현재 상태", "전환 조건", "다음 상태", "확정 주체"])
+    out = ["stateDiagram-v2", "  direction LR", "  [*] --> 후보"]
+    numbered = []
+    for i, (cur, cond, nxt, who) in enumerate(rows, 1):
+        numbered.append([str(i), cur, cond, nxt, who])
+        for a in re.split(r"·", cur):
+            for b in re.split(r" 또는 ", nxt):
+                out.append(f"  {a.strip()} --> {b.strip()} : {i}")
+    for terminal in ("오탐", "병합됨"):
+        out.append(f"  {terminal} --> [*]")
+    return "\n".join(out), (["#"] + header, numbered)
+
+
+def demo_transitions():
+    """02 §7 D 절의 '상태 전환' 코드 줄."""
+    tr = {}
+    for d in range(9):
+        _, body = section("02", f"D{d}")
+        m = [l.strip("` ") for l in body if l.startswith("`") and "→" in l]
+        if m:
+            tr[f"D{d}"] = m[0]
+    return tr
+
+
+def mermaid_demo():
+    """IA §13 동선표 + 02 상태 전환 → flowchart LR, 업무 공간별 subgraph."""
+    header, rows = first_table("IA", "13", ["시나리오", "업무 공간", "화면에서 답할 질문", "주요 행위"])
+    tr = demo_transitions()
+    groups = {}
+    order = []
+    for sc, space, q, act in rows:
+        d = sc.split()[0]
+        if space not in groups:
+            groups[space] = []
+            order.append(space)
+        groups[space].append((d, sc, q, act))
+    out = ["flowchart LR"]
+    for space in order:
+        out.append(f'  subgraph {mm_id(space)}["{mm_label(space)}"]')
+        out.append("    direction TB")
+        for d, sc, q, act in groups[space]:
+            lab = f"<b>{sc}</b><br/>{q}<br/><small>{act}</small>"
+            if d in tr:
+                lab += f"<br/><code>{tr[d]}</code>"
+            out.append(f'    {d}["{mm_label(lab)}"]')
+        out.append("  end")
+    ds = [r[0].split()[0] for r in rows]
+    for a, b in zip(ds, ds[1:]):
+        out.append(f"  {a} --> {b}")
+    return "\n".join(out), (header, rows)
+
+
+def mermaid_ia():
+    """IA §5 요약표 → 다섯 업무 공간 흐름 + 공통·관리."""
+    header, rows = first_table("IA", "5", ["ID", "업무 공간", "담당자의 핵심 질문", "대표 산출물", "데모 위치"])
+    main = [r for r in rows if re.fullmatch(r"IA-0\d", r[0])]
+    side = [r for r in rows if not re.fullmatch(r"IA-0\d", r[0])]
+    out = ["flowchart LR"]
+    for rid, name, q, prod, demo in main:
+        out.append(f'  {mm_id(rid)}["<b>{rid} {name}</b><br/>{mm_label(q)}<br/><small>{mm_label(demo)}</small>"]')
+    for a, b in zip(main, main[1:]):
+        out.append(f"  {mm_id(a[0])} --> {mm_id(b[0])}")
+    for rid, name, q, prod, demo in side:
+        out.append(f'  {mm_id(rid)}(["{rid} {name} · {mm_label(demo)}"])')
+        out.append(f"  {mm_id(rid)} -.- {mm_id(main[0][0])}")
+    return "\n".join(out), (header, rows)
+
+
+def mermaid_hazard():
+    """03 §13 재난명↔유형군 표 → graph LR. 주 유형군 실선, 결합 점선."""
+    header, rows = first_table("03", "13", ["재난·상황", "주 유형군", "결합 가능 유형군", "비고"])
+    _, grows = first_table("03", "5", ["유형군"])
+    gname = {}
+    for r in grows:
+        code = r[0].split(".")[0].strip()
+        gname[code] = r[0].strip()
+    out = ["flowchart LR", "  subgraph H[재난 · 상황]", "    direction TB"]
+    for hz, *_ in rows:
+        out.append(f'    H_{mm_id(hz)}["{mm_label(hz)}"]')
+    out.append("  end")
+    out.append("  subgraph G[트윈 유형군]")
+    out.append("    direction TB")
+    out.append('    G_W(["기상 조건<br/><small>사건 아님</small>"])')
+    for code in sorted(gname):
+        out.append(f'    G_{code}["{mm_label(gname[code])}"]')
+    out.append("  end")
+    for hz, main, combo, note in rows:
+        src = f"H_{mm_id(hz)}"
+        if main.startswith("해당 없음"):
+            out.append(f"  {src} --> G_W")
+        else:
+            out.append(f"  {src} --> G_{main.split()[0][0]}")
+        for c in [x.strip() for x in combo.split(",")]:
+            code = c.split()[0][0]
+            if code in gname:
+                out.append(f"  {src} -.-> G_{code}")
+            elif c.startswith("모든"):
+                out.append(f'  {src} -.->|모든 유형| G_A')
+    return "\n".join(out), (header, rows)
+
+
+# ───────────────────────────────────────── 조각들
+def src(doc, sec):
+    return f'<a class="src" href="{DOCS[doc]}" title="{DOCS[doc]}">근거 · {doc} §{sec}</a>'
+
+
+def chip(text, kind=""):
+    return f'<span class="chip {kind}">{html.escape(text)}</span>'
+
+
+def sec_html(anchor, num, title, inner, sources):
+    s = " ".join(src(d, k) for d, k in sources)
+    return f'<section id="{anchor}"><header><span class="num">{num}</span><h2>{html.escape(title)}</h2><div class="srcs">{s}</div></header>{inner}</section>'
+
+
+def mermaid_block(code, caption=""):
+    cap = f'<figcaption>{inline(caption)}</figcaption>' if caption else ""
+    return f'<figure class="mm"><pre class="mermaid">{html.escape(code)}</pre>{cap}</figure>'
+
+
+def details(summary, inner, open_=False):
+    return f'<details{" open" if open_ else ""}><summary>{inline(summary)}</summary>{inner}</details>'
+
+
+# ───────────────────────────────────────── 본문 조립
+parts = []
+
+# 0. 문서 상태 · 각 문서의 질문
+status_rows = [[DOCS[k], head_status(k)] for k in DOCS]
+qmap = [
+    ["README", "Phase 2의 목적", head_quote("README", "2")],
+    ["01", "이 문서의 질문", re.search(r"^> 목적: (.+?)(?=\n>\s*$|\n\n)", TEXT["01"], re.M | re.S).group(1).replace("\n> ", " ").strip()],
+    ["02", "데모가 증명해야 하는 것", head_quote("02", "1")],
+    ["03", "이 문서가 답하는 질문", head_quote("03", "1")],
+    ["IA", "IA의 목적", head_quote("IA", "1")],
+]
+_, r2 = section("README", "2")
+questions = render_md([l for l in r2 if re.match(r"^\d+\. ", l)])
+_, r5 = section("README", "5")
+principles = render_md(r5)
+parts.append(sec_html("goal", "0", "목표", (
+    render_table(["문서", "질문", "한 문장"], qmap, "wide")
+    + "<h3>Phase 2가 답해야 할 다섯 질문</h3>" + questions
+    + details("설계 원칙 (README §5)", principles)
+    + "<h3>문서 상태</h3>" + render_table(["문서", "상태"], status_rows)
+), [("README", "2"), ("README", "5"), ("README", "6")]))
+
+# 1. 아키텍처
+_, s9 = section("01", "9")
+parts.append(sec_html("arch", "1", "아키텍처 · 원천에서 결과까지", (
+    mermaid_block(mermaid_architecture(), "01 §1의 텍스트 흐름도를 그대로 그린 것")
+    + "<h3>이벤트가 쓰이는 자리</h3>" + render_md(s9)
+), [("01", "1"), ("01", "9")]))
+
+# 2. 이벤트 → 사건
+_, s3 = section("01", "3")
+_, s6 = section("01", "6")
+_, s71 = section("01", "7.1")
+_, s8 = section("01", "8")
+state_mm, (sh, srows) = mermaid_state()
+parts.append(sec_html("incident", "2", "이벤트에서 사건으로", (
+    "<h3>먼저 가르는 세 축</h3>" + render_md(s3)
+    + "<h3>사건 처리상태와 전환</h3>"
+    + mermaid_block(state_mm, "간선의 숫자는 아래 표의 행 번호")
+    + render_table(sh, srows)
+    + "<h3>사건 구조</h3>" + render_md(s8)
+    + details("표준 이벤트 유형 22개 (01 §6)", render_md(s6))
+    + details("사건 후보가 만들어지는 조건 (01 §7.1)", render_md(s71))
+), [("01", "3"), ("01", "7.4"), ("01", "8"), ("01", "6")]))
+
+# 3. 대표 데모
+_, s1 = section("02", "1")
+_, s4 = section("02", "4")
+_, s51 = section("02", "5.1")
+_, s52 = section("02", "5.2")
+_, s12 = section("02", "12")
+demo_mm, (dh, drows) = mermaid_demo()
+tr = demo_transitions()
+drows2 = [r + [tr.get(r[0].split()[0], "")] for r in drows]
+parts.append(sec_html("demo", "3", "대표 데모 · 창원 도시침수 D0~D8", (
+    render_md(s1)
+    + "<h3>사건 정의</h3>" + render_md(s4)
+    + "<h3>시나리오 흐름</h3>"
+    + mermaid_block(demo_mm, "단계·업무 공간·질문·행위는 IA §13, 상태 전환은 02 §7")
+    + render_table(dh + ["상태 전환 (02 §7)"], drows2, "wide")
+    + details("들어오는 이벤트 (02 §5.1)", render_md(s51), True)
+    + details("CUVIA 내부 업무 이벤트 (02 §5.2)", render_md(s52))
+    + "<h3>확정 전 확인할 사항과 축소안</h3>" + render_md(s12)
+), [("02", "1"), ("02", "4"), ("02", "7"), ("IA", "13"), ("02", "12")]))
+
+# 4. 업무 공간과 화면 이동
+_, ia4 = section("IA", "4")
+_, ia14 = section("IA", "14")
+_, ia15 = section("IA", "15")
+_, ia17 = section("IA", "17")
+_, ia20 = section("IA", "20")
+ia_mm, (ih, irows) = mermaid_ia()
+space_blocks = []
+for key, label in (("6", "IA-01 종합상황"), ("7", "IA-02 사건 작업공간"), ("8", "IA-03 트윈 비교"), ("9", "IA-04 대응·실행"), ("10", "IA-05 기록·검증"), ("11", "IA-G01 공통 AI 보조"), ("12", "IA-A01 운영 관리")):
+    t, b = section("IA", key)
+    space_blocks.append(details(t, render_md(b, skip_headings=False)))
+parts.append(sec_html("ia", "4", "다섯 업무 공간과 화면 이동", (
+    mermaid_block(ia_mm, "IA §5 요약표")
+    + render_md(ia4)
+    + "<h3>화면 간 유지할 사건 맥락</h3>" + render_md(ia14)
+    + "<h3>공통 정보 객체</h3>" + render_md(ia15)
+    + "<h3>업무 공간별 내용</h3>" + "".join(space_blocks)
+    + details("Phase 1 화면 초기 판정 (IA §17)", render_md(ia17))
+    + details("확정 전 확인할 사항 (IA §20)", render_md(ia20))
+), [("IA", "4"), ("IA", "5"), ("IA", "14"), ("IA", "15"), ("IA", "17")]))
+
+# 5. 트윈 유형군
+_, t2 = section("03", "2")
+_, t5 = section("03", "5")
+_, t14 = section("03", "14")
+_, t15 = section("03", "15")
+_, t16 = section("03", "16")
+_, t17 = section("03", "17")
+hz_mm, (hh, hrows) = mermaid_hazard()
+type_blocks = []
+for key in ("6", "7", "8", "9", "10", "11", "12"):
+    t, b = section("03", key)
+    type_blocks.append(details(t, render_md(b, skip_headings=False)))
+parts.append(sec_html("twin", "5", "유형별 디지털트윈", (
+    render_md(t2)
+    + "<h3>Phase 2 트윈 유형군</h3>" + render_md(t5)
+    + "<h3>재난명과 유형군</h3>"
+    + mermaid_block(hz_mm, "실선은 주 유형군, 점선은 결합 가능 유형군. 03 §13")
+    + "<h3>복합재난</h3>" + render_md(t14)
+    + "<h3>준비도</h3>" + render_md(t15)
+    + "<h3>대표 데모 밖 비교 유형</h3>" + render_md(subsection(t16, "Phase 2 비교 유형 기준안"))
+    + "<h3>IA에서의 역할</h3>" + render_md(t17)
+    + "<h3>유형군별 계약</h3>" + "".join(type_blocks)
+), [("03", "2"), ("03", "5"), ("03", "13"), ("03", "14"), ("03", "15"), ("03", "16")]))
+
+# 6. 상태축
+_, s11 = section("01", "11")
+_, d6 = section("02", "6")
+parts.append(sec_html("axes", "6", "정직한 상태 표시 · 네 축", (
+    render_md(s11) + "<h3>데모에서의 표시</h3>" + render_md(d6)
+), [("01", "11"), ("02", "6")]))
+
+# 7. 결정 상태 · 다음 작업
+_, r81 = section("README", "8.1")
+_, r82 = section("README", "8.2")
+_, r10 = section("README", "10")
+_, r11 = section("README", "11")
+_, r7 = section("README", "7")
+gates = [[re.sub(r"^### ", "", l), ""] for l in r7 if l.startswith("### ")]
+gate_lines = [l for l in r7 if l.startswith("완료 관문:")]
+for g, gl in zip(gates, gate_lines):
+    g[1] = gl.replace("완료 관문:", "").strip()
+open_items = [["01", l] for l in section("01", "12.2")[1] if l.startswith("|") and not l.startswith("| 우선") and "---" not in l]
+parts.append(sec_html("decisions", "7", "결정 상태와 다음 작업", (
+    "<h3>확정된 원칙</h3>" + render_md(r81)
+    + "<h3>권고 기준안</h3>" + render_md(r82)
+    + "<h3>아직 결정하지 않은 항목</h3>" + render_md(r10)
+    + "<h3>단계와 완료 관문</h3>" + render_table(["단계", "완료 관문"], gates)
+    + "<h3>바로 다음 작업</h3>" + render_md(r11)
+), [("README", "8"), ("README", "10"), ("README", "7"), ("README", "11")]))
+
+# 8. 검수 기록
+review_dir = ROOT / "검수"
+reviews = sorted(p.name for p in review_dir.glob("*.md")) if review_dir.exists() else []
+rv = "<ul>" + "".join(f'<li><a href="검수/{html.escape(n)}">{html.escape(n)}</a></li>' for n in reviews) + "</ul>"
+parts.append(sec_html("review", "8", "검수 기록", (
+    "<p>정본이 아니라 특정 시점 문서에 대한 점검 기록이다. 결함과 단계 의존 항목은 각 파일 머리에서 갈라 두었다.</p>" + rv
+), [("README", "6.1")]))
+
+toc = [("goal", "0 목표"), ("arch", "1 아키텍처"), ("incident", "2 이벤트→사건"), ("demo", "3 대표 데모"), ("ia", "4 업무 공간"), ("twin", "5 트윈 유형군"), ("axes", "6 상태축"), ("decisions", "7 결정·다음 작업"), ("review", "8 검수 기록")]
+toc_html = "".join(f'<a href="#{a}">{html.escape(t)}</a>' for a, t in toc)
+built = datetime.now().strftime("%Y-%m-%d %H:%M")
+mtimes = " · ".join(f"{k} {datetime.fromtimestamp((ROOT / v).stat().st_mtime).strftime('%H:%M')}" for k, v in DOCS.items())
+
+CSS = r"""
+<style>
+:root{
+  --bg:#F4F6F7; --surface:#FFFFFF; --ink:#182129; --muted:#56656F; --line:#D3DBE0; --line-soft:#E6ECEF;
+  --accent:#0F5F7E; --accent-ink:#0A4660; --accent-soft:#E3EFF4;
+  --warn:#B5720B; --crit:#AE3A31; --code-bg:#EEF2F4;
+  --mm-node:#E3EFF4; --mm-line:#0F5F7E; --mm-ink:#182129;
+  --sans:"IBM Plex Sans KR","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  --mono:"IBM Plex Mono","SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#141A1F; --surface:#1B2329; --ink:#E6ECEF; --muted:#9AA8B2; --line:#2E3A43; --line-soft:#242E36;
+  --accent:#5FB3D3; --accent-ink:#8FCCE3; --accent-soft:#1E3440;
+  --warn:#E0A54A; --crit:#E07068; --code-bg:#232D35;
+  --mm-node:#1E3440; --mm-line:#5FB3D3; --mm-ink:#E6ECEF;
+}}
+:root[data-theme="dark"]{
+  --bg:#141A1F; --surface:#1B2329; --ink:#E6ECEF; --muted:#9AA8B2; --line:#2E3A43; --line-soft:#242E36;
+  --accent:#5FB3D3; --accent-ink:#8FCCE3; --accent-soft:#1E3440;
+  --warn:#E0A54A; --crit:#E07068; --code-bg:#232D35;
+  --mm-node:#1E3440; --mm-line:#5FB3D3; --mm-ink:#E6ECEF;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.65}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{display:grid;grid-template-columns:220px minmax(0,1fr);gap:40px;max-width:1280px;margin:0 auto;padding:32px 28px 96px}
+nav.toc{position:sticky;top:24px;align-self:start;display:flex;flex-direction:column;gap:2px;font-size:13.5px}
+nav.toc a{padding:6px 10px;border-left:2px solid var(--line-soft);color:var(--muted)}
+nav.toc a:hover{border-left-color:var(--accent);color:var(--ink);text-decoration:none}
+nav.toc .meta{margin-top:18px;padding:10px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.5}
+main{min-width:0;max-width:880px}
+h1{font-size:26px;font-weight:600;letter-spacing:-.01em;margin:0 0 4px;text-wrap:balance}
+.lede{color:var(--muted);margin:0 0 36px;max-width:68ch}
+section{margin:0 0 56px;padding-top:8px}
+section>header{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:18px}
+section>header .num{font-family:var(--mono);font-size:13px;color:var(--accent);letter-spacing:.06em}
+section>header h2{margin:0;font-size:21px;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+section>header .srcs{grid-column:2;display:flex;flex-wrap:wrap;gap:6px}
+.src{font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+.src:hover{color:var(--accent);border-color:var(--accent);text-decoration:none}
+h3{font-size:15px;font-weight:600;margin:28px 0 8px;color:var(--ink)}
+h4{font-size:14px;font-weight:600;margin:18px 0 6px;color:var(--muted);text-transform:none}
+p{margin:0 0 10px;max-width:72ch}
+blockquote{margin:12px 0 14px;padding:10px 16px;border-left:3px solid var(--accent);background:var(--accent-soft);color:var(--ink);max-width:72ch;font-weight:500}
+ul,ol{margin:0 0 12px;padding-left:22px;max-width:76ch}li{margin:2px 0}
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:1px 5px;border-radius:3px}
+pre.tree{font-family:var(--mono);font-size:12.5px;line-height:1.55;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:14px 16px;overflow-x:auto;margin:10px 0 14px}
+.tbl{overflow-x:auto;margin:8px 0 16px;border:1px solid var(--line);border-radius:4px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top;text-align:left}
+th{font-weight:600;color:var(--muted);font-size:12.5px;letter-spacing:.02em;background:var(--bg);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+td code{white-space:nowrap}
+figure.mm{margin:8px 0 18px;padding:14px 12px 8px;background:var(--surface);border:1px solid var(--line);border-radius:4px;overflow-x:auto}
+figure.mm pre.mermaid{margin:0;font-family:var(--mono);font-size:12px;color:var(--muted)}
+figure.mm figcaption{font-size:12.5px;color:var(--muted);margin-top:8px}
+details{border:1px solid var(--line);border-radius:4px;background:var(--surface);margin:8px 0 12px;padding:0 14px}
+details>summary{cursor:pointer;padding:9px 0;font-weight:500;color:var(--accent-ink);list-style:none}
+details>summary::before{content:"▸ ";color:var(--muted)}details[open]>summary::before{content:"▾ "}
+details[open]>summary{border-bottom:1px solid var(--line-soft);margin-bottom:8px}
+details .tbl{border:0;margin-left:-14px;margin-right:-14px;border-top:1px solid var(--line-soft);border-radius:0}
+.chip{display:inline-block;font-family:var(--mono);font-size:11.5px;padding:1px 7px;border-radius:3px;background:var(--code-bg);color:var(--ink)}
+@media (max-width:900px){.wrap{grid-template-columns:1fr;gap:20px}nav.toc{position:static;flex-direction:row;flex-wrap:wrap}nav.toc .meta{width:100%;border-top:0}}
+@media (prefers-reduced-motion: reduce){*{scroll-behavior:auto!important}}
+</style>
+"""
+
+body = f"""
+<div class="wrap">
+<nav class="toc">{toc_html}<div class="meta">정본에서 생성 · {built}<br/>{mtimes}<br/>값이 다르면 MD가 우선한다</div></nav>
+<main>
+<h1>CUVIA NDMS Phase 2 고도화 개요</h1>
+<p class="lede">다섯 정본(README · 01 · 02 · 03 · IA)을 표와 그림으로 옮긴 읽기 전용 뷰어. 손으로 적은 문장은 없고 절 제목의 꼬리표가 원문 위치다.</p>
+{''.join(parts)}
+</main>
+</div>
+"""
+
+MERMAID_INIT = """
+<script>
+(function(){
+  var dark = document.documentElement.getAttribute('data-theme')==='dark' ||
+    (document.documentElement.getAttribute('data-theme')!=='light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  var v = dark ? {background:'#1B2329',primaryColor:'#1E3440',primaryTextColor:'#E6ECEF',primaryBorderColor:'#5FB3D3',lineColor:'#9AA8B2',secondaryColor:'#232D35',tertiaryColor:'#141A1F',clusterBkg:'#141A1F',clusterBorder:'#2E3A43',edgeLabelBackground:'#1B2329',fontFamily:'IBM Plex Sans KR, Apple SD Gothic Neo, sans-serif'}
+                 : {background:'#FFFFFF',primaryColor:'#E3EFF4',primaryTextColor:'#182129',primaryBorderColor:'#0F5F7E',lineColor:'#56656F',secondaryColor:'#EEF2F4',tertiaryColor:'#F4F6F7',clusterBkg:'#F4F6F7',clusterBorder:'#D3DBE0',edgeLabelBackground:'#FFFFFF',fontFamily:'IBM Plex Sans KR, Apple SD Gothic Neo, sans-serif'};
+  if (window.mermaid) mermaid.initialize({startOnLoad:true,theme:'base',themeVariables:v,flowchart:{htmlLabels:true,curve:'basis'},securityLevel:'loose'});
+})();
+</script>
+"""
+
+FONTS = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">'
+
+if FRAGMENT:
+    doc = f"<title>NDMS Phase 2 고도화 개요</title>\n{FONTS}\n{CSS}\n{body}"
+else:
+    doc = f"""<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NDMS Phase 2 고도화 개요</title>
+{FONTS}
+{CSS}
+</head>
+<body>
+{body}
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+{MERMAID_INIT}
+</body>
+</html>"""
+
+OUT.parent.mkdir(parents=True, exist_ok=True)
+OUT.write_text(doc, encoding="utf-8")
+print("saved", OUT, f"({len(doc)//1024} KB)", "fragment" if FRAGMENT else "standalone")
