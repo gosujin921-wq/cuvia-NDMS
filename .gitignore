@@ -4,8 +4,10 @@ dist/
 .DS_Store
 shots/
 
-# 작업 문서·참고자료 — 저장소에 싣지 않는다 (인증키 · 대용량 PDF)
-docs
+# 작업 문서·참고자료 — 저장소에 싣지 않는다 (인증키 · 대용량 PDF).
+# Phase 2 정본(docs/고도화/)만 예외로 싣는다 — CLAUDE.md 가 정본이라 부르는 파일이 클론에 있어야 한다
+docs/*
+!docs/고도화
 
 # impeccable 플러그인 캐시
 .impeccable

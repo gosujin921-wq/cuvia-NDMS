@@ -125,7 +125,7 @@ export function AppLayout() {
         messages={agentMessages}
         isResponding={agentResponding}
         onCancel={cancelAgent}
-        /* ★ 물음이 두 자리에서 산다 (2026-09-09 확정 · 시나리오-검증 §3-2).
+        /* ★ 물음이 두 자리에서 산다 (2026-09-09 확정).
              오버레이   사건 **진행 중** 묻는다. 지도를 왼쪽에 남겨야 하므로 화면을 안 옮긴다
              SCR-06    S9 **사후 복기**. 사건이 해제된 뒤라 남길 지도가 없고, 근거 표와
                        실측 대조가 전용 화면에서 크게 서야 에필로그가 선다

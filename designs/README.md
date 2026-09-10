@@ -1,5 +1,8 @@
 # CUVIA 재난안전관제 designs
 
+> **상태: Phase 1 프로토타입.** 실행과 현재 코드 구조를 안내하는 문서다. Phase 2 제품 방향과
+> 재편 기준은 [`docs/고도화/README.md`](../docs/고도화/README.md)를 따른다.
+
 Vite + React + Tailwind v4. 공통 부품·토큰은 `@cuvia/components` / `@cuvia/tokens`(사내 Gitea npm 레지스트리)를 사용한다.
 
 ## 설치·실행
