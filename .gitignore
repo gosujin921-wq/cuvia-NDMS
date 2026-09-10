@@ -6,3 +6,6 @@ shots/
 
 # 작업 문서·참고자료 — 저장소에 싣지 않는다 (인증키 · 대용량 PDF)
 docs
+
+# impeccable 플러그인 캐시
+.impeccable

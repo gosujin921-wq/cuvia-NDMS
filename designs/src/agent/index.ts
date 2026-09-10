@@ -17,7 +17,11 @@
  * ───────────────────────────────────────────── */
 
 export { AgentOverlay, PILL_SLOT_ID } from "./components/agent-overlay";
-export { AgentChatPanel } from "./components/agent-chat-panel";
+export {
+  AgentChatPanel,
+  AGENT_PANEL_WIDTH,
+  AGENT_PANEL_INSET,
+} from "./components/agent-chat-panel";
 export { AgentMessageList } from "./components/agent-message-list";
 export { AgentDataTable } from "./components/agent-data-table";
 export { AgentChart } from "./components/agent-chart";

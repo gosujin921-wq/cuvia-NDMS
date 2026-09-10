@@ -56,6 +56,7 @@ import {
   RAIL_BASE,
   RIGHT_RAIL,
   UTIL_STRIP,
+  utilStripStyle,
 } from "../../lib/layout";
 import {
   ensureFloodLayers,
@@ -155,7 +156,8 @@ export function DigitalTwinPage() {
   const navigate = useNavigate();
   const { districtId } = useParams();
   const [params] = useSearchParams();
-  const { advanceTo, heroDistrictId, now, selectedDeviceId, selectDevice } = useScenario();
+  const { advanceTo, heroDistrictId, now, selectedDeviceId, selectDevice, agentOpen } =
+    useScenario();
   /* 지구를 들고 오는 길은 재난관제뿐이다(`/scr-05/:districtId`). 메뉴로 들어오면 지구가
      없으므로 **사건이 없는 지구**를 골라 사전 모의분석으로 연다(02 §2 · demo/analysis.ts).
      봉암 고정이던 자리다 — 봉암 트랙에서는 그 지구가 사건 한복판이라, 메뉴로 들어왔는데
@@ -646,7 +648,7 @@ export function DigitalTwinPage() {
       {/* 열돔에는 세우지 않는다 — 이 스트립은 전부 트윈 지도를 조작하는데, 그 지도가
           열돔 지구본에 가려 안 보인다. 안 보이는 것을 기울이고 켜고 끄는 단추가 남으면
           "눌러도 아무 일이 없는" 자리가 된다 */}
-      <div className={UTIL_STRIP} hidden={heat}>
+      <div className={UTIL_STRIP} style={utilStripStyle(agentOpen)} hidden={heat}>
         <MapUtilStrip
           map={map}
           disabled={!ready}

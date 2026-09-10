@@ -7,11 +7,15 @@
  *       RIGHT_PANEL = w-[340px]   우측 레일 (absolute right-3 top-3 bottom-3, z-20)
  *       CENTER_SPAN = left-[324px] right-[364px]
  *       유틸 스트립  = absolute right-[364px] top-1/2 z-30 -translate-y-1/2
+ *                     (이 앱은 right 를 utilStripStyle 로 셈한다 — AI 패널이 밀어내므로)
  *   · apps/storybook/stories/layout-map.stories.tsx (같은 값을 그림으로 낸 배치도)
  *
  * 레일 폭이 바뀌면 가운데 영역과 유틸 스트립 자리가 같이 움직인다. 그래서 폭을 화면마다
  * 다르게 두지 않는다 — 화면을 오갈 때 패널과 스트립이 좌우로 튀면 같은 앱으로 안 읽힌다.
  * ───────────────────────────────────────────── */
+
+import type { CSSProperties } from "react";
+import { AGENT_PANEL_INSET, AGENT_PANEL_WIDTH } from "../agent";
 
 /** 좌측 레일 폭 (px) */
 export const LEFT_RAIL = 300;
@@ -39,8 +43,27 @@ export const CENTER_RIGHT = RIGHT_RAIL + EDGE * 2;
  */
 export const RAIL_BASE = "pointer-events-none absolute bottom-3 top-3 z-20 flex flex-col gap-2";
 
-/** 지도 위 유틸 스트립(맵 조작) 자리 — 우측 레일 바로 왼쪽, 세로 중앙 */
-export const UTIL_STRIP = "absolute right-[364px] top-1/2 z-30 -translate-y-1/2";
+/**
+ * 지도 위 유틸 스트립(맵 조작) 자리 — 화면 오른쪽 가장자리에 붙고, 거기 선 것이 밀어낸다.
+ *
+ * 오른쪽 가장자리에 서는 것은 둘이다. 우측 레일은 지도 화면에 늘 서 있고(제품
+ * CENTER_SPAN 의 right-[364px] 가 그 자리), AI 대화 패널은 열릴 때만 레일을 덮고 선다.
+ * 스트립의 right 는 그중 더 넓은 쪽의 왼쪽 가장자리 + EDGE 다. 자리를 숫자로 박지 않는다 —
+ * 패널이 열렸을 때 스트립이 패널 유리 뒤에 묻히던 것이 그 숫자 때문이었다.
+ *
+ * 클래스는 자리 빼고 전부(세로 중앙 · z), 자리는 `utilStripStyle(agentOpen)` 이 준다.
+ * 이동은 패널 슬라이드와 같은 박자(--duration-slow · --ease-out)로 맞춘다.
+ */
+export const UTIL_STRIP = "absolute top-1/2 z-30 -translate-y-1/2";
+
+export function utilStripStyle(agentOpen: boolean): CSSProperties {
+  const railEdge = CENTER_RIGHT;
+  const agentEdge = AGENT_PANEL_INSET + AGENT_PANEL_WIDTH + EDGE;
+  return {
+    right: agentOpen ? Math.max(railEdge, agentEdge) : railEdge,
+    transition: "right var(--duration-slow) var(--ease-out)",
+  };
+}
 
 /**
  * 하단 중앙 도크 높이 (px) — 현장영상 스트립(SCR-02 · 04 §2-5).

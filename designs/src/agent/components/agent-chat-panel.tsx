@@ -36,9 +36,16 @@ export interface AgentChatPanelProps {
   greeting?: string;
   /** 대화가 비었을 때 고를 수 있는 질문. 누르면 그대로 보낸다. */
   suggestions?: string[];
-  /** 화면 가장자리 여백(px). */
+  /** 화면 가장자리 여백(px). 기본은 AGENT_PANEL_INSET. */
   inset?: number;
 }
+
+/**
+ * 패널 기하 — 호스트가 이 패널에 밀려나는 요소(지도 유틸 스트립 등)의 자리를 셈할 때 쓴다.
+ * 폭·여백을 여기 한 벌만 두고 아래 스타일이 이 값을 문다 — 호스트가 같은 수를 따로 적지 않는다.
+ */
+export const AGENT_PANEL_WIDTH = 480;
+export const AGENT_PANEL_INSET = 20;
 
 /**
  * 우측에서 슬라이드로 들어오는 대화 패널.
@@ -122,7 +129,7 @@ export function AgentChatPanel({
   onNavigate,
   greeting,
   suggestions = [],
-  inset = 20,
+  inset = AGENT_PANEL_INSET,
 }: AgentChatPanelProps) {
   // 마운트 직후 한 프레임 뒤에 켜야 트랜지션이 발동한다(초기값에서 바로 최종값이면 안 움직임).
   const [entered, setEntered] = useState(false);
@@ -181,7 +188,10 @@ export function AgentChatPanel({
       role="complementary"
       aria-label={`${agentName} 대화`}
     >
-      <div className="glass-surface glass-edge-lt flex w-[480px] shrink-0 flex-col overflow-hidden rounded-xl">
+      <div
+        className="glass-surface glass-edge-lt flex shrink-0 flex-col overflow-hidden rounded-xl"
+        style={{ width: AGENT_PANEL_WIDTH }}
+      >
         {/* 스크롤된 메시지가 닫기 버튼 뒤로 자연스럽게 사라지게 하는 페이드. */}
         <div
           aria-hidden

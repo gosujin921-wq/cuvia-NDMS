@@ -58,7 +58,15 @@ import {
 import { SAFEMAP_LAYERS, ensureSafemapLayers, setSafemapVisible } from "../../lib/safemap";
 import { MapPopup } from "../../components/MapPopup";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
-import { CCTV_DOCK, CENTER_RIGHT, EDGE, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP } from "../../lib/layout";
+import {
+  CCTV_DOCK,
+  CENTER_RIGHT,
+  EDGE,
+  RAIL_BASE,
+  RIGHT_RAIL,
+  UTIL_STRIP,
+  utilStripStyle,
+} from "../../lib/layout";
 import { LevelBadge } from "../../components/LevelBadge";
 import { CctvBigView } from "../../components/CctvBigView";
 import { formatClock } from "../../lib/datetime";
@@ -101,6 +109,7 @@ export function EarlyWarningPage() {
     addDispatch,
     sopExecuted,
     selectDevice,
+    agentOpen,
   } = useScenario();
   const district = (districtId && findDistrict(districtId)) || defaultDistrict(now);
   /* 사건 지정 진입 (02 §2) — 트윈 [이 판단으로 대응하기]·구 /scr-03 리다이렉트가 싣는다 */
@@ -412,8 +421,9 @@ export function EarlyWarningPage() {
         )}
       </div>
 
-      {/* 맵 조작 — 우측 레일 왼쪽 세로 스트립. 지도 화면 어디서든 같은 자리 같은 버튼 */}
-      <div className={UTIL_STRIP}>
+      {/* 맵 조작 — 오른쪽 가장자리에 선 것(레일 · 열린 AI 패널) 왼쪽 세로 스트립.
+          지도 화면 어디서든 같은 자리 같은 버튼 */}
+      <div className={UTIL_STRIP} style={utilStripStyle(agentOpen)}>
         <MapUtilStrip
           map={map}
           disabled={!ready}

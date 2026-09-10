@@ -23,7 +23,15 @@ import { DISTRICTS, type District, type DistrictKind } from "../../demo/district
 import { majorDisasterAt } from "../../demo/events";
 import { useScenario } from "../../state/ScenarioProvider";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
-import { CENTER_LEFT, CENTER_RIGHT, LEFT_RAIL, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP } from "../../lib/layout";
+import {
+  CENTER_LEFT,
+  CENTER_RIGHT,
+  LEFT_RAIL,
+  RAIL_BASE,
+  RIGHT_RAIL,
+  UTIL_STRIP,
+  utilStripStyle,
+} from "../../lib/layout";
 import { PILL_SLOT_ID } from "../../agent";
 import { CctvLiveStrip } from "./widgets/CctvLiveStrip";
 import { DistrictList } from "./widgets/DistrictList";
@@ -52,7 +60,7 @@ export function OverviewDashboardPage() {
   const navigate = useNavigate();
   /* 주요 재난 사건군에 선 지구는 아래 목록에서 뺀다(03 §1 · 04 §4-7).
      같은 지구를 화면에 두 번 세우지 않는다 */
-  const { now } = useScenario();
+  const { now, agentOpen } = useScenario();
   const majorDistrictIds = majorDisasterAt(now)?.events.map((e) => e.districtId) ?? [];
   const mapContainer = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(mapContainer);
@@ -148,8 +156,9 @@ export function OverviewDashboardPage() {
         )}
       </div>
 
-      {/* 맵 조작 — 우측 레일 왼쪽 세로 스트립. 지도 화면 어디서든 같은 자리 같은 버튼 */}
-      <div className={UTIL_STRIP}>
+      {/* 맵 조작 — 오른쪽 가장자리에 선 것(레일 · 열린 AI 패널) 왼쪽 세로 스트립.
+          지도 화면 어디서든 같은 자리 같은 버튼 */}
+      <div className={UTIL_STRIP} style={utilStripStyle(agentOpen)}>
         <MapUtilStrip
           map={map}
           disabled={!ready}
