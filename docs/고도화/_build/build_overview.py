@@ -223,7 +223,7 @@ def mermaid_architecture():
 def mermaid_state():
     """01 §7.4 전환표 → stateDiagram-v2. 간선 라벨은 표의 행 번호. 표는 옆에 같이 낸다."""
     header, rows = first_table("01", "7.4", ["현재 상태", "전환 조건", "다음 상태", "확정 주체"])
-    out = ["stateDiagram-v2", "  direction LR", "  [*] --> 후보"]
+    out = ["stateDiagram-v2", "  direction TB", "  [*] --> 후보"]
     numbered = []
     for i, (cur, cond, nxt, who) in enumerate(rows, 1):
         numbered.append([str(i), cur, cond, nxt, who])
@@ -247,23 +247,23 @@ def demo_transitions():
 
 
 def mermaid_demo():
-    """IA §13 동선표 + 02 상태 전환 → flowchart LR, 업무 공간별 subgraph."""
-    header, rows = first_table("IA", "13", ["시나리오", "업무 공간", "화면에서 답할 질문", "주요 행위"])
+    """IA §13 동선표 + 02 상태 전환 → flowchart TD, 화면별 subgraph."""
+    header, rows = first_table("IA", "13", ["시나리오", "화면", "화면에서 답할 질문", "주요 행위", "기준 라우트"])
     tr = demo_transitions()
     groups = {}
     order = []
-    for sc, space, q, act in rows:
+    for sc, space, q, act, route in rows:
         d = sc.split()[0]
         if space not in groups:
             groups[space] = []
             order.append(space)
-        groups[space].append((d, sc, q, act))
-    out = ["flowchart LR"]
+        groups[space].append((d, sc, q, act, route))
+    out = ["flowchart TD"]
     for space in order:
         out.append(f'  subgraph {mm_id(space)}["{mm_label(space)}"]')
         out.append("    direction TB")
-        for d, sc, q, act in groups[space]:
-            lab = f"<b>{sc}</b><br/>{q}<br/><small>{act}</small>"
+        for d, sc, q, act, route in groups[space]:
+            lab = f"<b>{sc}</b><br/>{q}<br/><small>{act}</small><br/><code>{route}</code>"
             if d in tr:
                 lab += f"<br/><code>{tr[d]}</code>"
             out.append(f'    {d}["{mm_label(lab)}"]')
@@ -275,19 +275,39 @@ def mermaid_demo():
 
 
 def mermaid_ia():
-    """IA §5 요약표 → 다섯 업무 공간 흐름 + 공통·관리."""
-    header, rows = first_table("IA", "5", ["ID", "업무 공간", "담당자의 핵심 질문", "대표 산출물", "데모 위치"])
-    main = [r for r in rows if re.fullmatch(r"IA-0\d", r[0])]
-    side = [r for r in rows if not re.fullmatch(r"IA-0\d", r[0])]
-    out = ["flowchart LR"]
-    for rid, name, q, prod, demo in main:
-        out.append(f'  {mm_id(rid)}["<b>{rid} {name}</b><br/>{mm_label(q)}<br/><small>{mm_label(demo)}</small>"]')
-    for a, b in zip(main, main[1:]):
-        out.append(f"  {mm_id(a[0])} --> {mm_id(b[0])}")
-    for rid, name, q, prod, demo in side:
-        out.append(f'  {mm_id(rid)}(["{rid} {name} · {mm_label(demo)}"])')
-        out.append(f"  {mm_id(rid)} -.- {mm_id(main[0][0])}")
-    return "\n".join(out), (header, rows)
+    """IA §5 요약표 → 상시 메뉴와 사건 내부 화면을 구분한 흐름."""
+    header, rows = first_table("IA", "5", ["ID", "업무 공간", "제공 형태", "담당자의 핵심 질문", "대표 산출물", "데모 위치"])
+    by_id = {r[0]: r for r in rows}
+    _, body = section("IA", "5")
+    route_header, route_rows = tables(subsection(body, "5.2 Phase 2 라우트 계약"))[0]
+    routes = {r[0]: r[1] for r in route_rows}
+
+    def node(rid, shape="rect"):
+        _, name, form, q, _, demo = by_id[rid]
+        label = f"<b>{rid} {name}</b><br/><small>{mm_label(form)} · {mm_label(demo)}</small><br/>{mm_label(q)}<br/><code>{mm_label(routes[rid])}</code>"
+        if shape == "round":
+            return f'  {mm_id(rid)}(["{label}"])'
+        return f'  {mm_id(rid)}["{label}"]'
+
+    out = ["flowchart TD", node("IA-01"), '  subgraph CASE["사건 내부 업무 흐름"]', "    direction TB"]
+    for rid in ("IA-02", "IA-03", "IA-04"):
+        out.append("  " + node(rid).strip())
+    out += [
+        "    IA_02 -->|예측 이벤트 선택| IA_03",
+        "    IA_03 -->|이 전망으로 대응 검토| IA_04",
+        "    IA_02 -.->|긴급 대응| IA_04",
+        "  end",
+        node("IA-05"),
+        node("IA-T01", "round"),
+        node("IA-G01", "round"),
+        node("IA-A01", "round"),
+        "  IA_01 -->|사건·후보 선택| IA_02",
+        "  IA_04 -->|결과·종료| IA_05",
+        "  IA_05 -.->|D8 훈련 후보| IA_T01",
+        "  IA_G01 -.- IA_02",
+        "  IA_A01 -.- IA_01",
+    ]
+    return "\n".join(out), (header + ["기준 라우트"], [r + [routes[r[0]]] for r in rows])
 
 
 def mermaid_hazard():
@@ -298,7 +318,7 @@ def mermaid_hazard():
     for r in grows:
         code = r[0].split(".")[0].strip()
         gname[code] = r[0].strip()
-    out = ["flowchart LR", "  subgraph H[재난 · 상황]", "    direction TB"]
+    out = ["flowchart TB", "  subgraph H[재난 · 상황]", "    direction TB"]
     for hz, *_ in rows:
         out.append(f'    H_{mm_id(hz)}["{mm_label(hz)}"]')
     out.append("  end")
@@ -349,24 +369,17 @@ def details(summary, inner, open_=False):
 # ───────────────────────────────────────── 본문 조립
 parts = []
 
-# 0. 문서 상태 · 각 문서의 질문
+# 0. 방향 · 문서 상태
 status_rows = [[DOCS[k], head_status(k)] for k in DOCS]
-qmap = [
-    ["README", "Phase 2의 목적", head_quote("README", "2")],
-    ["01", "이 문서의 질문", re.search(r"^> 목적: (.+?)(?=\n>\s*$|\n\n)", TEXT["01"], re.M | re.S).group(1).replace("\n> ", " ").strip()],
-    ["02", "데모가 증명해야 하는 것", head_quote("02", "1")],
-    ["03", "이 문서가 답하는 질문", head_quote("03", "1")],
-    ["IA", "IA의 목적", head_quote("IA", "1")],
-]
 _, r2 = section("README", "2")
 questions = render_md([l for l in r2 if re.match(r"^\d+\. ", l)])
 _, r5 = section("README", "5")
 principles = render_md(r5)
-parts.append(sec_html("goal", "0", "목표", (
-    render_table(["문서", "질문", "한 문장"], qmap, "wide")
+parts.append(sec_html("goal", "0", "방향과 검토 질문", (
+    "<blockquote class=\"vision\">" + inline(head_quote("README", "2")) + "</blockquote>"
     + "<h3>Phase 2가 답해야 할 다섯 질문</h3>" + questions
     + details("설계 원칙 (README §5)", principles)
-    + "<h3>문서 상태</h3>" + render_table(["문서", "상태"], status_rows)
+    + details("정본 문서 상태", render_table(["문서", "상태"], status_rows))
 ), [("README", "2"), ("README", "5"), ("README", "6")]))
 
 # 1. 아키텍처
@@ -406,14 +419,16 @@ parts.append(sec_html("demo", "3", "대표 데모 · 창원 도시침수 D0~D8",
     + "<h3>사건 정의</h3>" + render_md(s4)
     + "<h3>시나리오 흐름</h3>"
     + mermaid_block(demo_mm, "단계·업무 공간·질문·행위는 IA §13, 상태 전환은 02 §7")
-    + render_table(dh + ["상태 전환 (02 §7)"], drows2, "wide")
-    + details("들어오는 이벤트 (02 §5.1)", render_md(s51), True)
+    + details("D0~D8 단계별 질문·행위·상태 전환", render_table(dh + ["상태 전환 (02 §7)"], drows2, "wide"))
+    + details("들어오는 이벤트 (02 §5.1)", render_md(s51))
     + details("CUVIA 내부 업무 이벤트 (02 §5.2)", render_md(s52))
     + "<h3>확정 전 확인할 사항과 축소안</h3>" + render_md(s12)
 ), [("02", "1"), ("02", "4"), ("02", "7"), ("IA", "13"), ("02", "12")]))
 
 # 4. 업무 공간과 화면 이동
 _, ia4 = section("IA", "4")
+_, ia5 = section("IA", "5")
+_, ia131 = section("IA", "13.1")
 _, ia14 = section("IA", "14")
 _, ia15 = section("IA", "15")
 _, ia17 = section("IA", "17")
@@ -423,15 +438,18 @@ space_blocks = []
 for key, label in (("6", "IA-01 종합상황"), ("7", "IA-02 사건 작업공간"), ("8", "IA-03 트윈 비교"), ("9", "IA-04 대응·실행"), ("10", "IA-05 기록·검증"), ("11", "IA-G01 공통 AI 보조"), ("12", "IA-A01 운영 관리")):
     t, b = section("IA", key)
     space_blocks.append(details(t, render_md(b, skip_headings=False)))
-parts.append(sec_html("ia", "4", "다섯 업무 공간과 화면 이동", (
-    mermaid_block(ia_mm, "IA §5 요약표")
-    + render_md(ia4)
-    + "<h3>화면 간 유지할 사건 맥락</h3>" + render_md(ia14)
-    + "<h3>공통 정보 객체</h3>" + render_md(ia15)
-    + "<h3>업무 공간별 내용</h3>" + "".join(space_blocks)
+parts.append(sec_html("ia", "4", "업무 공간과 화면 관계", (
+    mermaid_block(ia_mm, "상시 메뉴, 사건 내부 화면 모드와 팝업을 구분한 IA §5 흐름")
+    + render_table(ih, irows, "wide")
+    + details("전체 메뉴·화면 구조 (IA §4)", render_md(ia4))
+    + details("라우트 계약·전환·예외 처리 (IA §5.2)", render_md(subsection(ia5, "5.2 Phase 2 라우트 계약"), skip_headings=False))
+    + details("화면 간 유지할 사건 맥락", render_md(ia14))
+    + details("공통 정보 객체", render_md(ia15))
+    + details("D8 → 대응 모의훈련 전달 계약 (IA §13.1)", render_md(ia131))
+    + "<h3>업무 공간별 상세</h3>" + "".join(space_blocks)
     + details("Phase 1 화면 초기 판정 (IA §17)", render_md(ia17))
     + details("확정 전 확인할 사항 (IA §20)", render_md(ia20))
-), [("IA", "4"), ("IA", "5"), ("IA", "14"), ("IA", "15"), ("IA", "17")]))
+), [("IA", "4"), ("IA", "5.2"), ("IA", "13.1"), ("IA", "14"), ("IA", "15"), ("IA", "17")]))
 
 # 5. 트윈 유형군
 _, t2 = section("03", "2")
@@ -452,7 +470,7 @@ parts.append(sec_html("twin", "5", "유형별 디지털트윈", (
     + mermaid_block(hz_mm, "실선은 주 유형군, 점선은 결합 가능 유형군. 03 §13")
     + "<h3>복합재난</h3>" + render_md(t14)
     + "<h3>준비도</h3>" + render_md(t15)
-    + "<h3>대표 데모 밖 비교 유형</h3>" + render_md(subsection(t16, "Phase 2 비교 유형 기준안"))
+    + "<h3>대표 데모 밖 비교 유형</h3>" + render_md(subsection(t16, "Phase 2 비교 기준안"))
     + "<h3>IA에서의 역할</h3>" + render_md(t17)
     + "<h3>유형군별 계약</h3>" + "".join(type_blocks)
 ), [("03", "2"), ("03", "5"), ("03", "13"), ("03", "14"), ("03", "15"), ("03", "16")]))
@@ -470,6 +488,10 @@ _, r82 = section("README", "8.2")
 _, r10 = section("README", "10")
 _, r11 = section("README", "11")
 _, r7 = section("README", "7")
+implementation_tables = tables(r7)
+if not implementation_tables or implementation_tables[0][0] != ["구현 묶음", "범위", "완료 기준"]:
+    raise SystemExit("[README.md] §7 구현 묶음 표를 찾지 못했다.")
+implementation_header, implementation_rows = implementation_tables[0]
 gates = [[re.sub(r"^### ", "", l), ""] for l in r7 if l.startswith("### ")]
 gate_lines = [l for l in r7 if l.startswith("완료 관문:")]
 for g, gl in zip(gates, gate_lines):
@@ -480,6 +502,7 @@ parts.append(sec_html("decisions", "7", "결정 상태와 다음 작업", (
     + "<h3>권고 기준안</h3>" + render_md(r82)
     + "<h3>아직 결정하지 않은 항목</h3>" + render_md(r10)
     + "<h3>단계와 완료 관문</h3>" + render_table(["단계", "완료 관문"], gates)
+    + "<h3>구현 순서</h3>" + render_table(implementation_header, implementation_rows)
     + "<h3>바로 다음 작업</h3>" + render_md(r11)
 ), [("README", "8"), ("README", "10"), ("README", "7"), ("README", "11")]))
 
@@ -491,7 +514,7 @@ parts.append(sec_html("review", "8", "검수 기록", (
     "<p>정본이 아니라 특정 시점 문서에 대한 점검 기록이다. 결함과 단계 의존 항목은 각 파일 머리에서 갈라 두었다.</p>" + rv
 ), [("README", "6.1")]))
 
-toc = [("goal", "0 목표"), ("arch", "1 아키텍처"), ("incident", "2 이벤트→사건"), ("demo", "3 대표 데모"), ("ia", "4 업무 공간"), ("twin", "5 트윈 유형군"), ("axes", "6 상태축"), ("decisions", "7 결정·다음 작업"), ("review", "8 검수 기록")]
+toc = [("goal", "0 방향"), ("arch", "1 아키텍처"), ("incident", "2 이벤트→사건"), ("demo", "3 대표 데모"), ("ia", "4 화면 관계"), ("twin", "5 트윈 유형군"), ("axes", "6 상태축"), ("decisions", "7 결정·다음 작업"), ("review", "8 검수 기록")]
 toc_html = "".join(f'<a href="#{a}">{html.escape(t)}</a>' for a, t in toc)
 built = datetime.now().strftime("%Y-%m-%d %H:%M")
 mtimes = " · ".join(f"{k} {datetime.fromtimestamp((ROOT / v).stat().st_mtime).strftime('%H:%M')}" for k, v in DOCS.items())
@@ -519,28 +542,32 @@ CSS = r"""
   --mm-node:#1E3440; --mm-line:#5FB3D3; --mm-ink:#E6ECEF;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.65}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{margin:0;background:radial-gradient(circle at 12% 0,var(--surface) 0,transparent 32rem),var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.65}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.wrap{display:grid;grid-template-columns:220px minmax(0,1fr);gap:40px;max-width:1280px;margin:0 auto;padding:32px 28px 96px}
+.skip{position:fixed;left:16px;top:12px;z-index:2;transform:translateY(-160%);padding:8px 12px;background:var(--ink);color:var(--surface);border-radius:3px}.skip:focus{transform:none}
+.wrap{display:grid;grid-template-columns:220px minmax(0,1fr);gap:56px;max-width:1380px;margin:0 auto;padding:40px 32px 112px}
 nav.toc{position:sticky;top:24px;align-self:start;display:flex;flex-direction:column;gap:2px;font-size:13.5px}
-nav.toc a{padding:6px 10px;border-left:2px solid var(--line-soft);color:var(--muted)}
+nav.toc a{padding:7px 10px;border-left:2px solid var(--line-soft);color:var(--muted);transition:color .2s,border-color .2s,background .2s}
 nav.toc a:hover{border-left-color:var(--accent);color:var(--ink);text-decoration:none}
+nav.toc a.active{border-left-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft);font-weight:600}
 nav.toc .meta{margin-top:18px;padding:10px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.5}
-main{min-width:0;max-width:880px}
-h1{font-size:26px;font-weight:600;letter-spacing:-.01em;margin:0 0 4px;text-wrap:balance}
-.lede{color:var(--muted);margin:0 0 36px;max-width:68ch}
-section{margin:0 0 56px;padding-top:8px}
+main{min-width:0;max-width:980px}
+h1{font-size:clamp(28px,4vw,42px);font-weight:600;line-height:1.12;letter-spacing:-.035em;margin:0 0 10px;text-wrap:balance}
+.lede{color:var(--muted);margin:0 0 52px;max-width:64ch;font-size:16px}
+section{margin:0 0 72px;padding-top:8px}
 section>header{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:18px}
 section>header .num{font-family:var(--mono);font-size:13px;color:var(--accent);letter-spacing:.06em}
-section>header h2{margin:0;font-size:21px;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+section>header h2{margin:0;font-size:23px;font-weight:600;letter-spacing:-.02em;text-wrap:balance}
 section>header .srcs{grid-column:2;display:flex;flex-wrap:wrap;gap:6px}
 .src{font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
 .src:hover{color:var(--accent);border-color:var(--accent);text-decoration:none}
 h3{font-size:15px;font-weight:600;margin:28px 0 8px;color:var(--ink)}
 h4{font-size:14px;font-weight:600;margin:18px 0 6px;color:var(--muted);text-transform:none}
 p{margin:0 0 10px;max-width:72ch}
-blockquote{margin:12px 0 14px;padding:10px 16px;border-left:3px solid var(--accent);background:var(--accent-soft);color:var(--ink);max-width:72ch;font-weight:500}
+blockquote{margin:12px 0 14px;padding:12px 18px;border-left:3px solid var(--accent);background:var(--accent-soft);color:var(--ink);max-width:72ch;font-weight:500}
+blockquote.vision{margin:0 0 28px;padding:20px 24px;font-size:18px;line-height:1.55;letter-spacing:-.01em}
 ul,ol{margin:0 0 12px;padding-left:22px;max-width:76ch}li{margin:2px 0}
 code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:1px 5px;border-radius:3px}
 pre.tree{font-family:var(--mono);font-size:12.5px;line-height:1.55;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:14px 16px;overflow-x:auto;margin:10px 0 14px}
@@ -552,24 +579,27 @@ tbody tr:last-child td{border-bottom:0}
 td code{white-space:nowrap}
 figure.mm{margin:8px 0 18px;padding:14px 12px 8px;background:var(--surface);border:1px solid var(--line);border-radius:4px;overflow-x:auto}
 figure.mm pre.mermaid{margin:0;font-family:var(--mono);font-size:12px;color:var(--muted)}
+figure.mm svg{display:block;max-width:100%;height:auto;margin:0 auto}
 figure.mm figcaption{font-size:12.5px;color:var(--muted);margin-top:8px}
 details{border:1px solid var(--line);border-radius:4px;background:var(--surface);margin:8px 0 12px;padding:0 14px}
-details>summary{cursor:pointer;padding:9px 0;font-weight:500;color:var(--accent-ink);list-style:none}
+details>summary{cursor:pointer;padding:10px 0;font-weight:500;color:var(--accent-ink);list-style:none;transition:color .2s}
+details>summary:hover{color:var(--accent)}
 details>summary::before{content:"▸ ";color:var(--muted)}details[open]>summary::before{content:"▾ "}
 details[open]>summary{border-bottom:1px solid var(--line-soft);margin-bottom:8px}
 details .tbl{border:0;margin-left:-14px;margin-right:-14px;border-top:1px solid var(--line-soft);border-radius:0}
 .chip{display:inline-block;font-family:var(--mono);font-size:11.5px;padding:1px 7px;border-radius:3px;background:var(--code-bg);color:var(--ink)}
-@media (max-width:900px){.wrap{grid-template-columns:1fr;gap:20px}nav.toc{position:static;flex-direction:row;flex-wrap:wrap}nav.toc .meta{width:100%;border-top:0}}
+@media (max-width:900px){.wrap{grid-template-columns:1fr;gap:24px;padding:24px 18px 80px}nav.toc{position:static;flex-direction:row;flex-wrap:wrap}nav.toc .meta{width:100%;border-top:0}section{margin-bottom:56px}}
 @media (prefers-reduced-motion: reduce){*{scroll-behavior:auto!important}}
 </style>
 """
 
 body = f"""
+<a class="skip" href="#main">본문으로 건너뛰기</a>
 <div class="wrap">
-<nav class="toc">{toc_html}<div class="meta">정본에서 생성 · {built}<br/>{mtimes}<br/>값이 다르면 MD가 우선한다</div></nav>
-<main>
+<nav class="toc" aria-label="문서 목차">{toc_html}<div class="meta">정본에서 생성 · {built}<br/>{mtimes}<br/>값이 다르면 MD가 우선한다</div></nav>
+<main id="main">
 <h1>CUVIA NDMS Phase 2 고도화 개요</h1>
-<p class="lede">다섯 정본(README · 01 · 02 · 03 · IA)을 표와 그림으로 옮긴 읽기 전용 뷰어. 손으로 적은 문장은 없고 절 제목의 꼬리표가 원문 위치다.</p>
+<p class="lede">제품 방향, 이벤트에서 사건으로 이어지는 구조, 대표 데모와 화면 관계를 다섯 정본에서 모아 보는 읽기 전용 뷰어. 상세 판단은 각 절의 근거 링크에서 확인한다.</p>
 {''.join(parts)}
 </main>
 </div>
@@ -583,6 +613,16 @@ MERMAID_INIT = """
   var v = dark ? {background:'#1B2329',primaryColor:'#1E3440',primaryTextColor:'#E6ECEF',primaryBorderColor:'#5FB3D3',lineColor:'#9AA8B2',secondaryColor:'#232D35',tertiaryColor:'#141A1F',clusterBkg:'#141A1F',clusterBorder:'#2E3A43',edgeLabelBackground:'#1B2329',fontFamily:'IBM Plex Sans KR, Apple SD Gothic Neo, sans-serif'}
                  : {background:'#FFFFFF',primaryColor:'#E3EFF4',primaryTextColor:'#182129',primaryBorderColor:'#0F5F7E',lineColor:'#56656F',secondaryColor:'#EEF2F4',tertiaryColor:'#F4F6F7',clusterBkg:'#F4F6F7',clusterBorder:'#D3DBE0',edgeLabelBackground:'#FFFFFF',fontFamily:'IBM Plex Sans KR, Apple SD Gothic Neo, sans-serif'};
   if (window.mermaid) mermaid.initialize({startOnLoad:true,theme:'base',themeVariables:v,flowchart:{htmlLabels:true,curve:'basis'},securityLevel:'loose'});
+  var links = Array.from(document.querySelectorAll('nav.toc > a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+  if ('IntersectionObserver' in window) {
+    var observer = new IntersectionObserver(function(entries){
+      var visible = entries.filter(function(e){ return e.isIntersecting; }).sort(function(a,b){ return a.boundingClientRect.top-b.boundingClientRect.top; })[0];
+      if (!visible) return;
+      links.forEach(function(a){ a.classList.toggle('active', a.getAttribute('href') === '#' + visible.target.id); });
+    }, {rootMargin:'-15% 0px -70% 0px',threshold:0});
+    targets.forEach(function(el){ observer.observe(el); });
+  }
 })();
 </script>
 """
@@ -596,6 +636,7 @@ else:
 <html lang="ko">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="CUVIA NDMS Phase 2 제품 방향, 사건 구조, 대표 데모와 화면 관계 요약">
 <title>NDMS Phase 2 고도화 개요</title>
 {FONTS}
 {CSS}

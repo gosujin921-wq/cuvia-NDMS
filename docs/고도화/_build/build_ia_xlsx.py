@@ -192,7 +192,7 @@ for k, v in blocks_of(secs, 21):
         rows.extend(("§21 완료 기준", "", x) for x in v)
 sheet("개요", ["구분", "항목", "내용"], rows, [22, 20, 100])
 
-# 1. 업무공간 (§5 표 + §4 트리 하위 구성 + §5.1 진입 조건)
+# 1. 화면 (§5 표 + §4 트리 하위 구성 + §5.1 진입 조건)
 tree = ""
 for k, v in blocks_of(secs, 4):
     if k == "code":
@@ -211,16 +211,18 @@ for ln in tree.split("\n"):
     elif m:
         cur = None
 entry = {r[0]: r for r in first_table(blocks_of(secs, 5, "5.1 진입 조건과 다음 행동"))[1:]}
+route_table = first_table(blocks_of(secs, 5, "5.2 Phase 2 라우트 계약"))
+routes = {r[0]: r[1] for r in route_table[1:]}
 rows = []
 for r in first_table(blocks_of(secs, 5))[1:]:
     name = r[1]
     ent = next((v for k, v in entry.items() if name in k), ("", "", ""))
-    rows.append((r[0], name, r[2], r[3], r[4], " / ".join(children.get(name, [])), ent[1], ent[2]))
+    rows.append((r[0], name, r[2], routes.get(r[0], ""), r[3], r[4], r[5], " / ".join(children.get(name, [])), ent[1], ent[2]))
 for k, v in blocks_of(secs, 5):
     if k == "para":
-        rows.append(("", "", v, "", "", "", "", ""))
-sheet("업무공간", ["ID", "업무 공간", "담당자의 핵심 질문", "대표 산출물", "데모 위치", "하위 구성 (§4)", "주 진입 조건 (§5.1)", "다음 행동 (§5.1)"],
-      rows, [9, 14, 40, 24, 12, 40, 36, 36])
+        rows.append(("", "", "", "", v, "", "", "", "", ""))
+sheet("화면", ["ID", "업무 공간", "제공 형태", "기준 라우트", "담당자의 핵심 질문", "대표 산출물", "데모 위치", "하위 구성 (§4)", "주 진입 조건 (§5.1)", "다음 행동 (§5.1)"],
+      rows, [9, 16, 24, 34, 40, 24, 12, 40, 36, 36])
 
 # 2. 정보구조도 (§6~§12 본문 전부)
 R = []
@@ -244,7 +246,7 @@ for num in range(6, 13):
                     R.append((iid, space, h3, h4, x, ""))
             elif k in ("para", "quote"):
                 R.append((iid, space, h3, h4, v, ""))
-sheet("정보구조도", ["ID", "업무 공간", "구분", "영역", "내용", "원천 객체"], R, [9, 14, 16, 18, 70, 24])
+sheet("정보구조도", ["ID", "화면", "구분", "영역", "내용", "원천 객체"], R, [9, 14, 16, 18, 70, 24])
 
 # 3. 트윈유형 (§8 유형별 교체 영역 표 + 뒤따르는 설명)
 rows = [tuple(r) for r in twin_table[1:]]
@@ -260,8 +262,8 @@ for r in first_table(blocks_of(secs, 13))[1:]:
     rows.append(((m.group(1), m.group(2)) if m else (r[0], "")) + tuple(r[1:]))
 for k, v in blocks_of(secs, 13):
     if k == "para":
-        rows.append(("", "", "", v, ""))
-sheet("데모동선", ["시나리오", "단계", "업무 공간", "화면에서 답할 질문", "주요 행위"], rows, [10, 14, 26, 40, 40])
+        rows.append(("", "", "", v, "", ""))
+sheet("데모동선", ["시나리오", "단계", "화면", "화면에서 답할 질문", "주요 행위", "기준 라우트"], rows, [10, 14, 26, 40, 40, 46])
 
 # 5. 사건맥락 (§14)
 rows = [tuple(r) for r in first_table(blocks_of(secs, 14))[1:]]
