@@ -90,10 +90,35 @@ D8의 훈련 진입은 IA §13.1을 따른다. 원 사건·조건 이벤트·E8�
 참조가 가리키지만 더 이상 갱신하지 않는다. Phase 1 동작과 어긋나면 코드가 맞고, Phase 2 목표와
 어긋나면 `docs/고도화/README.md`의 Phase 2 계획이 맞다. `docs/` 는 `고도화/` 만 저장소에 실린다(README 참고).
 
-## Phase 1 구현을 유지보수할 때의 규칙
+## 구현 규칙 (Phase 1 유지보수 · Phase 2 I0 이후 공통)
 
-아래 상태 엔진·DS·이관 규칙은 Phase 1 코드를 수정하거나 Phase 2 구현이 실제로 시작된 뒤 적용한다.
-Phase 2의 제품 방향이나 화면 구조를 결정하는 근거로 사용하지 않는다.
+아래 화면 구조·상태 엔진·DS·이관 규칙은 Phase 1 코드를 수정할 때와 Phase 2 구현(I0 이후)에 모두
+적용한다. Phase 2의 제품 방향이나 정보구조를 결정하는 근거로는 사용하지 않는다. 무엇을 만들지는 정본이
+정하고, 어떻게 만들지는 이 절이 정한다.
+
+### 화면 구조는 다른 CUVIA 를 먼저 본다 (2026-09-11 확정)
+
+**새 화면을 짜기 전에 워크스페이스의 `· ref/` 폴더에서 같은 자리의 구조를 먼저 찾는다.** NDMS 만의
+셸·사이드바·패널 구조를 새로 발명하지 않는다. 이 데모는 제품(`cuvia_platform_web`)으로 넘어가야 하고,
+제품과 구조가 다르면 이관할 때 화면을 다시 짜게 된다.
+
+| 무엇 | 어디를 본다 |
+|---|---|
+| 앱 셸 · 사이드바 · 상단바 · 전체폭 레이아웃 | platform_web `packages/ui/src/app-shell.tsx` · `app-sidebar.tsx` · `app-topbar.tsx` · `full-width-layout.tsx`. NDMS `designs/src/layout/` 은 IDC `designs/src/layout/` 과 같은 모양이며 이미 이 구조를 따른다. **셸을 새로 만들지 않고 여기에 사건 중심 내비게이션만 붙인다** |
+| 페이지 머리 · 좌우 패널 · 우측 상세 패널 | platform_web `features/*/components/` 의 `page-header` · `panel-layout` · `right-panel-header` 계열 |
+| 앱 단위 레이아웃 조합 (하위 메뉴가 있는 화면) | platform_web `apps/metis/src/app/*-layout.tsx` · `metis-sidebar.tsx` |
+| 데모 상태 · 알림 · 상단 액션 | IDC `designs/src/layout/TopbarActions.tsx` · `AlarmButton.tsx` · `state/DemoProvider.tsx` |
+| 관제 전광판형 고정 비율 화면 | secon `components/layouts/ScaledLayout.tsx` |
+
+- 순서는 **platform_web → IDC → secon** 이다. platform_web 이 제품이고 IDC 는 같은 DS 로 만든 가장 가까운
+  데모다. secon 은 DS 를 안 쓰므로 구조만 보고 부품은 가져오지 않는다
+- 참조 폴더는 읽기 전용이다. 파일을 복사해 오지 않고 **구조를 같은 모양으로 짜되 부품은 `@ds` 로 쓴다.**
+  같은 부품이 참조 쪽에만 있고 DS 에 없으면 그 자리에 `// TODO(ds): platform_web <경로> 와 같은 부품. DS 승격 대상`
+  표식을 남기고 `src/components/` 에 만든다
+- 참조 세 곳이 서로 다르면 platform_web 을 따르고, platform_web 에 없는 자리는 IDC 를 따른다. 셋 다
+  없는 자리만 새로 짜고 그 사실을 컴포넌트 머리 주석에 적는다
+- Phase 2 새 라우트(`/incidents` · 사건 하위 `twin`·`response` · `/records` · `/drills`)도 같은 셸 안의
+  페이지다. IA §5.2 의 사이드바는 `layout/nav.ts` 를 고쳐서 만들지, 새 레이아웃을 세우지 않는다
 
 ### 데모 상태 엔진 — 단일 source of truth
 
@@ -117,7 +142,7 @@ Phase 2의 제품 방향이나 화면 구조를 결정하는 근거로 사용하
 
 ### DS 컴포넌트 우선
 
-**UI 를 손으로 만들기 전에 DS(`@cuvia/components`)에 있는지 먼저 확인한다.** Button · Card · Badge/StatusBadge · Tag · Dialog/Modal · DataTable · Tabs · Select · GlassPanel · MapMarker/MapControl · EmptyState · toast(sonner) 등 50여 종이 이미 있다 — 목록은 `designs/node_modules/@cuvia/components/src/index.ts` (barrel).
+**구조를 참조에서 가져왔으면 그 안의 부품은 DS 다.** UI 를 손으로 만들기 전에 DS(`@cuvia/components`)에 있는지 먼저 확인한다. Button · Card · Badge/StatusBadge · Tag · Dialog/Modal · DataTable · Tabs · Select · GlassPanel · MapMarker/MapControl · EmptyState · toast(sonner) 등 50여 종이 이미 있다 — 목록은 `designs/node_modules/@cuvia/components/src/index.ts` (barrel).
 
 - import 는 항상 `@ds` (= `src/ds.ts` 재수출) 한 경로로만. `@cuvia/components` 직접 import 금지 — 제품(cuvia_platform_web) 이관 시 `ds.ts` 한 파일만 바꾸기 위한 규칙
 - 직접 만드는 것은 DS 에 없는 것만 (`src/components/` 의 차트·맵 전용 부품이 그 예). 그때도 색·간격은 `@cuvia/tokens` 토큰(`var(--color-risk-lv*)` 등)을 쓰고 리터럴 색을 박지 않는다
