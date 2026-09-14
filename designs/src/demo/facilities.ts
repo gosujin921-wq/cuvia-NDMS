@@ -23,7 +23,7 @@ import { devicesOf } from "./devices";
 import { drainageOf } from "./drainage";
 import { formatClock } from "../lib/datetime";
 
-export type FacilityKind = "gate" | "pump";
+export type FacilityKind = "gate" | "pump" | "retention";
 
 export interface FacilityKindSpec {
   kind: FacilityKind;
@@ -36,6 +36,8 @@ export interface FacilityKindSpec {
 export const FACILITY_KINDS: FacilityKindSpec[] = [
   { kind: "gate", label: "배수문", icon: "mdi:boom-gate", color: "var(--color-warning)" },
   { kind: "pump", label: "배수펌프장", icon: "mdi:pump", color: "var(--color-primary-text)" },
+  /* 우수저류시설 — Phase 2 대표 사건(서항)의 배수 여건 주체. Phase 1 지구에는 없다 */
+  { kind: "retention", label: "우수저류시설", icon: "mdi:water-boiler", color: "var(--color-success)" },
 ];
 
 export function facilityKindSpec(kind: FacilityKind): FacilityKindSpec {

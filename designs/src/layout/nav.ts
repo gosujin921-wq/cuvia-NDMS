@@ -1,11 +1,10 @@
 /* ─────────────────────────────────────────────
- * 내비게이션 구조 — 배경: docs/레거시/정본/02_IA_화면구조.md
+ * 내비게이션 구조 — 정본: docs/고도화/CUVIA_NDMS_기능및정보구조도.md §4 · §5.2
  *
- * 메뉴명은 기능명이 아니라 역할명이다(02 §1). 순서는 평시 업무 순서 — 전체를 보고(종합상황),
- * 지구로 좁히고(재난관제), 대응하고(상황대응), 되짚고(통계·분석), 앞을 보고(디지털트윈), 남긴다(보고서).
- * 시연 순서와는 다르다 — 시연은 사건 순서라 트윈이 상황대응보다 먼저 온다.
+ * 메뉴는 Phase 1 다섯 개 그대로다. IA-01 종합상황 = /scr-01, IA-02·04 사건 작업공간과 대응 패널 = /scr-02/:districtId,
+ * IA-03 디지털트윈 = /scr-05, IA-05 기록·검증 = /scr-04 · /scr-07. 대응은 별도 URL 없이 우측 패널이다(IA §5.2).
  *
- * 화면을 추가하거나 메뉴를 바꿀 때는 02 문서를 먼저 고친다.
+ * 화면을 추가하거나 메뉴를 바꿀 때는 IA 문서를 먼저 고친다.
  * ───────────────────────────────────────────── */
 
 export interface NavItem {
@@ -35,9 +34,11 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
+  /* Phase 2 는 신규 라우트를 만들지 않고 /scr-* 를 유지한다(IA §5.2). 메뉴도 그대로다 — 재편은 URL 교체가
+     아니라 화면 안의 정보 구조와 패널 역할을 바꾸는 것이다. 한 화면씩 간다 */
   {
     id: "dashboard",
-    scr: "SCR-01",
+    scr: "IA-01",
     label: "종합상황",
     route: "/scr-01",
     icon: "mdi:view-dashboard-outline",
@@ -45,14 +46,14 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     id: "warning",
-    scr: "SCR-02",
+    scr: "IA-02",
     label: "재난관제",
+    /* 재편됨 — /scr-02/:districtId 가 그 지구의 진행 사건 작업공간이다(IA §5.2). 메뉴는 대표 사건 지구로 */
     route: "/scr-02",
     icon: "mdi:map-marker-radius-outline",
     fullBleed: true,
     bottomDock: true,
   },
-  /* SCR-03 상황대응은 차수 N 에서 SCR-02 재난관제로 통합 — 번호는 결번(02 §4) */
   {
     id: "statistics",
     scr: "SCR-04",
@@ -76,17 +77,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/scr-07",
     icon: "mdi:file-document-outline",
   },
-  /* 순서가 아니라 옆길이다 — 어느 화면에 서 있든 말로 물어 답을 받는 자리라 맨 뒤에 둔다.
-     진입은 전부 질의 바(SCR-01 하단)·질의 버튼(그 밖 화면 우하단)이 맡으므로 레일에는
-     세우지 않는다. 목록에 남겨 두는 이유는 상단바 화면명을 findNav 가 여기서 읽기 때문 */
-  {
-    id: "ai-search",
-    scr: "SCR-06",
-    label: "AI 검색",
-    route: "/scr-06",
-    icon: "mdi:creation-outline",
-    hidden: true,
-  },
+  { id: "ai-search", scr: "SCR-06", label: "AI 검색", route: "/scr-06", icon: "mdi:creation-outline", hidden: true },
 ];
 
 /** 레일에 서는 항목 — 사이드바가 쓴다 */

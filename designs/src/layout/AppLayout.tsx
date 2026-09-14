@@ -24,6 +24,7 @@ import { cn } from "@ds";
 import { AppSidebar } from "./AppSidebar";
 import { AppTopbar } from "./AppTopbar";
 import { findNav, HUB_ROUTE } from "./nav";
+import { FAB_SLOT, FAB_SLOT_DOCK, FAB_SLOT_RAIL } from "../lib/layout";
 import { AgentOverlay } from "../agent";
 import { useScenario } from "../state/ScenarioProvider";
 import { CANNED_QUERIES, matchQuery } from "../demo/ai";
@@ -119,6 +120,9 @@ export function AppLayout() {
           같은 것이 두 벌 선다. 알약이 보낼 때 패널을 여는 것은 이식본의 기본 동작이고
           (agent-overlay handlePillSubmit), 그 기본은 건드리지 않는다 */}
       <AgentOverlay
+        /* 질의 버튼 자리 — 도크가 있는 화면은 도크 위 가운데 영역 우하단, 레일만 있는 전면 화면은 가운데 영역 우하단,
+           나머지는 화면 우하단 (lib/layout.ts). 우측 레일 바닥의 액션 바를 가리지 않는다 */
+        fabInset={item?.bottomDock ? FAB_SLOT_DOCK : item?.fullBleed ? FAB_SLOT_RAIL : FAB_SLOT}
         open={agentOpen}
         onOpen={openAgent}
         onClose={closeAgent}

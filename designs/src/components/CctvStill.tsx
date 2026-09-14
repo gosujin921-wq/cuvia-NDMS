@@ -28,14 +28,17 @@ const SCANLINES =
 const VIGNETTE = "radial-gradient(ellipse at center, rgba(0,0,0,0) 62%, rgba(0,0,0,0.55) 100%)";
 
 interface CctvStillProps {
-  device: Device;
+  /** Phase 1 장비 — 무엇을 틀지 devices.ts 가 정한다 */
+  device?: Device;
+  /** Phase 2 채널 — 호출부가 selectors 에서 받은 스틸·클립 경로를 넘긴다 */
+  src?: { still: string; clip?: string };
   className?: string;
 }
 
-export function CctvStill({ device, className }: CctvStillProps) {
+export function CctvStill({ device, src, className }: CctvStillProps) {
   const { now } = useScenario();
-  const clip = cctvClipOf(device);
-  const still = cctvStillAt(device, now);
+  const clip = src ? src.clip ?? null : device ? cctvClipOf(device) : null;
+  const still = src ? src.still : device ? cctvStillAt(device, now) : "";
 
   /* relative 는 질감 층의 기준틀 — 호출부가 absolute 를 주면 twMerge 가 그쪽을 남긴다 */
   return (

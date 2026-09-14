@@ -1,12 +1,13 @@
 /* ─────────────────────────────────────────────
- * SCR-01 대시보드 — 배경: docs/레거시/정본/03_화면정의서.md §1
+ * IA-01 종합상황 — 어떤 사건부터 확인할지 결정하는 진입점 (IA §6 · 02 D0)
  *
- * 시 전체 지도를 배경으로 깔고, 상단에 상태 스트립(대응단계·시계·요약)을, 좌측에 주요
- * 재난 카드·위험지구 목록·색상 기준표를, 우측에 기상·통계·연계 현황을 오버레이로 얹는다.
- * 담당자가 아침에 켜자마자 오늘 볼 것을 한 화면에서 판단하는 자리이고, 지구를 고르면
- * 조기경보(SCR-02)로 넘어간다.
+ * 구성은 CSMS 통합관제 · platform_web 관제 대시보드 계보를 따른다(초안 종합상황_화면상세 §1·§2):
+ * 지도 배경, 상단 캡슐(심각 배지 · 특보 · 시각 · 위험/주의 지구 · 대응중), 좌측 데이터 장애 스트립 ·
+ * 지구 현황 · 지구 목록(푸터 범례), 우측 위험 현황 · 이벤트 유형 현황 · 실시간 주요 사건, 하단 CCTV.
+ * 대상만 사업장 → 지구, 위험도 → 매트릭스 등급이다. 정본 IA §6 영역은 초안 §2 표대로 이 자리들에 든다.
  *
- * 지도는 z-0 + isolation 으로 눕혀 두고 패널이 그 위에 선다(03 §0-1).
+ * 값은 전부 model/selectors 에서 온다. 이 화면은 정렬도 집계도 하지 않는다.
+ * 시계는 Phase 2 시연 시계(demoNow)다. 지도는 z-0 + isolation 으로 눕혀 두고 패널이 그 위에 선다.
  * ───────────────────────────────────────────── */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -19,9 +20,10 @@ import { useMapLibre } from "../../lib/useMapLibre";
 import { useWindLayer } from "../../lib/useWindLayer";
 import { useTemperatureLayer } from "../../lib/useTemperatureLayer";
 import { SAFEMAP_LAYERS, ensureSafemapLayers, setSafemapVisible } from "../../lib/safemap";
-import { DISTRICTS, type District, type DistrictKind } from "../../demo/districts";
-import { majorDisasterAt } from "../../demo/events";
 import { useScenario } from "../../state/ScenarioProvider";
+import { DISTRICTS, type DistrictKind } from "../../demo/districts";
+import { districtStatusAt, incidentsAt, riskCountsAt, topIncidentByDistrictAt, watchTargetsAt, type FeedItem } from "../../model/selectors";
+import { DISTRICT_STATUS_TONE } from "../../lib/status-tone";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import {
   CENTER_LEFT,
@@ -34,14 +36,14 @@ import {
 } from "../../lib/layout";
 import { PILL_SLOT_ID } from "../../agent";
 import { CctvLiveStrip } from "./widgets/CctvLiveStrip";
+import { DataFaultStrip } from "./widgets/DataFaultStrip";
 import { DistrictList } from "./widgets/DistrictList";
-import { DistrictMarkers } from "./widgets/DistrictMarkers";
-import { EventStats } from "./widgets/EventStats";
-import { InteropPanel } from "./widgets/InteropPanel";
-import { LevelLegend } from "./widgets/LevelLegend";
-import { MajorDisasterCard } from "./widgets/MajorDisasterCard";
+import { DistrictSummaryCard } from "./widgets/DistrictSummaryCard";
+import { EventTypeSummary } from "./widgets/EventTypeSummary";
+import { IncidentMarkers, type MapLabel } from "./widgets/IncidentMarkers";
+import { RiskSummary } from "./widgets/RiskSummary";
+import { SituationFeed } from "./widgets/SituationFeed";
 import { StatusStrip } from "./widgets/StatusStrip";
-import { WeatherCard } from "./widgets/WeatherCard";
 
 /** 지구 이름표 반폭 (px) — 가장자리 지구가 패널에 물리지 않게 지도 여백에 더한다 */
 const LABEL_MARGIN = 70;
@@ -53,21 +55,56 @@ const CCTV_STRIP_H = 160;
  *  좌우 레일은 화면 바닥까지 내려가고, 스트립은 레일 사이에만 선다(IDC 사건 대응 배치) */
 const ABOVE_STRIP = 12 + CCTV_STRIP_H + 12;
 
-/** 지도 레이어로 켜고 끄는 지구 유형 — 표기 순서는 목록·범례와 같다 */
+/** 지도 레이어로 켜고 끄는 지구 유형 — 표기 순서는 목록·범례와 같다 (Phase 1 그대로) */
 const DISTRICT_KINDS: DistrictKind[] = ["하천", "해일", "내수", "저수지"];
+
+/** 지구 하나로 날아갈 때의 배율 */
+const FIT_MAX_ZOOM = 14.5;
+/** 지구를 못 찾을 때의 중심 — 시 전체 (lib/map-config CITY_CENTER 와 같은 값) */
+const CITY_CENTER_FALLBACK: [number, number] = [128.667, 35.201];
 
 export function OverviewDashboardPage() {
   const navigate = useNavigate();
-  /* 주요 재난 사건군에 선 지구는 아래 목록에서 뺀다(03 §1 · 04 §4-7).
-     같은 지구를 화면에 두 번 세우지 않는다 */
-  const { now, agentOpen } = useScenario();
-  const majorDistrictIds = majorDisasterAt(now)?.events.map((e) => e.districtId) ?? [];
+  /* Phase 2 시연 시계. AI 패널 열림은 아직 Phase 1 엔진 값 — 지도 조작 스트립이 그 폭만큼 비켜 선다 */
+  const { demoNow: now, agentOpen } = useScenario();
   const mapContainer = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(mapContainer);
 
-  /* 지도에서 내려 둔 지구 유형. 12개 이름표가 한 화면에 서므로, 오늘 볼 유형만 남기는
-     길이 있어야 한다(해일 지구만 보는 태풍 상황 등) */
+  const { heroIncidentId } = useScenario();
+  const incidents = useMemo(() => incidentsAt(now), [now]);
+  const status = useMemo(() => districtStatusAt(now), [now]);
+  const top = useMemo(() => topIncidentByDistrictAt(now), [now]);
+  const watchTargets = useMemo(() => watchTargetsAt(now), [now]);
+  const risks = useMemo(() => riskCountsAt(now), [now]);
+
+  /* 심각 사건이 서면 유형 도넛을 접는다 — 실시간 사건이 그만큼 높이를 받는다. 사람이 다시 펼 수 있고
+     심각이 걷히면 자동으로 펼친다 (CSMS 결정) */
+  const severeOn = risks.severe > 0;
+  const [typesCollapsed, setTypesCollapsed] = useState(severeOn);
+  useEffect(() => {
+    setTypesCollapsed(severeOn);
+  }, [severeOn]);
+
+  /* 지도에서 내려 둔 지구 유형 — 12개 이름표가 한 화면에 서므로 오늘 볼 유형만 남기는 길 (Phase 1 그대로) */
   const [hiddenKinds, setHiddenKinds] = useState<DistrictKind[]>([]);
+
+  /* 지구 12곳 이름표는 그대로 선다. 점 색 = 지구 상태, 메인 사건 지구의 점만 숨쉰다. 감시 우선구역은 "감시" 표기 */
+  const labels = useMemo<MapLabel[]>(() => {
+    return DISTRICTS.filter((d) => !hiddenKinds.includes(d.kind)).map((d) => {
+      const st = status.get(d.id) ?? "정상";
+      const hit = top.get(d.id);
+      const watched = watchTargets.some((w) => w.incident.legacyDistrictId === d.id);
+      return {
+        id: d.id,
+        name: d.name,
+        kind: watched ? `${d.kind} · 감시` : d.kind,
+        center: d.center,
+        color: st === "정상" ? null : DISTRICT_STATUS_TONE[st].color,
+        pulse: hit?.incident.incidentId === heroIncidentId,
+        ariaLabel: `${d.name} ${d.kind} · ${st}${hit ? ` · ${hit.incident.title}` : watched ? " · 감시 우선구역" : ""}`,
+      };
+    });
+  }, [status, top, watchTargets, hiddenKinds, heroIncidentId]);
 
   /* 기상 격자 — 미리 구운 자료(public/weather). 바람은 폭풍해일 상황의 배경 결이라
      켜 두고, 기온 색면은 지도를 덮으므로 꺼 두고 시작한다 */
@@ -86,29 +123,19 @@ export function OverviewDashboardPage() {
     ensureSafemapLayers(instance);
     for (const spec of SAFEMAP_LAYERS) setSafemapVisible(instance, spec.id, safemapOn[spec.id]);
   }, [map, ready, safemapOn]);
-  const visibleDistricts = useMemo(
-    () => DISTRICTS.filter((district) => !hiddenKinds.includes(district.kind)),
-    [hiddenKinds],
-  );
 
-  /* 12개 지구가 전부 보이는 자리로 맞춘다. 중심·배율을 고정값으로 두면 좌우 패널에 가려
-     이름표가 반쯤 잘리는 지구가 생긴다. 패널 폭을 여백으로 넘겨 가려지지 않은 영역에 앉힌다.
-     "원래대로"도 같은 자리로 되돌아온다 — 기울기·회전까지 여기서 함께 편다 */
+  /* 12개 지구가 전부 보이는 자리로 맞춘다. 패널 폭을 여백으로 넘겨 가려지지 않은 영역에 앉힌다.
+     "원래대로"도 같은 자리로 되돌아온다 — 기울기·회전까지 여기서 함께 편다 (Phase 1 그대로) */
   const fitCounty = useCallback(
     (duration: number) => {
       const instance = map.current;
       if (!instance) return;
-      const bounds = DISTRICTS.reduce(
-        (acc, district) => acc.extend(district.center),
-        new maplibregl.LngLatBounds(DISTRICTS[0].center, DISTRICTS[0].center),
-      );
-      /* 이름표는 좌표를 가운데로 두고 좌우로 퍼지므로, 패널 폭에 이름표 반폭(LABEL_MARGIN)을
-         더해야 가장자리 지구의 이름표가 패널 밑으로 들어가지 않는다.
-         위쪽은 상단 상태 스트립(03 §1)이 서는 자리라 아래쪽보다 여유를 더 준다 */
+      const bounds = DISTRICTS.reduce((acc, d) => acc.extend(d.center), new maplibregl.LngLatBounds(DISTRICTS[0].center, DISTRICTS[0].center));
       instance.fitBounds(bounds, {
         padding: {
           top: 96,
-          bottom: ABOVE_STRIP + 56,
+          /* 질의 바 위에 추천 질문 칩이 두 줄 선다 — 그 높이까지 비운다 */
+          bottom: ABOVE_STRIP + 140,
           left: CENTER_LEFT + LABEL_MARGIN,
           right: CENTER_RIGHT + LABEL_MARGIN,
         },
@@ -125,7 +152,22 @@ export function OverviewDashboardPage() {
     fitCounty(0);
   }, [ready, fitCounty]);
 
-  const openDistrict = (district: District) => navigate(`/scr-02/${district.id}`);
+  /* 지구를 열면 그 지구의 사건 작업공간 (사건이 없으면 사건 없음 안내) */
+  const openDistrict = (districtId: string) => navigate(`/scr-02/${districtId}`);
+  const openLabel = (label: MapLabel) => openDistrict(label.id);
+  /* 사건 카드 — 지구 경로가 사건 작업공간이다(IA §5.2). 종료·오탐은 기록·검증(scr-04).
+     감지 카드(사건 전 알림)는 같은 작업공간을 알림 근거로 연다 — 선택 알림은 query `alertId` 로 간다(IA §14 selectedAlertId).
+     지구를 모르는 알림만 지도 이동으로 남는다 */
+  const openFeedItem = (item: FeedItem) => {
+    if (item.kind === "감지") {
+      if (item.districtId && item.alertId) return navigate(`/scr-02/${item.districtId}?alertId=${item.alertId}`);
+      if (item.districtId) map.current?.flyTo({ center: DISTRICTS.find((d) => d.id === item.districtId)?.center ?? CITY_CENTER_FALLBACK, zoom: FIT_MAX_ZOOM, duration: 600 });
+      return;
+    }
+    if (!item.active) return navigate("/scr-04");
+    const v = incidents.find((x) => x.incident.incidentId === item.incidentId);
+    if (v?.incident.legacyDistrictId) openDistrict(v.incident.legacyDistrictId);
+  };
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -138,12 +180,7 @@ export function OverviewDashboardPage() {
         aria-label={`${CITY_NAME} 전체 지도`}
       >
         <div ref={mapContainer} className="h-full w-full" />
-        <DistrictMarkers
-          map={map}
-          ready={ready}
-          districts={visibleDistricts}
-          onOpen={openDistrict}
-        />
+        <IncidentMarkers map={map} ready={ready} labels={labels} onOpen={openLabel} />
         {!ready && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-surface">
             <Icon
@@ -169,17 +206,12 @@ export function OverviewDashboardPage() {
               items: DISTRICT_KINDS.map((kind) => ({
                 id: kind,
                 label: `${kind} 지구`,
-                /* 지구 이름표 문법 그대로 — 글라스 알약. 색 점은 이벤트 단계 몫이라 평소 톤(03 §1) */
+                /* 지구 이름표 문법 그대로 — 글라스 알약. 색 점은 사건 처리상태 몫이라 평소 톤 */
                 shape: "pill" as const,
-                count: DISTRICTS.filter((district) => district.kind === kind).length,
+                count: DISTRICTS.filter((d) => d.kind === kind).length,
                 visible: !hiddenKinds.includes(kind),
               })),
-              onToggle: (id) =>
-                setHiddenKinds((prev) =>
-                  prev.includes(id as DistrictKind)
-                    ? prev.filter((kind) => kind !== id)
-                    : [...prev, id as DistrictKind],
-                ),
+              onToggle: (id) => setHiddenKinds((prev) => (prev.includes(id as DistrictKind) ? prev.filter((k) => k !== id) : [...prev, id as DistrictKind])),
               onSetAll: (visible) => setHiddenKinds(visible ? [] : [...DISTRICT_KINDS]),
             },
             {
@@ -260,50 +292,30 @@ export function OverviewDashboardPage() {
         </GlassPanel>
       </div>
 
-      {/* 좌측 — 현재 주요 재난(사건군) + 그 외 위험지구 목록 + 색상 기준표.
-          레일은 화면 바닥까지 내려간다 — CCTV 스트립은 레일 사이에만 선다 */}
+      {/* 좌측 — 데이터 장애 스트립 · 지구 현황 · 지구 목록(푸터 범례). 레일은 화면 바닥까지 내려간다 */}
       <div className={`${RAIL_BASE} left-3`} style={{ width: LEFT_RAIL }}>
         <GlassPanel className="pointer-events-auto shrink-0">
-          <MajorDisasterCard onOpen={openDistrict} />
+          <DataFaultStrip />
         </GlassPanel>
-
-        <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
-          <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2.5">
-            <h1 className="text-h6 font-semibold text-foreground">
-              {majorDistrictIds.length > 0 ? "그 외 위험지구" : `${CITY_NAME} 위험지구`}
-            </h1>
-            <span className="shrink-0 text-caption text-foreground-subtle">
-              {DISTRICTS.length - majorDistrictIds.length}곳
-            </span>
-          </header>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <DistrictList onOpen={openDistrict} excludeIds={majorDistrictIds} />
-          </div>
-        </GlassPanel>
-
         <GlassPanel className="pointer-events-auto shrink-0">
-          <LevelLegend />
+          <DistrictSummaryCard />
+        </GlassPanel>
+        <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
+          <DistrictList onOpen={(d) => openDistrict(d.id)} />
         </GlassPanel>
       </div>
 
-      {/* 우측 — 기상 · 통계 · 연계 현황
-          레일 자체는 스크롤하지 않는다. 기상·통계는 자연 높이로 서고, 연계 현황이
-          남는 높이를 받아 브라우저 크기를 따라 늘고 준다(03 §1). 최소 높이 아래로는
-          줄지 않고, 좁으면 목록만 자기 본문 안에서 스크롤한다.
-          레일째 스크롤하면 세 패널이 한 덩어리로 밀려 기상 헤더까지 화면 밖으로 나가고,
-          패널이 스크롤 컨테이너의 클립 상자에 붙어 그림자·외곽선도 잘린다 */}
+      {/* 우측 — 위험 현황 · 이벤트 유형 현황 · 실시간 주요 사건. 레일 자체는 스크롤하지 않는다. 위 둘은 자연
+          높이로 서고 실시간 사건이 남는 높이를 받는다 */}
       <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
         <GlassPanel className="pointer-events-auto shrink-0">
-          <WeatherCard />
+          <RiskSummary />
         </GlassPanel>
         <GlassPanel className="pointer-events-auto shrink-0">
-          <EventStats />
+          <EventTypeSummary collapsed={typesCollapsed} onToggle={() => setTypesCollapsed((prev) => !prev)} />
         </GlassPanel>
-        {/* min-h 가 둘을 겸한다: flex 기본 min-height:auto 를 풀어 줄어들 수 있게 하고,
-            그 바닥(최소 높이 · 헤더 + 두 행)도 정한다. 이보다 크게 잡으면 낮은 화면에서
-            레일 합이 자리를 넘쳐 CCTV 스트립을 덮는다 */}
-        <GlassPanel className="pointer-events-auto flex min-h-[140px] flex-1 flex-col">
-          <InteropPanel />
+        <GlassPanel className="pointer-events-auto flex min-h-[160px] flex-1 flex-col">
+          <SituationFeed onOpen={openFeedItem} />
         </GlassPanel>
       </div>
     </div>

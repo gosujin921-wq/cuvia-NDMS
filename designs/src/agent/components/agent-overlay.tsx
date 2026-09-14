@@ -26,7 +26,7 @@ import type { AgentMessage } from "../types";
  */
 export const PILL_SLOT_ID = "agent-pill-slot";
 
-/** FAB 이 화면 우하단 모서리에서 떨어지는 거리(px). */
+/** FAB 이 화면 우하단 모서리에서 떨어지는 거리(px) — 호스트가 자리를 주지 않을 때의 기본값. */
 const FAB_INSET = { bottom: 40, right: 40 };
 
 export interface AgentOverlayProps {
@@ -59,6 +59,11 @@ export interface AgentOverlayProps {
   pillPlaceholder?: string;
   /** 알약 입력창 폭(px). 자리를 내준 화면의 폭보다 좁게 잡는다. */
   pillWidth?: number;
+  /**
+   * FAB 자리(px). 레일·도크가 서는 화면은 우측 레일을 가리지 않게 호스트가 자리를 준다(lib/layout.ts FAB_SLOT_*).
+   * 안 주면 화면 우하단 모서리.
+   */
+  fabInset?: { bottom: number; right: number };
 }
 
 /**
@@ -81,6 +86,7 @@ export function AgentOverlay({
   pillPresets,
   pillPlaceholder,
   pillWidth = 680,
+  fabInset = FAB_INSET,
 }: AgentOverlayProps) {
   const [input, setInput] = useState("");
   const [slot, setSlot] = useState<HTMLElement | null>(null);
@@ -152,8 +158,8 @@ export function AgentOverlay({
           onClick={onOpen}
           hidden={open || showPill}
           tooltip={tooltip}
-          bottom={FAB_INSET.bottom}
-          right={FAB_INSET.right}
+          bottom={fabInset.bottom}
+          right={fabInset.right}
         />
       </div>
     </div>

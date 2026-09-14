@@ -1,502 +1,360 @@
 /* ─────────────────────────────────────────────
- * SCR-02 조기경보 — 배경: docs/레거시/정본/03_화면정의서.md §2
+ * IA-02 사건 작업공간 — 정말 같은 사건인가, 무엇을 더 확인해야 하는가 (IA §7 · §8 · §9 · 02 D1~D7)
  *
- * 지구 하나로 좁혀 장비와 계측값을 본다. 숫자(센서 팝업)와 영상(CCTV 팝업)을 같은 지도
- * 위에서 이중 확인하는 자리다.
+ * Phase 1 SCR-02 재난관제의 골격을 그대로 잇는다: 지도 배경 + 상단 캡슐 + 좌측 열(추이·근거) + 우측 레일 +
+ * 하단 현장영상 + 집중 팝업. 바뀐 것은 단위다 — 지구가 아니라 **사건**이고, 지도는 사건의 공간 범위
+ * (지점·시설·회랑·구역·전역)에 맞춘다. 서항 배율을 박아 두지 않는다(README §9).
  *
- * 지구는 경로(/scr-02/:districtId)로 받는다. 대시보드에서 고른 지구가 그대로 열리고,
- * 메뉴로 직접 들어오면 진행 중 이벤트가 있는 지구부터 연다.
+ * 경로는 /scr-02/:districtId 그대로다(IA §5.2 — 신규 라우트를 만들지 않는다). 지구는 진입 키일 뿐 사건 범위를
+ * 현장 하나로 제한하지 않는다. 화면이 보는 사건은 그 지구의 진행 사건이다.
+ *
+ * 판단·전망은 지도 위 우측 레일, 대응 승인·실행은 집중 팝업이다(04 §4 · README §8.2 2026-09-14 · 레거시 03 §0-9).
+ * 우측 레일은 패널 탭 두 개로 전환한다(KISA 관제 우측 레일 문법). 별도 URL 없이 query `panel` 이 든다.
+ *   (없음)          판단 — 위험도 · 전망 · 대응 요약 · 이력 · 바닥 액션 바
+ *   panel=twin      전망 — 같은 지도가 예측 모드로 (IA-03). 대안 · 유효 시각 · 영향 · 근거·한계. 유효 전망이 있을 때만
+ * 대응 실행 팝업(ResponsePopup)은 레일 [대응 실행] · 마커 [이 사건 대응하기] · 전망 [이 전망으로 대응 검토] 셋이 같은 것을
+ * 연다. 열림은 UI 상태라 URL 에 넣지 않는다(IA §5.2). 승인·대체조치·통제 전환은 그 위의 중첩 확인창이 tick 을 옮긴다.
+ *
+ * 담당자 조작(검토 인수·확인·전망 열기·대응 검토·승인·통제)은 상태를 쓰지 않는다 — 엔진 tick 을 옮긴다.
+ * 선택(panel · forecastId · validAt · alternativeId · evidenceId · alertId)은 query 가 정본이다(IA §5.2).
+ * 잘못된 사건·만료된 예측판은 임의로 바꾸지 않고 사실을 보이고 복귀 길을 준다(IA §5.2 예외).
  * ───────────────────────────────────────────── */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Icon } from "@iconify/react";
-import { Button, GlassPanel, Tag, cn } from "@ds";
-import { DISTRICT_ZOOM } from "../../lib/map-config";
+import maplibregl from "maplibre-gl";
+import { Badge, Button, GlassPanel, Notice, StatusBadge, Tabs, TabsList, TabsTrigger, Tag, cn } from "@ds";
 import { useMapLibre } from "../../lib/useMapLibre";
-import { DISTRICTS, findDistrict, type District } from "../../demo/districts";
-import {
-  HERO_EVENT_ID,
-  activeEventsAt,
-  eventViewAt,
-  hazardLabel,
-  watchedEventOfAt,
-} from "../../demo/events";
-import { useScenario } from "../../state/ScenarioProvider";
-import { useAnalysisReview } from "../../state/analysis-results";
 import { useWindLayer } from "../../lib/useWindLayer";
-import { useTemperatureLayer } from "../../lib/useTemperatureLayer";
 import { usePrecipitationLayer } from "../../lib/usePrecipitationLayer";
-import {
-  isWeatherKey,
-  weatherLayerItems,
-  WEATHER_OFF,
-  type WeatherState,
-} from "../../lib/weather-layers";
-import { levelSpec } from "../../demo/levels";
-import { assessRisk } from "../../demo/risk";
-import { processStateAt } from "../../demo/sop";
-import {
-  RECIPIENTS,
-  channelsFromSopItems,
-  draftMessage,
-  type ChannelId,
-} from "../../demo/dispatch";
-import {
-  DEVICE_KINDS,
-  devicesOf,
-  featuredCctvOf,
-  findDevice,
-  type Device,
-  type DeviceKind,
-} from "../../demo/devices";
-import {
-  FACILITY_KINDS,
-  facilitiesOf,
-  type FacilityKind,
-} from "../../demo/facilities";
 import { SAFEMAP_LAYERS, ensureSafemapLayers, setSafemapVisible } from "../../lib/safemap";
-import { MapPopup } from "../../components/MapPopup";
+import { weatherLayerItems, isWeatherKey, WEATHER_OFF, type WeatherState } from "../../lib/weather-layers";
+import { CITY_CENTER } from "../../lib/map-config";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
-import {
-  CCTV_DOCK,
-  CENTER_RIGHT,
-  EDGE,
-  RAIL_BASE,
-  RIGHT_RAIL,
-  UTIL_STRIP,
-  utilStripStyle,
-} from "../../lib/layout";
-import { LevelBadge } from "../../components/LevelBadge";
+import { MapPopup } from "../../components/MapPopup";
 import { CctvBigView } from "../../components/CctvBigView";
-import { formatClock } from "../../lib/datetime";
-import { DeviceMarkers } from "./widgets/DeviceMarkers";
+import { CCTV_DOCK, CENTER_RIGHT, EDGE, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP, utilStripStyle } from "../../lib/layout";
+import { useScenario } from "../../state/ScenarioProvider";
+import { formatClock, formatElapsed } from "../../lib/datetime";
+import { ALERT_GRADE_TONE, RISK_GRADE_TONE, statusTone } from "../../lib/status-tone";
+import type { Device } from "../../demo/devices";
+import type { Facility } from "../../demo/facilities";
+import type { EventEnvelope } from "../../model/event";
+import type { Forecast, AlternativeId } from "../../model/forecast";
+import { ALTERNATIVE_LABEL } from "../../model/forecast";
+import {
+  alternativesOf, cctvChannelsAt, chainStagesAt, currentForecastsOf, decisionsAt, derivedFlagOf, disseminationsAt,
+  incidentViewAt, incidentsAt, isActiveStatus, recommendationsAt, relatedEventsAt, resolveForecast, sopItemsAt, watchViewAt, type CctvChannelView,
+} from "../../model/selectors";
+import { GEOMETRIES, SCOPE_ZOOM, SUBJECTS, deviceOfSubject, facilityOfSubject, isFacilitySubject, isSensorSubject } from "../../fixtures";
+import { DISTRICTS } from "../../demo/districts";
+import { TimelinePanel } from "../scr-05/widgets/TimelinePanel";
+import { AnalysisBasisCard } from "../scr-05/widgets/AnalysisBasisCard";
+import type { TimeMark, Timeline } from "../../demo/scenario-timeline";
+import type { AnalysisBasis } from "../../demo/analysis";
+import { DeviceMarkers, type SubjectPin } from "./widgets/DeviceMarkers";
 import { FacilityMarkers } from "./widgets/FacilityMarkers";
 import { DevicePopup } from "./widgets/DevicePopup";
+import { TrendPanel } from "./widgets/TrendPanel";
 import { CrossCheckPanel } from "./widgets/CrossCheckPanel";
 import { CctvDock } from "./widgets/CctvDock";
-import { TrendPanel } from "./widgets/TrendPanel";
 import { RiskCard } from "./widgets/RiskCard";
 import { ImpactPanel } from "./widgets/ImpactPanel";
-import { RespondPanel } from "./widgets/RespondPanel";
+import { JudgeActionBar } from "./widgets/JudgeActionBar";
+import { WatchAlertCard } from "./widgets/WatchAlertCard";
 import { EventTimeline } from "./widgets/EventTimeline";
+import { type ConfirmRequest } from "./widgets/SopPanel";
+import { ResponsePopup } from "./widgets/ResponsePopup";
+import { ResponseSummaryCard } from "./widgets/ResponseSummaryCard";
 import { ExecutionPopup } from "./widgets/ExecutionPopup";
-import { dismissAlarmsOf } from "../../lib/alarm-toast";
 
-/** 좌측 열 폭 (px) — 머리말·상황 근거. 지도 중심 맞춤의 왼쪽 여백이 따른다 */
+/** 좌측 열 폭 — 우선 420 (결정 2026-09-14 · 구현 후 재검토). 제품 300 과 다르지만 좌측 열이 서는 화면은 이 화면뿐이다 */
 const LEFT_COL = 420;
 
-/** 진행 중 이벤트가 있는 지구 우선. 없으면 첫 지구 */
-function defaultDistrict(now: Date): District {
-  const active = activeEventsAt(now)[0];
-  return (active && findDistrict(active.districtId)) ?? DISTRICTS[0];
+type Mode = "judge" | "twin";
+
+/** 토큰 → 실제 색. MapLibre paint 는 var() 를 못 읽는다. 리터럴을 박지 않고 토큰을 풀어 쓴다 */
+function cssColor(token: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || fallback;
 }
 
+const EXTENT_SOURCE = "incident-extent";
+const SCOPE_SOURCE = "incident-scope";
+
 export function EarlyWarningPage() {
+  const { districtId = "" } = useParams();
+  const districtName = DISTRICTS.find((d) => d.id === districtId)?.name ?? districtId;
   const navigate = useNavigate();
-  const { districtId } = useParams();
-  const [params] = useSearchParams();
-  const {
-    track,
-    now,
-    step,
-    advanceTo,
-    heroDistrictId,
-    markStageReady,
-    approvedResponseLevel,
-    approvedAt,
-    dispatches,
-    addDispatch,
-    sopExecuted,
-    selectDevice,
-    agentOpen,
-  } = useScenario();
-  const district = (districtId && findDistrict(districtId)) || defaultDistrict(now);
-  /* 사건 지정 진입 (02 §2) — 트윈 [이 판단으로 대응하기]·구 /scr-03 리다이렉트가 싣는다 */
-  const requestedEvent = params.get("event");
+  const [params, setParams] = useSearchParams();
+  const { demoNow: now, ticks, tickIndex, advanceTick, agentOpen } = useScenario();
+  /* 실행 결과가 도착한 뒤에만 통제 전환 — 결과 tick 이전의 담당자 조작으로 시계가 결과를 건너뛰지 않게 */
+  const resultsArrived = tickIndex >= ticks.findIndex((t) => t.id === "d7-results");
+  const panel = params.get("panel");
+  const mode: Mode = panel === "twin" ? "twin" : "judge";
+  /* 대응 실행 팝업 — 열림은 UI 상태. 긴급 경로(판단·전망 전) 여부는 여는 순간의 상태로 정한다 */
+  const [responseOpen, setResponseOpen] = useState(false);
 
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const { map, ready } = useMapLibre(mapContainer, {
-    center: district.center,
-    zoom: DISTRICT_ZOOM,
-  });
+  /* ── 이 지구의 사건 — 진행 중인 것이 우선, 없으면 기록(오탐·종료)이라도 찾아 예외를 안내한다 ── */
+  const all = useMemo(() => incidentsAt(now), [now]);
+  const found = all.find((v) => v.incident.legacyDistrictId === districtId && isActiveStatus(v.workflowStatus)) ?? all.find((v) => v.incident.legacyDistrictId === districtId) ?? null;
+  const incidentId = found?.incident.incidentId ?? "";
+  const view = useMemo(() => (incidentId ? incidentViewAt(incidentId, now) : null), [incidentId, now]);
+  const incident = view?.incident ?? null;
+  /* 사건 전 알림 — 종합상황 감지 카드가 query `alertId` 로 보낸다. 사건이 없을 때만 그 알림의 근거를 세운다(IA §7).
+     알림이 사건을 만든 뒤에는 사건이 우선이고 알림은 그 사건의 sourceAlerts 로 남는다 */
+  const alertId = params.get("alertId");
+  const watch = useMemo(() => (!found && alertId ? watchViewAt(alertId, now) : null), [found, alertId, now]);
+  /* 지도 범위·주체·카메라의 기준 — 사건이 있으면 사건, 없으면 알림이 가리키는 구역의 정의 */
+  const scope = incident ?? watch?.incident ?? null;
+  const rows = useMemo(() => (view ? relatedEventsAt(incidentId, now) : watch?.rows ?? []), [view, incidentId, now, watch]);
+  const forecasts = useMemo(() => currentForecastsOf(incidentId, now), [incidentId, now]);
+  const baseline = forecasts.find((f) => f.alternativeId === "baseline") ?? forecasts[0] ?? null;
+  const recommendation = useMemo(() => recommendationsAt(incidentId, now).at(-1) ?? null, [incidentId, now]);
+  const approval = useMemo(() => decisionsAt(incidentId, now).find((d) => d.kind === "대응 승인" && d.status === "승인") ?? null, [incidentId, now]);
+  const disseminations = useMemo(() => disseminationsAt(incidentId, now), [incidentId, now]);
+  const sopItems = useMemo(() => sopItemsAt(incidentId, now), [incidentId, now]);
+  const chain = useMemo(() => chainStagesAt(incidentId, now), [incidentId, now]);
+  const channels = useMemo(() => cctvChannelsAt(now).filter((c) => scope?.correlationKeys.includes(c.id)), [now, scope]);
 
-  const [hiddenKinds, setHiddenKinds] = useState<DeviceKind[]>([]);
-  /* 방재시설(배수문·배수펌프장)은 계측 장비와 다른 축이라 토글도 따로 든다 —
-     장비를 다 끄면 시설까지 사라지는 일이 없다 */
-  const [hiddenFacilityKinds, setHiddenFacilityKinds] = useState<FacilityKind[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  /* 위험요소 — 행안부 생활안전지도 WMS(해안침수예상도·침수흔적도). 시연용 도형이 아니라
-     기관이 고시한 실 자료다(lib/safemap.ts · 외부-API-인계 §4). 장비 토글과 별도 그룹이다
-     (03 §2) — 장비는 "무엇이 설치돼 있나", 위험요소는 "왜 위험지구인가"를 말하는 다른 층이다.
-     기본 켜짐 — 이 지구가 왜 위험한지는 사람이 켜기 전에 지도가 먼저 말해야 한다 */
-  const [safemapOn, setSafemapOn] = useState<Record<string, boolean>>(
-    Object.fromEntries(SAFEMAP_LAYERS.map((spec) => [spec.id, true])),
+  /* 사건 주체 → Phase 1 핀 부품이 받는 모양으로 */
+  const legacyDistrict = scope?.legacyDistrictId ?? "seohang";
+  const devices = useMemo(() => (scope?.correlationKeys ?? []).filter(isSensorSubject).map((id) => deviceOfSubject(id, legacyDistrict)), [scope, legacyDistrict]);
+  const sensors = devices.filter((d) => d.kind !== "CV");
+  const facilities = useMemo(() => (scope?.correlationKeys ?? []).filter(isFacilitySubject).map((id) => facilityOfSubject(id, legacyDistrict)), [scope, legacyDistrict]);
+  const pins = useMemo<SubjectPin[]>(
+    () =>
+      devices.map((device) => {
+        const flag = derivedFlagOf(device.id, now);
+        return {
+          device,
+          flag: flag ? { type: device.kind === "RN" ? "강우" : "수위", level: flag.eventType === "RATE_CHANGED" ? "warning" : "advisory", label: device.name } : undefined,
+        };
+      }),
+    [devices, now],
   );
+
+  /* ── 지도 ── */
+  const mapContainer = useState(() => ({ current: null as HTMLDivElement | null }))[0];
+  const { map, ready } = useMapLibre(mapContainer);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = devices.find((d) => d.id === selectedId) ?? null;
+  const selectedChannel = selected?.kind === "CV" ? channels.find((c) => c.id === selected.id) ?? null : null;
+
+  const [safemapOn, setSafemapOn] = useState<Record<string, boolean>>(Object.fromEntries(SAFEMAP_LAYERS.map((spec) => [spec.id, true])));
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance) return;
     ensureSafemapLayers(instance);
-    for (const spec of SAFEMAP_LAYERS) {
-      setSafemapVisible(instance, spec.id, safemapOn[spec.id] ?? true);
-    }
+    for (const spec of SAFEMAP_LAYERS) setSafemapVisible(instance, spec.id, safemapOn[spec.id] ?? true);
   }, [map, ready, safemapOn]);
+  const [weather, setWeather] = useState<WeatherState>(WEATHER_OFF);
+  useWindLayer(map, ready, weather.wind);
+  usePrecipitationLayer(map, ready, weather.rain, now.getHours());
 
-  const devices = useMemo(() => devicesOf(district.id), [district.id]);
-  /* 하단 현장영상의 카메라 — 장면 등재분 우선, 없으면 앞 2대 (04 §2-5) */
-  const featuredCctvs = useMemo(() => featuredCctvOf(district.id), [district.id]);
-  const visibleDevices = devices.filter((d) => !hiddenKinds.includes(d.kind));
-  const sensors = devices.filter(
-    (d) => d.kind === "WL" || d.kind === "RN" || d.kind === "DP" || d.kind === "TD",
-  );
-  const selected = devices.find((d) => d.id === selectedId) ?? null;
-
-  const counts = useMemo(() => {
-    const acc = { WL: 0, RN: 0, DP: 0, CV: 0, BC: 0, TD: 0 } as Record<DeviceKind, number>;
-    for (const device of devices) acc[device.kind] += 1;
-    return acc;
-  }, [devices]);
-
-  /* 방재시설 — 등재된 지구에서만 선다(지금은 봉암). 없으면 레이어 묶음도 서지 않는다:
-     켤 수 없는 토글을 만들지 않는다(04 §9 원칙) */
-  const facilities = useMemo(() => facilitiesOf(district.id), [district.id]);
-  const facilityKinds = FACILITY_KINDS.filter((spec) =>
-    facilities.some((f) => f.kind === spec.kind),
-  );
-  const visibleFacilities = facilities.filter((f) => !hiddenFacilityKinds.includes(f.kind));
-
-  const toggleKind = (kind: DeviceKind) =>
-    setHiddenKinds((prev) =>
-      prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind],
-    );
-
-  /* 지구를 여는 자리 — 처음 진입·지구 전환·"원래대로"가 모두 여기로 온다.
-     기울기·회전은 되돌릴 때만 의미가 있어 easeTo 에 0 으로 함께 실어 보낸다 */
-  const focusDistrict = useCallback(
+  /* 사건 범위에 맞춘다 — 지점·시설은 그 자리, 구역·회랑은 영향 폴리곤, 전역은 시 전체 (README §9) */
+  const focusScope = useCallback(
     (duration: number) => {
       const instance = map.current;
-      if (!instance) return;
-      instance.easeTo({
-        center: district.center,
-        zoom: DISTRICT_ZOOM,
-        /* 하단 독·좌측 열·우측 레일이 지도를 가리므로 그만큼 여백을 준다 */
-        padding: {
-          top: 0,
-          bottom: CCTV_DOCK + EDGE,
-          left: LEFT_COL + EDGE * 2,
-          right: CENTER_RIGHT,
-        },
-        pitch: 0,
-        bearing: 0,
-        duration,
-      });
+      if (!instance || !scope) return;
+      const padding = { top: 72, bottom: CCTV_DOCK + EDGE * 2, left: LEFT_COL + EDGE * 2, right: CENTER_RIGHT };
+      const ring = scope.scope.affectedGeometryId ? GEOMETRIES[scope.scope.affectedGeometryId] : undefined;
+      if (scope.scope.kind === "전역") {
+        instance.easeTo({ center: CITY_CENTER, zoom: SCOPE_ZOOM.전역, padding, pitch: 0, bearing: 0, duration });
+      } else if (ring) {
+        const bounds = ring.reduce((acc, p) => acc.extend(p), new maplibregl.LngLatBounds(ring[0], ring[0]));
+        instance.fitBounds(bounds, { padding, maxZoom: SCOPE_ZOOM[scope.scope.kind], pitch: 0, bearing: 0, duration });
+      } else {
+        instance.easeTo({ center: scope.scope.displayAnchor, zoom: SCOPE_ZOOM[scope.scope.kind], padding, pitch: 0, bearing: 0, duration });
+      }
     },
-    [map, district],
+    [map, scope],
   );
-
-  /* 지구를 바꾸면 지도가 그 지구로 날아가고, 앞 지구에서 열어 둔 팝업은 닫는다 */
   useEffect(() => {
     setSelectedId(null);
-    if (!ready) return;
-    focusDistrict(700);
-  }, [ready, focusDistrict]);
+    if (ready) focusScope(700);
+  }, [ready, focusScope]);
 
-  /* 패널(현재 사건·계측 추이·현장영상)에서 고른 장비 — 지도도 그 장비로 끌어온다.
-     가장자리 핀은 팝업이 잘리므로, 핀을 하단 독 바로 위로 데려온다. 팝업은 핀 위로
-     서니(MapPopup anchor bottom) 그 자리가 팝업에 세로 공간을 가장 넓게 준다 */
+  /* 사건 범위 외곽선 + (전망 모드) 선택 눈금의 침수 범위 */
+  const forecastId = params.get("forecastId") ?? "";
+  const validAt = params.get("validAt");
+  const resolution = useMemo(() => (forecastId ? resolveForecast(forecastId, now) : null), [forecastId, now]);
+  const twinForecast: Forecast | null = resolution?.kind === "ok" ? resolution.forecast : null;
+  const selectedMark = twinForecast ? twinForecast.marks.find((m) => m.validAt === validAt) ?? twinForecast.marks.find((m) => new Date(m.validAt) >= now) ?? twinForecast.marks[0] : null;
+  useEffect(() => {
+    const instance = map.current;
+    if (!ready || !instance || !scope) return;
+    const ring = scope.scope.affectedGeometryId ? GEOMETRIES[scope.scope.affectedGeometryId] : null;
+    const scopeData = ring ? { type: "Feature" as const, geometry: { type: "Polygon" as const, coordinates: [[...ring, ring[0]]] }, properties: {} } : null;
+    const extentRing = mode === "twin" && selectedMark ? GEOMETRIES[selectedMark.extentGeometryId] : null;
+    const extentData = extentRing ? { type: "Feature" as const, geometry: { type: "Polygon" as const, coordinates: [[...extentRing, extentRing[0]]] }, properties: {} } : null;
+    const empty = { type: "FeatureCollection" as const, features: [] };
+    const upsert = (id: string, data: GeoJSON.Feature | null, paint: { fill: string; line: string; opacity: number }) => {
+      const src = instance.getSource(id) as maplibregl.GeoJSONSource | undefined;
+      if (!src) {
+        instance.addSource(id, { type: "geojson", data: data ?? empty });
+        instance.addLayer({ id: `${id}-fill`, type: "fill", source: id, paint: { "fill-color": paint.fill, "fill-opacity": paint.opacity } });
+        instance.addLayer({ id: `${id}-line`, type: "line", source: id, paint: { "line-color": paint.line, "line-width": 1.5, "line-dasharray": [2, 2] } });
+      } else {
+        src.setData(data ?? empty);
+      }
+    };
+    upsert(SCOPE_SOURCE, scopeData, { fill: cssColor("--color-primary", "#3b82f6"), line: cssColor("--color-primary", "#3b82f6"), opacity: 0.06 });
+    upsert(EXTENT_SOURCE, extentData, { fill: cssColor("--color-risk-lv4", "#f97316"), line: cssColor("--color-risk-lv4", "#f97316"), opacity: 0.28 });
+  }, [map, ready, scope, mode, selectedMark]);
+
+  /* 패널에서 고른 주체 — 지도도 그 주체로 끌어온다 */
   const focusDevice = useCallback(
     (device: Device) => {
       setSelectedId(device.id);
       const instance = map.current;
       if (!instance || !ready) return;
       const el = instance.getContainer();
-      /* 좌측 열과 우측 레일 사이의 가운데 — 어느 쪽 패널 밑으로도 팝업이 파고들지 않는다 */
-      const target = {
-        x: (LEFT_COL + EDGE * 2 + (el.clientWidth - CENTER_RIGHT)) / 2,
-        y: el.clientHeight - (CCTV_DOCK + EDGE * 2) - 32,
-      };
+      const target = { x: (LEFT_COL + EDGE * 2 + (el.clientWidth - CENTER_RIGHT)) / 2, y: el.clientHeight - (CCTV_DOCK + EDGE * 2) - 32 };
       const pt = instance.project(device.center);
       instance.panBy([pt.x - target.x, pt.y - target.y], { duration: 500 });
     },
     [map, ready],
   );
+  const openChannel = (ch: CctvChannelView) => setSelectedId(ch.id);
+  const cctvOfFacility = (facility: Facility) => {
+    const ch = channels.find((c) => c.id === (facility.kind === "pump" ? SUBJECTS.cctvPump : SUBJECTS.cctvPole));
+    return ch ? { name: ch.label, onOpen: () => openChannel(ch) } : undefined;
+  };
 
-  /* ── 시나리오 스텝 트리거 (04 §0) — 조작이 스텝을 올린다 ──
-     서항을 열면 S1. 주인공 수위계 팝업을 열면 S2 이고, 엔진이 여기에 격상 타이머를
-     얹는다(04 §0). 서항 CCTV 팝업을 열면 S3. 스텝은 단조라 곁가지에는 흔들리지 않는다 */
-  useEffect(() => {
-    if (track === "seohang" && district.id === "seohang") advanceTo(1);
-    if (track === "bongam" && district.id === "bongam") advanceTo(1);
-  }, [track, district.id, advanceTo, step]);
+  /* 근거 선택 — query 가 정본. 이벤트 줄을 누르면 그 주체를 지도에서 강조한다 */
+  const selectedEventId = params.get("evidenceId");
+  const selectEvidence = (e: EventEnvelope) => {
+    const next = new URLSearchParams(params);
+    next.set("evidenceId", e.eventId);
+    setParams(next, { replace: true });
+    const device = devices.find((d) => d.id === e.subjectId);
+    if (device) focusDevice(device);
+  };
 
-  /* 봉암은 이 화면이 격상의 무대다 (04 §15-1) — 지도가 앉았다고 엔진에 알리면 거기서부터
-     2초를 센다. 스텝 도착에서 바로 재면 타일이 들어오는 사이에 격상이 지나가, 정작
-     목격해야 할 사람은 이미 경보가 된 화면을 본다.
-     step 을 함께 보는 것은 되감기(같은 트랙 재발사) 때문이다 — 이 화면에 선 채로 다시
-     쏘면 지도는 이미 앉아 있어 ready 가 다시 바뀌지 않는다. 무대를 기다리지 않는
-     트랙(서항)에서는 엔진이 이 신호를 흘려보낸다 */
-  useEffect(() => {
-    if (ready && district.id === heroDistrictId) markStageReady();
-  }, [ready, district.id, heroDistrictId, markStageReady, step]);
-
-  /* 이 지구를 보러 들어왔다 — 쌓여 있던 그 지구 알람은 제 할 일을 마쳤다. 화면 위를
-     덮은 채로 두지 않는다. 들어선 뒤에 들어오는 알람(격상)은 새 소식이라 그대로 뜬다 */
-  useEffect(() => {
-    dismissAlarmsOf(district.id);
-  }, [district.id]);
-  useEffect(() => {
-    if (!selected) return;
-    if (track === "seohang") {
-      if (selected.id === "seohang-WL-001") advanceTo(2);
-      else if (selected.districtId === "seohang" && selected.kind === "CV") advanceTo(3);
-    } else {
-      /* 트랙 B (04 §15-2) — 강우량계 팝업이 B2, 배수문 CCTV 팝업이 B3(격상 발사 자리) */
-      if (selected.id === "bongam-RN-001") advanceTo(2);
-      else if (selected.districtId === "bongam" && selected.kind === "CV") advanceTo(3);
+  /* ── 모드 전환과 담당자 조작 — 전이는 엔진이 소유한다 ── */
+  const setPanel = (next: URLSearchParams, value: Mode) => {
+    if (value === "judge") next.delete("panel");
+    else next.set("panel", value);
+    return next;
+  };
+  const openTwin = (id: string) => {
+    advanceTick("d4");
+    const next = setPanel(new URLSearchParams(params), "twin");
+    next.set("forecastId", id);
+    setParams(next);
+  };
+  const pickAlternative = (id: AlternativeId) => {
+    const target = alternativesOf(incidentId, now).find((a) => a.id === id);
+    if (!target) return;
+    advanceTick("d5");
+    const next = new URLSearchParams(params);
+    next.set("forecastId", target.forecast.forecastId);
+    next.set("alternativeId", id);
+    setParams(next);
+  };
+  const pickValidAt = (at: string) => {
+    const next = new URLSearchParams(params);
+    next.set("validAt", at);
+    setParams(next, { replace: true });
+  };
+  const reviewResponse = () => {
+    if (!twinForecast || !selectedMark) return;
+    advanceTick("d6-review");
+    const next = new URLSearchParams(params);
+    next.set("forecastId", twinForecast.forecastId);
+    next.set("validAt", selectedMark.validAt);
+    next.set("alternativeId", twinForecast.alternativeId);
+    setParams(next, { replace: true });
+    setResponseOpen(true);
+  };
+  const toJudge = () => setParams(setPanel(new URLSearchParams(params), "judge"));
+  const openResponse = () => setResponseOpen(true);
+  const closeReview = () => { setResponseOpen(false); navigate("/scr-04"); };
+  /* 탭 직접 클릭 — 마지막 맥락(forecastId · validAt · alternativeId)은 query 에 남아 있어 그대로 이어진다.
+     전망 탭을 처음 열면 기준 전망을 고른다(다른 전망을 자동 선택하는 것이 아니라 아직 고른 것이 없을 때만) */
+  const onTab = (value: string) => {
+    if (value === "twin") {
+      if (forecastId) setParams(setPanel(new URLSearchParams(params), "twin"));
+      else if (baseline) openTwin(baseline.forecastId);
+      return;
     }
-  }, [track, selected, advanceTo]);
+    toJudge();
+  };
+  const twinAvailable = forecasts.length > 0;
+  const responseAvailable = view ? ["확인됨", "대응중", "통제"].includes(view.workflowStatus) : false;
 
-  /* 선택 장비는 엔진이 든다(03 §5 · 차수 K) — 트윈이 같은 핀을 강조하려면 화면을
-     옮겨도 선택이 살아 있어야 한다. 팝업을 닫으면 선택도 걷는다 */
-  useEffect(() => {
-    selectDevice(selectedId);
-  }, [selectedId, selectDevice]);
-
-  /* 이 화면이 보는 사건 — 지도 핀·캡슐·판정·이력이 전부 같은 사건을 봐야 격상이 한
-     장면이 된다. 대표 사건(최고 단계)이 아니라 대본 사건이다(watchedEventOfAt) */
-  const event = watchedEventOfAt(district.id, now);
-  const view = event ? eventViewAt(event, now) : null;
-
-  /* 트윈 진입 — 선택 장비를 URL 에도 싣는다(트윈 새로고침·딥링크의 보조 복구 · 03 §5) */
-  const openTwin = () =>
-    navigate(selectedId ? `/scr-05/${district.id}?device=${selectedId}` : `/scr-05/${district.id}`);
-
-  /* ── 대응 국면 (03 §2 · 차수 N) — 판정은 레일이 보이고, 승인·실행은 집중 팝업이 든다 ── */
-  /* 주인공 사건은 트랙별이다 (04 §15-3). 서항 트랙은 해일 사건 하나, 봉암 트랙은
-     봉암 대표 사건([이 사건 대응하기]·집중 팝업·승인의 무대). 서항 id 하드 게이트에
-     묶으면 트랙 B 사건이 대응 없는 구경거리가 된다 */
-  const hero =
-    track === "bongam" ? event?.districtId === "bongam" : event?.id === HERO_EVENT_ID;
-  const risk = event ? assessRisk(event, now) : null;
-  /* 트윈이 이 사건에 남긴 검토 기록 — 영향 카드의 '검토 완료'와 대응 절차의
-     권장 문구가 같은 출처를 본다(02 §2) */
-  const twinReview = useAnalysisReview(event?.id);
-
-  /* 기상 격자 — 트윈과 같은 자료·같은 항목(lib/weather-layers.ts)이되 **꺼진 채로 연다.**
-     이 화면에서 지도를 열면 켜져 있어야 하는 것은 침수 주제도 둘이고, 비·바람 색면을
-     깔면 짚어야 할 장비 핀이 묻힌다. 켜면 그 시각의 비로 칠한다 */
-  const [weather, setWeather] = useState<WeatherState>(WEATHER_OFF);
-  useWindLayer(map, ready, weather.wind);
-  useTemperatureLayer(map, ready, weather.temp);
-  usePrecipitationLayer(map, ready, weather.rain, now.getHours());
-  const approved = hero ? approvedResponseLevel : null;
-  const effectiveLevel = risk ? (approved ?? risk.recommended) : null;
-  /* 판정할 거리 — 시나리오·승인이 생긴 뒤 (03 §위험도 판정 등장 조건). 대응 절차 카드와
-     마커 팝업 [이 사건 대응하기]가 같은 게이트를 쓴다 */
-  const judged = risk !== null && (risk.scenario !== null || approved !== null);
-
-  /* 사건 지정 진입 = S5 (04 §0 · 05 S4→S5). 스텝은 단조라 지난 뒤에는 아무 일도 없다 */
-  useEffect(() => {
-    if (requestedEvent && event && requestedEvent === event.id) advanceTo(5);
-  }, [requestedEvent, event, advanceTo]);
-
-  /* 집중 팝업 — 열림 상태만 화면이 들고 나머지는 전부 엔진 소유다(03 §2).
-     닫힌 뒤 포커스는 [대응 실행]으로 복귀한다(수용 기준) */
-  const [executionOpen, setExecutionOpen] = useState(false);
-  const executeButtonRef = useRef<HTMLButtonElement>(null);
-
-  /* 전파 문안 — 자동 작성본을 담당자가 고칠 수 있다(04 §7-2). 팝업을 닫아도 유지돼야
-     해서(수용 기준) 팝업이 아니라 페이지가 든다. 사건·등급·시나리오가 바뀌면 다시 쓴다 */
-  const draft = useMemo(
-    () =>
-      event && effectiveLevel
-        ? draftMessage(event, now, { effectiveLevel, scenario: risk?.scenario ?? null })
-        : "",
-    [event, now, effectiveLevel, risk?.scenario],
-  );
-  const [message, setMessage] = useState(draft);
-  useEffect(() => setMessage(draft), [draft]);
-
-  /* SOP 실행이 곧 전파다(03 §2). 수단은 승인·실행된 항목에서 파생하고(04 §7-5),
-     시각은 승인 시각이다. 전파 성격 항목이 하나도 없으면 기록을 만들지 않는다 */
-  const handleSopExecuted = (itemIds: string[]) => {
-    if (!event || !effectiveLevel) return;
-    const channels = channelsFromSopItems(itemIds, effectiveLevel);
-    if (channels.length === 0) return;
-    addDispatch({
-      id: `DSP-${event.id.slice(4)}-SOP`,
-      eventId: event.id,
-      dispatchKind: "sop",
-      responseLevel: effectiveLevel,
-      sentAt: (approvedAt ?? now).toISOString(),
-      summary: `${district.name} ${event.type} ${levelSpec(effectiveLevel).label}`,
-      channels,
-      message,
-      recipients: RECIPIENTS[event.districtId] ?? 0,
-      recordedBy: "시스템",
-    });
+  /* 집중 확인 팝업 — 열림·종류만 화면이 든다 */
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const confirmAction = () => {
+    if (!confirm) return;
+    if (confirm.kind === "approve") advanceTick("d6-approve");
+    if (confirm.kind === "fallback") advanceTick("d7-fallback");
+    if (confirm.kind === "control") advanceTick("d7-control");
+    setConfirm(null);
   };
 
-  /* 수정 문안 재전파 — 실행 결과 하단에서 온다(03 §2 · 차수 L). 재전파라
-     durationMin(발생→최초 전파 소요)은 없다. 시각은 시나리오 시계의 스텝 시각(04 §0) */
-  const handleResend = (channels: ChannelId[], sentMessage: string) => {
-    if (!event || !effectiveLevel) return;
-    addDispatch({
-      id: `DSP-${event.id.slice(4)}-${dispatches.length + 1}`,
-      eventId: event.id,
-      dispatchKind: "manual-resend",
-      responseLevel: effectiveLevel,
-      sentAt: now.toISOString(),
-      summary: `${district.name} ${event.type} ${levelSpec(effectiveLevel).label}`,
-      channels,
-      message: sentMessage,
-      recipients: RECIPIENTS[event.districtId] ?? 0,
-      recordedBy: "상황실 담당",
-    });
-  };
+  /* ── 예외 (IA §5.2) — 골격은 유지하고 좌측 열에 사실과 복귀 길을 세운다 ── */
+  const exception = watch
+    ? null
+    : !view || !incident
+    ? { title: "진행 중인 사건 없음", body: "이 지구에 확인할 사건 후보가 없습니다. 감시 우선대상과 알림은 종합상황에서 봅니다.", to: "/scr-01", label: "종합상황으로" }
+    : view.workflowStatus === "병합됨" && view.mergedInto
+      ? { title: "병합된 사건", body: `${all.find((v) => v.incident.incidentId === view.mergedInto)?.incident.title ?? view.mergedInto}에 병합됐습니다. 원 사건은 기록으로만 남습니다.`, to: `/scr-02/${all.find((v) => v.incident.incidentId === view.mergedInto)?.incident.legacyDistrictId ?? districtId}`, label: "대상 사건 열기" }
+      : view.workflowStatus === "오탐" || view.workflowStatus === "종료"
+        ? { title: `${view.workflowStatus === "오탐" ? "오탐" : "종료된"} 사건`, body: "읽기 전용 기록입니다. 현재 사건으로 되살리지 않습니다.", to: "/scr-04", label: "기록·검증에서 보기" }
+        : null;
+
+  const tone = view ? statusTone(view.workflowStatus) : null;
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      <div
-        className="absolute inset-0 z-0 overflow-hidden bg-surface"
-        style={{ isolation: "isolate" }}
-        aria-label={`${district.name} 지도`}
-      >
-        <div ref={mapContainer} className="h-full w-full" />
-        <DeviceMarkers
-          map={map}
-          ready={ready}
-          devices={visibleDevices}
-          selectedId={selectedId}
-          onSelect={(device) => setSelectedId(device.id)}
-        />
-        {/* 시설 피커의 [현장 영상] — 장비 목록·사건 캡슐이 쓰는 것과 같은 길이다.
-            핀을 화면 가운데로 데려오고 그 자리에 CCTV 팝업을 연다 */}
-        <FacilityMarkers
-          map={map}
-          ready={ready}
-          facilities={visibleFacilities}
-          onOpenCctv={focusDevice}
-        />
-        {/* CCTV 는 마커 팝업이 아니라 화면 가운데 큰 오버레이다 — KISA·SK 관제 대시보드와
-            같은 조작이다(components/CctvBigView.tsx). 영상은 300px 팝업 칸에서 볼 것이
-            아니고, 핀이 지도 가장자리에 있어도 잘리지 않는다 */}
-        {selected?.kind === "CV" && (
-          <CctvBigView device={selected} onClose={() => setSelectedId(null)} />
-        )}
-        {selected && selected.kind !== "CV" && (
-          <MapPopup
-            map={map}
-            lngLat={selected.center}
-            onClose={() => setSelectedId(null)}
-            offset={24}
-          >
-            <DevicePopup
-              device={selected}
-              onClose={() => setSelectedId(null)}
-              /* 집중 팝업을 열 때 마커 팝업은 닫는다 — 오버레이 뒤에 열린 팝업이 남아
-                 있으면 닫힌 뒤 조작면이 둘로 보인다. 판정·검토 게이트에 물리지 않는다 —
-                 긴급 대응은 격상·트윈을 기다리지 않는다(03 §2 판단·대응) */
-              onRespond={
-                hero && view?.active
-                  ? () => {
-                      setSelectedId(null);
-                      setExecutionOpen(true);
-                    }
-                  : undefined
-              }
-            />
-          </MapPopup>
+      <div className="absolute inset-0 z-0 overflow-hidden bg-surface" style={{ isolation: "isolate" }} aria-label={`${incident?.title ?? "사건"} 지도`}>
+        <div ref={(el) => { mapContainer.current = el; }} className="h-full w-full" />
+        {!exception && (
+          <>
+            <DeviceMarkers map={map} ready={ready} pins={pins} selectedId={selectedId} onSelect={(d) => setSelectedId(d.id)} />
+            <FacilityMarkers map={map} ready={ready} facilities={facilities} cctvOf={cctvOfFacility} />
+            {selectedChannel && (
+              <CctvBigView
+                channel={{ name: selectedChannel.label, address: "경남 창원시 마산합포구 신포동", scene: selectedChannel.scene, still: selectedChannel.still, analysis: selectedChannel.analysis ? `VLM ${Math.round(selectedChannel.analysis.confidence * 100)}% · ${selectedChannel.analysis.model} ${selectedChannel.analysis.version} · 분석 ${formatClock(selectedChannel.analysis.analyzedAt)} · ${selectedChannel.analysis.description}` : undefined, at: now }}
+                onClose={() => setSelectedId(null)}
+              />
+            )}
+            {selected && selected.kind !== "CV" && (
+              <MapPopup map={map} lngLat={selected.center} onClose={() => setSelectedId(null)} offset={24}>
+                <DevicePopup device={selected} onClose={() => setSelectedId(null)} onShowEvents={() => {
+                  const row = rows.find((r) => r.event.subjectId === selected.id);
+                  if (row) selectEvidence(row.event);
+                  setSelectedId(null);
+                }} onRespond={responseAvailable ? () => { setSelectedId(null); openResponse(); } : undefined} />
+              </MapPopup>
+            )}
+          </>
         )}
         {!ready && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-surface">
-            <Icon
-              icon="mdi:loading"
-              className="size-5 animate-spin text-foreground-subtle"
-              aria-hidden
-            />
+            <Icon icon="mdi:loading" className="size-5 animate-spin text-foreground-subtle" aria-hidden />
             <span className="text-body text-foreground-muted">지도를 불러오는 중</span>
           </div>
         )}
       </div>
 
-      {/* 맵 조작 — 오른쪽 가장자리에 선 것(레일 · 열린 AI 패널) 왼쪽 세로 스트립.
-          지도 화면 어디서든 같은 자리 같은 버튼 */}
+      {/* 맵 조작 — 지도 화면 어디서든 같은 자리 같은 버튼 */}
       <div className={UTIL_STRIP} style={utilStripStyle(agentOpen)}>
         <MapUtilStrip
           map={map}
           disabled={!ready}
-          onReset={() => focusDistrict(500)}
+          onReset={() => focusScope(500)}
           layers={[
-            {
-              title: "장비",
-              items: DEVICE_KINDS.filter((spec) => counts[spec.kind] > 0).map((spec) => ({
-                id: spec.kind,
-                label: spec.label,
-                color: spec.color,
-                icon: spec.icon,
-                /* 장치 핀 문법 그대로 — 원형 글라스 칩 (03 §0-5 · IDC 선례) */
-                shape: "device" as const,
-                count: counts[spec.kind],
-                visible: !hiddenKinds.includes(spec.kind),
-              })),
-              onToggle: (id) => toggleKind(id as DeviceKind),
-              onSetAll: (visible) =>
-                setHiddenKinds(
-                  visible ? [] : DEVICE_KINDS.filter((s) => counts[s.kind] > 0).map((s) => s.kind),
-                ),
-            },
-            /* 방재시설 — 계측 장비와 다른 축이다. 장비는 값을 재고 이쪽은 물을 막고
-               퍼낸다. 등재된 지구(봉암)에서만 이 묶음이 선다 */
-            ...(facilityKinds.length > 0
-              ? [
-                  {
-                    title: "방재시설",
-                    items: facilityKinds.map((spec) => ({
-                      id: spec.kind,
-                      label: spec.label,
-                      color: spec.color,
-                      icon: spec.icon,
-                      /* 장치 핀과 같은 원형 글라스 칩 — 지도에 그린 문법 그대로 */
-                      shape: "device" as const,
-                      count: facilities.filter((f) => f.kind === spec.kind).length,
-                      visible: !hiddenFacilityKinds.includes(spec.kind),
-                    })),
-                    onToggle: (id: string) =>
-                      setHiddenFacilityKinds((prev) =>
-                        prev.includes(id as FacilityKind)
-                          ? prev.filter((k) => k !== id)
-                          : [...prev, id as FacilityKind],
-                      ),
-                    onSetAll: (visible: boolean) =>
-                      setHiddenFacilityKinds(visible ? [] : facilityKinds.map((s) => s.kind)),
-                    note: "폐쇄·가동은 운영 로그다 — 센서가 감지한 사건이 아니다",
-                  },
-                ]
-              : []),
-            /* 영향 표현 — 트윈(03 §5)과 같은 묶음 이름·같은 기상 항목을 쓴다.
-               침수예상도·흔적도는 "이 지역이 어디까지 잠기나"를 말하는 표현이지 위험요소
-               목록이 아니고, 그 뒤에 붙는 강수·기온·바람은 그 침수를 만든 조건이다.
-               같은 레이어가 화면마다 다른 묶음 이름으로 서면 같은 앱으로 안 읽힌다 */
             {
               title: "영향 표현",
               items: [
-                ...SAFEMAP_LAYERS.map((spec) => ({
-                  id: spec.id,
-                  label: spec.label,
-                  color: spec.color,
-                  icon: spec.icon,
-                  /* 래스터 주제도라 면(面) 표식 — 지도에 덮이는 모양 그대로 */
-                  shape: "area" as const,
-                  visible: safemapOn[spec.id] ?? true,
-                })),
+                ...SAFEMAP_LAYERS.map((spec) => ({ id: spec.id, label: spec.label, color: spec.color, icon: spec.icon, shape: "area" as const, visible: safemapOn[spec.id] ?? true })),
                 ...weatherLayerItems(weather),
               ],
-              onToggle: (id: string) =>
-                isWeatherKey(id)
-                  ? setWeather((prev) => ({ ...prev, [id]: !prev[id] }))
-                  : setSafemapOn((prev) => ({ ...prev, [id]: !(prev[id] ?? true) })),
+              onToggle: (id: string) => (isWeatherKey(id) ? setWeather((prev) => ({ ...prev, [id]: !prev[id] })) : setSafemapOn((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }))),
               onSetAll: (visible: boolean) => {
                 setSafemapOn(Object.fromEntries(SAFEMAP_LAYERS.map((s) => [s.id, visible])));
                 setWeather({ rain: visible, temp: visible, wind: visible });
@@ -506,201 +364,323 @@ export function EarlyWarningPage() {
         />
       </div>
 
-      {/* 상단 중앙 — 사건 캡슐 (03 §2). SCR-01 상태 스트립과 같은 자리 문법. 진행 사건의
-          신원(재난유형·처리상태·단계 뱃지·발생/격상·탐지 장비)을 화면에서 한 번만 말한다.
-          격상(S2)에 바뀌는 값(뱃지·격상 시각)이 전부 여기라, 격상 순간 캡슐만 통째로 변한다 */}
-      {event && view && (
-        <div
-          className="pointer-events-none absolute top-3 z-30 flex justify-center"
-          style={{ left: LEFT_COL + EDGE * 2, right: CENTER_RIGHT }}
-        >
-          {/* SCR-01 상태 스트립과 같은 캡슐 문법 — borderStyle none · rounded-full · px-5 py-2 */}
-          <GlassPanel
-            borderStyle="none"
-            className="pointer-events-auto flex items-center gap-4 rounded-full px-5 py-2"
-            aria-label="진행 사건"
-          >
-            <span className="shrink-0 text-body font-bold tracking-tight text-foreground">
-              {hazardLabel(event.hazardType)}
-            </span>
-            <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-caption text-foreground-muted">
-              {processStateAt(event, now, approvedResponseLevel)}
-            </span>
-            {/* 승인 대응등급 배지(03 §0-6). 계측 뱃지는 계측 단계 색을 지키고 승인
-                등급은 별도로 선다 — 빨갛게 칠하면 "실측이 대피 기준을 넘었다"로 오독 */}
-            {district.id === "seohang" && approvedResponseLevel && (
-              <span className="shrink-0 rounded-full border border-risk-lv5 px-2 py-0.5 text-caption font-medium text-risk-lv5">
-                {levelSpec(approvedResponseLevel).label} 대응중
-              </span>
-            )}
-            <LevelBadge
-              level={view.level}
-              value={`${view.value} ${event.unit}`}
-              className="px-2.5"
-            />
+      {/* 상단 중앙 — 사건 캡슐 (IA §7 공통 헤더 · 초안 §3). 종합상황 상태 스트립과 같은 자리 문법.
+          `[등급 배지] 제목 [처리상태] · 재난유형 · 생성 · 경과`. 등급 배지는 판단 갱신 전에는 그리지 않고 점수는 위험도
+          카드가 든다. 범위·담당은 좌측 머리말이 들고 탭 전환은 우측 레일이 든다 */}
+      {watch && (
+        <div className="pointer-events-none absolute top-3 z-30 flex justify-center" style={{ left: LEFT_COL + EDGE * 2, right: CENTER_RIGHT }}>
+          <GlassPanel borderStyle="none" className="pointer-events-auto flex max-w-full items-center gap-3 whitespace-nowrap rounded-full px-5 py-2" aria-label="알림 헤더">
+            <Badge variant={ALERT_GRADE_TONE[watch.alert.grade].badge} className="shrink-0">{watch.alert.grade}</Badge>
+            <span className="min-w-0 truncate text-body font-bold tracking-tight text-foreground">{watch.alert.demoRole} · {watch.alert.target.label}</span>
+            <Badge variant="gray" className="shrink-0">감지</Badge>
             <span className="h-4 w-px shrink-0 bg-border" aria-hidden />
-            <span className="flex items-center gap-1 text-caption text-foreground-muted">
-              <span className="font-mono">{formatClock(new Date(event.raisedAt))} 발생</span>
-              {view.escalated && (
-                <>
-                  <span aria-hidden>·</span>
-                  <span className="font-mono" style={{ color: levelSpec(view.level).color }}>
-                    {formatClock(new Date(view.stageAt))} 격상
-                  </span>
-                </>
-              )}
-              <span aria-hidden>·</span>
-              {/* 탐지 클릭 = 센서 선택 — 지도 핀·좌측 목록과 같은 선택 (03 §2 동작) */}
-              <button
-                type="button"
-                onClick={() => {
-                  const detector = findDevice(event.deviceId);
-                  if (detector) focusDevice(detector);
-                }}
-                className="cursor-pointer truncate border-none bg-transparent p-0 text-caption text-primary-text underline-offset-2 hover:underline"
-              >
-                {event.device} 탐지
-              </button>
+            <span className="flex shrink-0 items-center gap-1 font-mono text-caption text-foreground-muted">
+              <span>{formatClock(watch.alert.createdAt)} 생성</span>
+              <span>· 경과 {formatElapsed(watch.alert.createdAt, now)}</span>
+            </span>
+          </GlassPanel>
+        </div>
+      )}
+      {view && tone && incident && (
+        <div className="pointer-events-none absolute top-3 z-30 flex justify-center" style={{ left: LEFT_COL + EDGE * 2, right: CENTER_RIGHT }}>
+          <GlassPanel borderStyle="none" className="pointer-events-auto flex max-w-full items-center gap-3 whitespace-nowrap rounded-full px-5 py-2" aria-label="사건 헤더">
+            {view.assessment && <Badge variant={RISK_GRADE_TONE[view.assessment.matrix.grade].badge} className="shrink-0">{view.assessment.matrix.grade}</Badge>}
+            <span className="min-w-0 truncate text-body font-bold tracking-tight text-foreground">{incident.title}</span>
+            <StatusBadge status={tone.badge} label={view.workflowStatus} className="shrink-0" />
+            <Tag className="shrink-0">{incident.hazardKind}</Tag>
+            <span className="h-4 w-px shrink-0 bg-border" aria-hidden />
+            <span className="flex shrink-0 items-center gap-1 font-mono text-caption text-foreground-muted">
+              {view.createdAt && <span>{formatClock(view.createdAt)} 생성</span>}
+              {view.createdAt && <span>· 경과 {formatElapsed(view.createdAt, now)}</span>}
             </span>
           </GlassPanel>
         </div>
       )}
 
-      {/* 좌측 열 — 지구 머리말 · 상황 근거(계측 추이 → 현장 교차검증) (03 §2).
-          근거는 좌측, 결정은 우측 — 한 레일에 몰면 높이를 넘는다.
-          자리가 모자라면 교차검증 패널만 자기 본문에서 스크롤한다 */}
+      {/* 좌측 열 — 머리말 · 관측 추이 · 관련 이벤트 현황 (근거는 왼쪽) */}
       <div className={`${RAIL_BASE} left-3`} style={{ width: LEFT_COL }}>
-        {/* 지구 머리말 — 정적 신원(지구명·지구 유형·관측 대상·장비 대수)과 종합상황으로
-            돌아가는 길만. 진행 사건은 상단 중앙 사건 캡슐 몫이다(03 §2) — 지구 유형(시설 축)과
-            재난유형(현상 축)은 다른 축이라 자리를 가른다(04 §4-0) */}
         <GlassPanel className="pointer-events-auto shrink-0">
           <div className="flex items-center gap-2 px-3 py-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/scr-01")}
-              aria-label="종합상황으로"
-              className="size-7 shrink-0 text-foreground-subtle hover:text-foreground"
-            >
+            <Button variant="ghost" size="icon" onClick={() => navigate("/scr-01")} aria-label="종합상황으로" className="size-7 shrink-0 text-foreground-subtle hover:text-foreground">
               <Icon icon="mdi:arrow-left" className="size-4" aria-hidden />
             </Button>
             <div className="flex min-w-0 flex-col">
               <div className="flex items-center gap-1.5">
-                <h1 className="truncate text-h6 font-semibold text-foreground">{district.name}</h1>
-                <Tag className="shrink-0">{district.kind} 지구</Tag>
+                <h1 className="truncate text-h6 font-semibold text-foreground">{scope?.scope.label ?? districtName}</h1>
+                {scope && <Tag className="shrink-0">{scope.scope.kind}</Tag>}
               </div>
               <span className="truncate text-caption text-foreground-muted">
-                {district.target} · 장비 {devices.length}대
+                {incident ? `${incident.ownership.organization} · ${incident.ownership.officer} · 주체 ${devices.length + facilities.length}` : watch ? `감시 우선구역 · 주체 ${devices.length + facilities.length}` : `지구 · 진행 사건 없음`}
               </span>
             </div>
           </div>
         </GlassPanel>
 
-        <GlassPanel className="pointer-events-auto shrink-0">
-          <TrendPanel
-            sensors={sensors}
-            districtName={district.name}
-            selected={selected}
-            onSelect={focusDevice}
-          />
-        </GlassPanel>
-        {/* 좌측 열에서 남는 높이를 이 패널이 받는다 — 근거 카드가 화면 높이에 맞춰
-            벌어지고, 스크롤바가 붙었다 떨어지며 흔들리는 일이 없다 */}
-        <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
-          <CrossCheckPanel district={district} devices={devices} />
-        </GlassPanel>
-      </div>
-
-      {/* 하단 중앙 — 현장영상 (03 §2 · 04 §2-5). SCR-01 주요 CCTV 스트립과 같은 자리
-          문법: 좌우 패널 사이에 선다. 타일 클릭 = 지도 팝업 — S3 의 대체 경로 */}
-      <div
-        className="absolute bottom-3 z-20"
-        style={{ left: LEFT_COL + EDGE * 2, right: CENTER_RIGHT, height: CCTV_DOCK }}
-      >
-        <GlassPanel className="h-full">
-          <CctvDock districtName={district.name} cctvs={featuredCctvs} onSelect={focusDevice} />
-        </GlassPanel>
-      </div>
-
-      {/* 우측 — 판단·대응 (03 §2). 서로 다른 기능은 서로 다른 카드다:
-          위험도 판정 → 영향 분석 → 대응 절차 → 사건 진행. 전체 기록 열람은 이 레일이
-          맡지 않는다 — 좌측 메뉴 [통계·분석]이 그 길이다.
-          레일 바닥에 고정 버튼이 없어져 바닥까지 내려온다(bottom-3). 질의 버튼은 이 레일을
-          덮지 않는다 — 도크 위·레일 왼쪽으로 비켜 선다(FAB_SLOT_DOCK · AgentFab) */}
-      <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
-        {event && risk ? (
+        {exception ? (
+          <GlassPanel className="pointer-events-auto shrink-0 p-3">
+            <Notice variant={exception.title.includes("찾을 수") ? "danger" : "warning"} title={exception.title} description={exception.body} action={<Button size="sm" onClick={() => navigate(exception.to)}>{exception.label}</Button>} />
+          </GlassPanel>
+        ) : (
           <>
-            <GlassPanel
-              className={cn(
-                "pointer-events-auto shrink-0",
-                /* 사건 지정 진입(?event=) 직후 — 판단 국면의 시작점 강조 (02 §2) */
-                requestedEvent === event.id && "ring-1 ring-primary/60",
-              )}
-            >
-              <RiskCard event={event} risk={risk} approved={approved} />
-            </GlassPanel>
-
             <GlassPanel className="pointer-events-auto shrink-0">
-              <ImpactPanel
-                districtId={district.id}
-                measuredLevel={event.type === "수위" ? risk.measured.value : null}
-                scenario={risk.scenario}
-                eventId={event.id}
-                onOpenTwin={openTwin}
-              />
+              <TrendPanel sensors={sensors} selected={selected} onSelect={focusDevice} />
             </GlassPanel>
-
-            {/* 대응 절차 — 판정할 거리(시나리오·승인)가 생긴 뒤에만 (§위험도 판정 등장 조건) */}
-            {judged && (
-              <GlassPanel className="pointer-events-auto shrink-0">
-                <RespondPanel
-                  onOpenExecution={hero && view?.active ? () => setExecutionOpen(true) : undefined}
-                  executeButtonRef={executeButtonRef}
-                  showResult={hero && sopExecuted}
-                  twinReviewed={twinReview !== null}
-                  districtId={district.id}
-                />
-              </GlassPanel>
-            )}
-
-            {/* 우측 레일에서 남는 높이를 사건 진행이 받는다 — 접지 않고 늘어나며,
-                넘치면 이 카드 본문만 스크롤한다(위 카드들과 푸터는 제자리) */}
             <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
-              <EventTimeline event={event} />
+              <CrossCheckPanel rows={rows} selectedEventId={selectedEventId} onSelect={selectEvidence} onOpenForecast={openTwin} />
             </GlassPanel>
           </>
-        ) : (
-          /* 진행 사건이 없어도 분석 진입은 선다 — 분석 도구는 사건에 물리지 않는다(03 §2) */
-          <GlassPanel className="pointer-events-auto shrink-0">
-            <ImpactPanel
-              districtId={district.id}
-              measuredLevel={null}
-              scenario={null}
-              eventId={null}
-              onOpenTwin={openTwin}
-            />
-          </GlassPanel>
         )}
       </div>
 
-      {/* 대응 실행 집중 팝업 (03 §2 · 차수 N) — 주인공 진행 사건에서만 연다 */}
-      {event && view && risk && effectiveLevel && hero && (
+      {/* 하단 중앙 — 현장영상 */}
+      {!exception && (
+        <div className="absolute bottom-3 z-20" style={{ left: LEFT_COL + EDGE * 2, right: CENTER_RIGHT, height: CCTV_DOCK }}>
+          <GlassPanel className="h-full">
+            <CctvDock channels={channels} onSelect={openChannel} />
+          </GlassPanel>
+        </div>
+      )}
+
+      {/* 우측 레일 · 사건 전 알림 — 탭은 같은 자리에 두되 판단만 열린다. 전망·대응은 사건이 있어야 한다 */}
+      {watch && !view && (
+        <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
+          <GlassPanel className="pointer-events-auto shrink-0 p-1.5">
+            <Tabs value="judge">
+              <TabsList variant="panel" className="w-full" aria-label="우측 레일 탭">
+                <TabsTrigger variant="panel" value="judge"><span className="size-1.5 rounded-full bg-risk-lv3" aria-hidden />판단</TabsTrigger>
+                <TabsTrigger variant="panel" value="twin" disabled title="사건 후보가 생기면 열립니다">전망</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </GlassPanel>
+          <GlassPanel className="pointer-events-auto shrink-0">
+            <WatchAlertCard alert={watch.alert} />
+          </GlassPanel>
+          <GlassPanel className="pointer-events-auto flex shrink-0 items-center gap-2 p-2">
+            <span className="min-w-0 flex-1 truncate text-caption text-foreground-subtle">감시 중 · 사건 후보는 규칙이 만든다</span>
+            <Button size="sm" variant="secondary" onClick={() => navigate("/scr-01")}>종합상황으로</Button>
+          </GlassPanel>
+        </div>
+      )}
+
+      {/* 우측 레일 — 판단 · 전망 · 대응 탭 (결정은 오른쪽). 탭은 KISA 관제 우측 레일의 패널 탭 문법 */}
+      {view && !exception && (
+        <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
+          <GlassPanel className="pointer-events-auto shrink-0 p-1.5">
+            <Tabs value={mode} onValueChange={onTab}>
+              <TabsList variant="panel" className="w-full" aria-label="우측 레일 탭">
+                <TabsTrigger variant="panel" value="judge">
+                  <span className={cn("size-1.5 rounded-full", tone?.dot)} aria-hidden />
+                  판단
+                </TabsTrigger>
+                <TabsTrigger variant="panel" value="twin" disabled={!twinAvailable} title={twinAvailable ? undefined : "유효한 전망 없음"}>
+                  전망{twinAvailable && <span className="font-mono text-caption text-foreground-subtle">{forecasts.length}</span>}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </GlassPanel>
+
+          {mode === "judge" && (
+            <>
+              <GlassPanel className="pointer-events-auto shrink-0">
+                <RiskCard assessment={view.assessment} />
+              </GlassPanel>
+              <GlassPanel className="pointer-events-auto shrink-0">
+                <ImpactPanel forecast={baseline} onOpenTwin={openTwin} />
+              </GlassPanel>
+              {sopItems.length > 0 && (
+                <GlassPanel className="pointer-events-auto shrink-0">
+                  <ResponseSummaryCard items={sopItems} chain={chain} approval={approval} onOpen={openResponse} />
+                </GlassPanel>
+              )}
+              <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
+                <EventTimeline events={view.events} />
+              </GlassPanel>
+              <GlassPanel className="pointer-events-auto shrink-0">
+                <JudgeActionBar
+                  status={view.workflowStatus}
+                  assessed={view.assessment !== null}
+                  onTakeReview={() => advanceTick("d2-review")}
+                  onConfirm={() => advanceTick("d2-confirm")}
+                  onOpenResponse={openResponse}
+                  onCloseReview={closeReview}
+                />
+              </GlassPanel>
+            </>
+          )}
+
+          {mode === "twin" && (
+            <ForecastRail
+              now={now}
+              resolution={resolution}
+              forecast={twinForecast}
+              mark={selectedMark}
+              alternatives={alternativesOf(incidentId, now)}
+              onPickAlternative={pickAlternative}
+              onPickValidAt={pickValidAt}
+              onBack={toJudge}
+              onReview={reviewResponse}
+              onRepick={(id) => setParams({ panel: "twin", forecastId: id })}
+            />
+          )}
+
+        </div>
+      )}
+
+      {/* 대응 실행 집중 팝업 (IA §9 · 04 §4) — 판단·전망 위에 뜬다. 지도·레일은 뒤에 흐리게 남는다 */}
+      {view && incident && responseAvailable && (
+        <ResponsePopup
+          open={responseOpen}
+          /* 닫으면 판단 탭으로 — 결과는 대응 요약과 이력에 이어져 있다(04 §4) */
+          onClose={() => { setResponseOpen(false); toJudge(); }}
+          view={view}
+          incident={incident}
+          now={now}
+          channels={channels}
+          recommendation={recommendation}
+          approval={approval}
+          items={sopItems}
+          chain={chain}
+          baseline={baseline}
+          basisHint={twinForecast && selectedMark ? `${formatClock(selectedMark.validAt)} 전망 · ${ALTERNATIVE_LABEL[twinForecast.alternativeId]} 기준으로 검토 중` : null}
+          selectedBasis={twinForecast && selectedMark ? { validAt: selectedMark.validAt, alternativeId: twinForecast.alternativeId } : null}
+          emergency={view.assessment === null || !recommendation?.basis && !twinForecast}
+          resultsArrived={resultsArrived}
+          onRequestConfirm={setConfirm}
+          onCloseReview={closeReview}
+        />
+      )}
+
+      {/* 집중 확인 팝업 (IA §9) */}
+      {view && incident && confirm && (
         <ExecutionPopup
-          open={executionOpen}
-          onClose={() => setExecutionOpen(false)}
-          district={district}
-          event={event}
-          processState={processStateAt(event, now, approvedResponseLevel)}
-          risk={risk}
-          approved={approved}
-          effectiveLevel={effectiveLevel}
-          message={message}
-          onMessageChange={setMessage}
-          onExecuted={handleSopExecuted}
-          onResend={handleResend}
-          returnFocusTo={executeButtonRef}
+          open
+          request={confirm}
+          onClose={() => setConfirm(null)}
+          onConfirm={confirmAction}
+          incidentTitle={incident.title}
+          now={now}
+          approver={incident.ownership.approver ?? incident.ownership.officer}
+          message={disseminations[0]?.message ?? null}
+          channels={disseminations[0]?.channels ?? ["알림톡", "마을방송", "전광판", "기관 통보"]}
+          recipients={disseminations[0]?.recipients ?? "신포동 주민 알림톡 등록자 · 해안도로 전광판 2기 · 마산합포구청 · 경찰서 교통과"}
         />
       )}
     </div>
+  );
+}
+
+/* ── 전망 모드 우측 레일 (IA-03) — scr-05 의 시간축·근거 카드를 그대로 쓴다 ── */
+
+function ForecastRail({ now, resolution, forecast, mark, alternatives, onPickAlternative, onPickValidAt, onBack, onReview, onRepick }: {
+  now: Date;
+  resolution: ReturnType<typeof resolveForecast> | null;
+  forecast: Forecast | null;
+  mark: Forecast["marks"][number] | null;
+  alternatives: { id: AlternativeId; forecast: Forecast }[];
+  onPickAlternative: (id: AlternativeId) => void;
+  onPickValidAt: (at: string) => void;
+  onBack: () => void;
+  onReview: () => void;
+  onRepick: (forecastId: string) => void;
+}) {
+  if (!forecast || !mark) {
+    const reason = !resolution ? "예측판을 고르지 않았다." : resolution.kind === "not-found" ? "존재하지 않는 예측판이다." : resolution.kind === "expired" ? `유효 종료 ${formatClock(resolution.forecast.validUntil)} 가 지난 예측판이다.` : "이 시각에는 아직 생성되지 않은 예측판이다.";
+    return (
+      <GlassPanel className="pointer-events-auto flex flex-col gap-3 p-3">
+        <Notice variant="warning" title="선택한 예측판이 유효하지 않음" description={`${reason} 다른 예측판으로 바꾸지 않는다 — 목록에서 다시 고른다.`} />
+        <ul className="flex flex-col gap-1.5">
+          {alternatives.map((a) => (
+            <li key={a.forecast.forecastId}>
+              <Button size="sm" variant="secondary" className="w-full justify-start" onClick={() => onRepick(a.forecast.forecastId)}>
+                {ALTERNATIVE_LABEL[a.id]} · 기준 {formatClock(a.forecast.basis.baseTime)} · ~{formatClock(a.forecast.validUntil)}
+              </Button>
+            </li>
+          ))}
+        </ul>
+        <Button size="sm" variant="ghost" onClick={onBack}>현재 상태로</Button>
+      </GlassPanel>
+    );
+  }
+
+  /* 시간축 — 눈금은 예측판 유효시각. 눈금 사이 값은 판단에 쓰지 않는다(IA §8) */
+  const timeline: Timeline = {
+    marks: [
+      { id: "now", at: now, label: "현재", kind: "now", value: 0, level: null },
+      ...forecast.marks.map<TimeMark>((m) => ({
+        id: m.validAt,
+        at: new Date(m.validAt),
+        label: `+${Math.round((new Date(m.validAt).getTime() - new Date(forecast.basis.baseTime).getTime()) / 60_000)}분`,
+        kind: "projection",
+        value: m.maxDepthM,
+        level: null,
+      })),
+    ],
+    nowIndex: 0,
+    leadMinutes: Math.max(0, Math.round((new Date(forecast.arrivalAt).getTime() - now.getTime()) / 60_000)),
+    unit: "m",
+  };
+  const current = timeline.marks.find((m) => m.id === mark.validAt);
+  const basis: AnalysisBasis = {
+    at: new Date(forecast.basis.generatedAt),
+    projectedAt: new Date(mark.validAt),
+    terms: [
+      { label: "모델", value: `${forecast.basis.modelName} ${forecast.basis.modelVersion}`, note: forecast.basis.calculationActor },
+      { label: "기준시각", value: formatClock(forecast.basis.baseTime), note: `입력 품질 ${forecast.basis.inputQuality}` },
+      { label: "불확실성", value: forecast.basis.uncertainty.grade, note: forecast.basis.uncertainty.sensitiveTo.join(" · ") },
+    ],
+    sources: forecast.basis.inputEventIds,
+    assumptions: forecast.basis.assumptions,
+  };
+
+  return (
+    <>
+      <GlassPanel className="pointer-events-auto shrink-0 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="min-w-0 truncate text-body font-semibold text-foreground">디지털트윈 · {ALTERNATIVE_LABEL[forecast.alternativeId]}</h2>
+          <div className="flex gap-1">
+            {alternatives.map((a) => (
+              <Button key={a.id} size="sm" variant={a.id === forecast.alternativeId ? "default" : "secondary"} onClick={() => onPickAlternative(a.id)}>{ALTERNATIVE_LABEL[a.id]}</Button>
+            ))}
+          </div>
+        </div>
+        {forecast.deltaSummary && <p className="mt-1 text-caption text-warning">기준 대비: {forecast.deltaSummary}</p>}
+      </GlassPanel>
+
+      <GlassPanel className="pointer-events-auto shrink-0">
+        <TimelinePanel
+          timeline={timeline}
+          at={current?.at}
+          mark={current}
+          onScrub={() => undefined}
+          onPick={(m) => { if (m.kind === "projection") onPickValidAt(m.id); }}
+          title="유효 시각"
+          formatAt={formatClock}
+          caption={`도달 예상 ${formatClock(forecast.arrivalAt)}`}
+        />
+      </GlassPanel>
+
+      <GlassPanel className="pointer-events-auto shrink-0 p-3">
+        <div className="mb-1 text-caption font-semibold text-foreground-muted">영향 결과 · {formatClock(mark.validAt)} 최대 {mark.maxDepthM.toFixed(2)} m</div>
+        <ul className="flex flex-col gap-1 text-caption">
+          {forecast.targets.map((t) => (
+            <li key={t.id} className="flex items-center gap-2">
+              <Tag className="w-[56px] justify-center">{t.kind}</Tag>
+              <span className="min-w-0 flex-1 truncate text-foreground">{t.label}</span>
+              <span className="shrink-0 font-mono text-foreground-muted">{t.arrivalAt ? formatClock(t.arrivalAt) : "-"}</span>
+              <Tag tone={t.exposure === "통제됨" ? "success" : t.exposure === "노출" ? "warning" : "danger"}>{t.exposure}</Tag>
+            </li>
+          ))}
+        </ul>
+      </GlassPanel>
+
+      <GlassPanel className="pointer-events-auto min-h-0 flex-1 overflow-y-auto">
+        <AnalysisBasisCard basis={basis} />
+      </GlassPanel>
+
+      <GlassPanel className="pointer-events-auto flex shrink-0 gap-2 p-2">
+        <Button variant="ghost" size="sm" className="flex-1" onClick={onBack}>현재 상태로</Button>
+        <Button size="sm" className="flex-1" onClick={onReview}>이 전망으로 대응 검토</Button>
+      </GlassPanel>
+    </>
   );
 }

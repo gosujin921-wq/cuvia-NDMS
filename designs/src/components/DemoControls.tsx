@@ -15,12 +15,20 @@
  *
  * 입력 중(input·textarea·contenteditable)에는 단축키가 먹지 않는다. 자연어 질의에
  * "0" 을 타이핑하다 트랙이 발사되면 안 된다.
+ *
+ * ── Phase 2 (숫자 9) ──
+ * 시간 경과 한 칸이다. 관측·결과가 도착하는 "세계" tick 만 밟고, 담당자 조작(검토 인수·확인·승인·
+ * 통제·종료)이 다음 칸이면 아무 일도 없다 — 그건 화면 버튼이 밟는다(CLAUDE.md 상태 엔진).
+ * I1 에서 세계 tick 을 엔진 타이머로 옮기면 이 키는 리허설 복구용으로만 남는다.
+ * /scr-* 가 걷히면 0 키 트랙 발사도 함께 사라진다.
  * ───────────────────────────────────────────── */
 
 import { useEffect } from "react";
 import { useScenario } from "../state/ScenarioProvider";
 
 const LAUNCH_KEY = "0";
+/** Phase 2 시간 경과 한 칸 */
+const TICK_KEY = "9";
 
 /** 이 키가 쏘는 편 (04 §15). 편이 늘면 목록 UI 로 되돌린다 */
 const LAUNCH_TRACK = "bongam" as const;
@@ -35,19 +43,20 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export function DemoControls() {
-  const { launchTrack } = useScenario();
+  const { launchTrack, nextTick, nextIsWorld } = useScenario();
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== LAUNCH_KEY) return;
+      if (e.key !== LAUNCH_KEY && e.key !== TICK_KEY) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       e.preventDefault();
-      launchTrack(LAUNCH_TRACK);
+      if (e.key === LAUNCH_KEY) launchTrack(LAUNCH_TRACK);
+      else if (nextIsWorld) nextTick();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [launchTrack]);
+  }, [launchTrack, nextTick, nextIsWorld]);
 
   /* 그릴 것이 없다 — 발사는 화면에 결과로만 나타난다 */
   return null;

@@ -1,157 +1,80 @@
 /* ─────────────────────────────────────────────
- * 위험도 판정 카드 — 03 화면정의서 §2 위험도 판정 · 04 §10
+ * 위험도 — 사건 작업공간 우측 판단 탭 (IA §7 · 01 §6.2 · 02 D3). Phase 1 위험도 판정 카드 자리
  *
- * 판단만 싣는다: 계측 단계 / 판단 근거 / 권고 대응(+사유) / 승인 대응등급.
- * 영향 분석(예상 수위·침수 범위)은 영향 분석 카드, 실행은 대응 절차 카드 몫이다(03 §2) —
- * 서로 다른 기능을 판정 카드 안에 섞지 않는다.
- *
- * 권고가 계측 단계와 같을 때는 단계명을 되풀이하지 않고 **"현 단계 유지"** 로 적고,
- * 사유(추가 영향 분석 필요)를 함께 단다.
- *
- * 승인 행은 **승인이 있은 뒤에만** 선다 — 빈 `—` 자리 표시는 없다. 승인은 SOP 대응의
- * [승인 · 실행]이 세우므로(SopPanel), 승인 전에 `— (승인 전)`을 세우면 이 카드 안에
- * 누를 곳 없는 자리가 하나 남는다. 아직 없는 값은 행째로 없다.
- *
- * "예측"이라는 라벨을 쓰지 않는다 — 보이는 것은 조건 시나리오와 산출 근거다(04 §10).
+ * 판단만 싣는다: 매트릭스 등급 배지·점수 / 4축 칩 / 지표별 기여도 / 위험·완화 요인 / 반대 근거·불확실성·누락.
+ * 4축은 별도 등급이 아니라 매트릭스 결과의 설명이다. 등급 배지는 종합상황 사건 카드와 같은 톤(RISK_GRADE_TONE).
+ * 판단 갱신(ASSESSMENT_UPDATED) 전에는 "근거 확인 중"으로 눕는다 — 값을 지어내지 않는다. 승인은 대응 탭이 든다.
  * ───────────────────────────────────────────── */
 
-import {
-  DISPLACEMENT_THRESHOLD,
-  RAIN_THRESHOLD,
-  WATER_THRESHOLDS,
-  levelSpec,
-  type AlertLevel,
-} from "../../../demo/levels";
-import type { RiskAssessment } from "../../../demo/risk";
-import type { AlertEvent } from "../../../demo/events";
+import { Badge, Tag, cn } from "@ds";
+import type { HazardAssessment } from "../../../model/incident";
+import { RISK_GRADE_TONE } from "../../../lib/status-tone";
 import { formatClock } from "../../../lib/datetime";
-import { useScenario } from "../../../state/ScenarioProvider";
 
-interface RiskCardProps {
-  event: AlertEvent;
-  risk: RiskAssessment;
-  /** 승인 대응등급 — 엔진이 든다. null = 승인 전 */
-  approved: AlertLevel | null;
-  /** [대응등급 {권고}로 상향] — 주인공 사건 + 선제 권고에서만 온다 */
-}
-
-export function RiskCard({ event, risk, approved }: RiskCardProps) {
-  /* 승인 시각은 엔진이 든다 — 트랙마다 다르므로 화면이 리터럴로 들 수 없다 */
-  const { approvedAt } = useScenario();
-  const { measured, scenario, recommended, preemptive, basis } = risk;
-  const measuredSpec = levelSpec(measured.level);
-  const recommendedSpec = levelSpec(recommended);
-  /* 승인 버튼은 여기 없다 (KISA · SK 기준).
-     되돌릴 수 없는 조치를 고르고 [승인 · 실행]을 누르는 그 행위가 승인이라, 그 앞에
-     [대응등급 상향]이라는 관문을 따로 두지 않는다. 이 카드가 하는 일은 판정을 보이는
-     것이고, 승인 등급은 실행이 세운다(SopPanel). 여기는 그 결과를 읽어 적을 뿐이다 */
-
-  /* 계측 근거 — 현재 단계가 초과한 발령 기준값 (04 §3) */
-  const base =
-    event.type === "수위"
-      ? WATER_THRESHOLDS[event.districtId]
-      : event.type === "강우"
-        ? RAIN_THRESHOLD
-        : DISPLACEMENT_THRESHOLD;
-  const exceeded = base?.[measured.level];
+export function RiskCard({ assessment, compact = false }: { assessment: HazardAssessment | null; compact?: boolean }) {
+  if (!assessment) {
+    return (
+      <section className="flex flex-col px-3 py-2.5" aria-label="위험도">
+        <h2 className="text-body font-semibold text-foreground">위험도</h2>
+        <p className="mt-1 text-caption text-foreground-muted">근거 확인 중 · 판단은 확인 뒤 갱신</p>
+      </section>
+    );
+  }
+  const m = assessment.matrix;
+  const tone = RISK_GRADE_TONE[m.grade];
+  const top = [...m.contributions].sort((a, b) => b.contribution - a.contribution);
+  const shown = compact ? top.slice(0, 3) : top;
 
   return (
-    <section className="flex flex-col px-3 py-2.5" aria-label="위험도 판정">
-      <h2 className="text-body font-semibold text-foreground">위험도 판정</h2>
+    <section className="flex flex-col px-3 py-2.5" aria-label="위험도">
+      <header className="flex items-baseline justify-between">
+        <h2 className="text-body font-semibold text-foreground">{compact ? "판단 요약" : "위험도"}</h2>
+        <span className="text-caption text-foreground-subtle">{m.ruleId} {m.ruleVersion} · {formatClock(m.computedAt)}</span>
+      </header>
 
-      <dl className="mt-1.5 flex flex-col">
-        {/* 1층 — 계측 단계. 지금 값이 정한다 */}
-        <Row label="계측 단계">
-          <span className="font-medium" style={{ color: measuredSpec.color }}>
-            {measuredSpec.label}
-          </span>
-          <span className="ml-auto font-mono text-foreground">
-            {measured.value} {event.unit}
-          </span>
-          <span className="ml-2 shrink-0 font-mono text-foreground-subtle">
-            {formatClock(measured.stageAt)}
-          </span>
-        </Row>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <Badge variant={tone.badge}>{m.grade}</Badge>
+        <span className="font-mono text-body font-semibold text-foreground">{m.score.toFixed(2)}</span>
+        <span className="ml-auto flex flex-wrap gap-1">
+          <Tag>심각 {assessment.severity}</Tag>
+          <Tag tone={assessment.urgency === "즉시" ? "warning" : "neutral"}>긴급 {assessment.urgency}</Tag>
+          <Tag>확실 {assessment.certainty}</Tag>
+          <Tag tone={assessment.trend === "악화" ? "danger" : "neutral"}>{assessment.trend}</Tag>
+        </span>
+      </div>
 
-        {/* 2층 — 판단 근거. 시나리오가 생기면 산출 근거(04 §10), 그 전엔 계측 근거 */}
-        <Row label="판단 근거">
-          <span className="min-w-0 flex-1 text-foreground-muted">
-            {basis ?? (
-              <>
-                {event.type} {measuredSpec.label} 기준
-                {exceeded !== undefined && (
-                  <>
-                    (<span className="font-mono text-foreground">{exceeded}</span>)
-                  </>
-                )}{" "}
-                초과
-              </>
-            )}
-          </span>
-        </Row>
-
-        <div className="my-1.5 border-t border-border" aria-hidden />
-
-        {/* 3층 — 권고 대응. 계측과 같으면 "현 단계 유지" — 단계명을 되풀이하지 않는다.
-            사유 줄이 항상 따른다: 선제면 조건 시나리오, 아니면 다음 할 일(영향 분석) */}
-        <Row label="권고 대응">
-          {preemptive ? (
-            <span className="font-medium" style={{ color: recommendedSpec.color }}>
-              {recommendedSpec.label}
-              <span className="ml-1.5 font-normal text-caption text-foreground-muted">
-                · 선제 대응 권고
-              </span>
+      {/* 지표별 기여도 — 무엇이 위험을 만들었나. 막대 폭 = 기여도 */}
+      <ul className="mt-2 flex flex-col gap-1">
+        {shown.map((c) => (
+          <li key={c.indicator} className="flex items-center gap-2 text-caption">
+            <span className="w-[88px] shrink-0 truncate text-foreground-muted">{c.indicator}</span>
+            <span className="h-1.5 flex-1 rounded bg-surface-raised">
+              <span className={cn("block h-full rounded", c.degraded ? "bg-warning" : "bg-primary")} style={{ width: `${Math.round(c.contribution * 100 / 0.3)}%` }} />
             </span>
-          ) : (
-            <span className="font-medium text-foreground">현 단계 유지</span>
-          )}
-        </Row>
-        <Row label="권고 사유">
-          <span className="min-w-0 flex-1 text-foreground-muted">
-            {scenario ? (
-              <>
-                {scenario.conditionLabel} <span className="font-mono text-foreground">{scenario.peak} EL.m</span>{" "}
-                도달 예상 ({formatClock(new Date(scenario.peakAt))})
-                {preemptive && (
-                  <span className="ml-1 font-medium" style={{ color: recommendedSpec.color }}>
-                    {/* 권고가 발령 기준표가 아니라 지역 영향에서 올라온 경우 그 근거를
-                        적는다(04 §15-9). 봉암은 계측 대피 기준(5.83)에 닿지 않는데도
-                        대피를 권고하므로, "기준 초과"라고만 적으면 거짓이 된다 */}
-                    · {risk.impactBasis ?? `${recommendedSpec.label} 기준 초과`}
-                  </span>
-                )}
-              </>
-            ) : (
-              "추가 영향 분석 필요"
-            )}
-          </span>
-        </Row>
+            <span className="w-[36px] shrink-0 text-right font-mono text-foreground">{c.contribution.toFixed(2)}</span>
+            <span className="w-[86px] shrink-0 truncate text-foreground-subtle">{c.band}{c.degraded ? " · 품질↓" : ""}</span>
+          </li>
+        ))}
+      </ul>
 
-        {/* 4층 — 승인 대응등급. 확정은 담당자가 하고, 값을 세우는 것은 SOP 의
-            [승인 · 실행]이다. 승인 전에는 행 자체가 없다 — 이 카드에 누를 것이 없어
-            "— (승인 전)"은 갈 곳 없는 빈 자리 표시가 된다(03 §위험도 판정) */}
-        {approved && (
-          <Row label="승인 대응등급">
-            <span className="font-medium" style={{ color: levelSpec(approved).color }}>
-              {levelSpec(approved).label}
-            </span>
-            {/* 승인 시각은 엔진이 든다 — 리터럴을 박으면 트랙마다 어긋난다 */}
-            <span className="ml-1.5 text-caption text-foreground-muted">
-              {approvedAt ? ` · ${formatClock(approvedAt)}` : ""} · 상황실 담당
-            </span>
-          </Row>
-        )}
-      </dl>
-
+      {!compact && (
+        <dl className="mt-2 flex flex-col gap-1 border-t border-border pt-2 text-caption">
+          <Row label="위험 요인">{assessment.riskFactors.join(" · ")}</Row>
+          <Row label="완화 요인">{assessment.mitigatingFactors.join(" · ")}</Row>
+          <Row label="반대 근거">{assessment.counterEvidence.join(" · ") || "-"}</Row>
+          <Row label="불확실성">{assessment.uncertainties.join(" · ")}</Row>
+          <Row label="누락 정보">{assessment.missingData.join(" · ")}</Row>
+        </dl>
+      )}
     </section>
   );
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline gap-2 py-0.5 text-caption">
-      <dt className="w-[72px] shrink-0 text-foreground-subtle">{label}</dt>
-      <dd className="flex min-w-0 flex-1 items-baseline">{children}</dd>
+    <div className="flex items-baseline gap-2 py-0.5">
+      <dt className="w-[60px] shrink-0 text-foreground-subtle">{label}</dt>
+      <dd className="min-w-0 flex-1 text-foreground-muted">{children}</dd>
     </div>
   );
 }

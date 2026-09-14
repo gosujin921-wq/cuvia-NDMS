@@ -12,11 +12,36 @@
 export const MAP_STYLE_URL =
   "https://api.maptiler.com/maps/019cd585-7992-7faa-9a87-243ab5ce8247/style.json?key=WPWmpNf4y5nzKDA7mQXe";
 
-/** 한국 범위 밖으로 나가지 않게 막는다 */
+import { CITY_GU_SHAPES } from "./city-shape";
+
+/** 한국 범위 — 마스크 바깥 링과 예비 상한 */
 export const KOREA_BOUNDS: [[number, number], [number, number]] = [
   [124.5, 31.5],
   [132.0, 43.0],
 ];
+
+/**
+ * 창원시 범위 — 5개 구 경계 링의 외곽 상자 + 여백. 지도가 이 밖으로 나가지 않는다(maxBounds).
+ * 여백은 가장자리 지구(내서읍 광려천 · 진해 용원항)의 이름표와 패널 여백이 들어올 만큼이다.
+ * 경계 링 자체는 시각 배경 전용 근사 형상이다(city-shape.ts 머리말) — 포함 판정에 쓰지 않는다.
+ */
+const CITY_MARGIN_DEG = 0.35;
+export const CITY_BOUNDS: [[number, number], [number, number]] = (() => {
+  let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
+  for (const gu of CITY_GU_SHAPES) for (const ring of gu.rings) for (const [x, y] of ring) {
+    if (x < west) west = x; if (x > east) east = x; if (y < south) south = y; if (y > north) north = y;
+  }
+  return [[west - CITY_MARGIN_DEG, south - CITY_MARGIN_DEG], [east + CITY_MARGIN_DEG, north + CITY_MARGIN_DEG]];
+})();
+
+/**
+ * 창원 밖을 덮는 마스크 — 색은 바닥(Background)과 같고 반투명으로 얹는다.
+ *
+ * 불투명으로 덮으면 바다·인접 해안까지 지워져 시 하나가 허공에 뜬 모양이 되고, 어느 지역인지
+ * 읽히지 않는다(2026-09-14). 관할 밖은 흐리게 남겨 위치 맥락만 주고, 강조는 창원 안에만 둔다.
+ */
+export const CITY_MASK_COLOR = "hsl(228, 8%, 13%)";
+export const CITY_MASK_OPACITY = 0.6;
 
 /**
  * 창원시 중심 — 04 데모 데이터 §1.

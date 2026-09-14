@@ -1,95 +1,95 @@
 /* ─────────────────────────────────────────────
- * 그 외 위험지구 목록 — 03 화면정의서 §1 좌측
+ * 지구 목록 — 종합상황 좌 2 (초안 §2 · CSMS SiteList 문법)
  *
- * 주요 재난 카드에 선 지구를 뺀 나머지를 세로로 놓고, 진행 중인 이벤트가 있는 지구를
- * 위로 올린다. 아침에 화면을 켠 담당자가 목록을 훑어 내려가지 않고 맨 위에서 오늘 볼
- * 것을 만나야 한다.
- *
- * 항목을 누르면 그 지구의 조기경보 화면(SCR-02)으로 넘어간다.
+ * 정렬은 위험 → 주의 → 정상, 동률은 최근 사건. 행은 상태 점 · 지구명 · 유형 / 두 번째 줄에 진행 사건
+ * (`등급 사건 제목`) 또는 감시 사유, 그도 없으면 관측 대상. 줄을 비우면 목록 높이가 들쭉날쭉해진다.
+ * 메인 사건이 도는 동안 그 줄에 위험도 색 테두리 + 후광. 펄스는 지도 이름표 몫이라 여기엔 없다.
+ * 푸터 범례는 목록이 스크롤돼도 제자리에 남는다.
  * ───────────────────────────────────────────── */
 
 import { useMemo } from "react";
 import { Icon } from "@iconify/react";
+import { cn } from "@ds";
 import { DISTRICTS, type District } from "../../../demo/districts";
-import { HERO_EVENT_ID, activeEventOfAt, eventViewAt } from "../../../demo/events";
-import { processStateAt } from "../../../demo/sop";
+import { districtStatusAt, gradeOf, topIncidentByDistrictAt, watchTargetsAt } from "../../../model/selectors";
+import { DISTRICT_STATUS_ORDER, DISTRICT_STATUS_TONE, RISK_GRADE_TONE } from "../../../lib/status-tone";
 import { useScenario } from "../../../state/ScenarioProvider";
-import { levelSpec } from "../../../demo/levels";
+import { DistrictStatusLegend } from "./DistrictStatusLegend";
 
-
-/** 정렬 가중치 — 단계가 높은 지구를 위로 */
-const LEVEL_WEIGHT: Record<string, number> = { evacuate: 3, warning: 2, advisory: 1 };
-
-export function DistrictList({
-  onOpen,
-  excludeIds,
-}: {
-  onOpen: (district: District) => void;
-  /** 주요 재난 카드에 이미 선 지구. 같은 지구를 화면에 두 번 세우지 않는다(03 §1) */
-  excludeIds?: string[];
-}) {
-  const { now, approvedResponseLevel } = useScenario();
+export function DistrictList({ onOpen }: { onOpen: (district: District) => void }) {
+  const { demoNow: now, heroIncidentId } = useScenario();
+  const status = useMemo(() => districtStatusAt(now), [now]);
+  const top = useMemo(() => topIncidentByDistrictAt(now), [now]);
+  const watched = useMemo(() => new Map(watchTargetsAt(now).map((w) => [w.incident.legacyDistrictId, w])), [now]);
   const ordered = useMemo(
     () =>
-      DISTRICTS.filter((district) => !excludeIds?.includes(district.id)).sort((a, b) => {
-        const ea = activeEventOfAt(a.id, now);
-        const eb = activeEventOfAt(b.id, now);
-        const wa = ea ? LEVEL_WEIGHT[eventViewAt(ea, now).level] : 0;
-        const wb = eb ? LEVEL_WEIGHT[eventViewAt(eb, now).level] : 0;
-        if (wb !== wa) return wb - wa;
-        /* 단계 동률이면 최신 발생순 — 시연 시작(셋 다 주의보)에 주인공 서항이 맨 위에 선다 */
-        const ta = ea ? new Date(ea.raisedAt).getTime() : 0;
-        const tb = eb ? new Date(eb.raisedAt).getTime() : 0;
-        if (tb !== ta) return tb - ta;
-        return a.id === "seohang" ? -1 : b.id === "seohang" ? 1 : 0;
+      DISTRICTS.slice().sort((a, b) => {
+        const ra = DISTRICT_STATUS_ORDER.indexOf(status.get(a.id) ?? "정상");
+        const rb = DISTRICT_STATUS_ORDER.indexOf(status.get(b.id) ?? "정상");
+        if (ra !== rb) return ra - rb;
+        const ta = top.get(a.id)?.lastUpdatedAt ?? "";
+        const tb = top.get(b.id)?.lastUpdatedAt ?? "";
+        if (ta !== tb) return tb.localeCompare(ta);
+        if (watched.has(a.id) !== watched.has(b.id)) return watched.has(a.id) ? -1 : 1;
+        return a.name.localeCompare(b.name, "ko");
       }),
-    [now, excludeIds],
+    [status, top, watched],
   );
 
   return (
-    <ul className="flex flex-col gap-1 p-2">
-      {ordered.map((district) => {
-        const event = activeEventOfAt(district.id, now);
-        const view = event ? eventViewAt(event, now) : null;
-        const spec = view ? levelSpec(view.level) : null;
-
-        return (
-          <li key={district.id}>
-            <button
-              type="button"
-              onClick={() => onOpen(district)}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-md border-none bg-transparent px-2.5 py-2 text-left transition-colors hover:bg-surface-raised"
-            >
-              <span
-                className={spec ? "size-2 shrink-0 animate-pulse rounded-full" : "size-2 shrink-0 rounded-full"}
-                style={{ backgroundColor: spec ? spec.color : "var(--color-foreground-subtle)" }}
-                aria-hidden
-              />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="flex items-center gap-1.5">
-                  <span className="truncate text-body font-medium text-foreground">
-                    {district.name}
+    <section className="flex min-h-0 flex-1 flex-col" aria-label="지구 목록">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
+        <header className="flex shrink-0 items-baseline justify-between">
+          <h2 className="text-body font-semibold text-foreground">지구</h2>
+          <span className="text-caption text-foreground-muted">{DISTRICTS.length}곳</span>
+        </header>
+        <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+          {ordered.map((d) => {
+            const tone = DISTRICT_STATUS_TONE[status.get(d.id) ?? "정상"];
+            const v = top.get(d.id);
+            const grade = v ? gradeOf(v) : null;
+            const watch = watched.get(d.id);
+            const highlighted = v?.incident.incidentId === heroIncidentId;
+            const hl = grade ? RISK_GRADE_TONE[grade] : RISK_GRADE_TONE.주의;
+            return (
+              <li key={d.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(d)}
+                  className={cn(
+                    "flex w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2.5 py-2 text-left transition-[background-color,border-color,box-shadow] duration-300 hover:bg-surface-raised",
+                    highlighted ? cn("border ring-2", hl.stroke, hl.halo) : "border-none",
+                  )}
+                >
+                  <span className={cn("size-2 shrink-0 rounded-full", tone.dot)} aria-hidden />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate text-body font-medium text-foreground">{d.name}</span>
+                      <span className="shrink-0 text-caption text-foreground-muted">{d.kind}</span>
+                    </span>
+                    <span className="truncate text-caption text-foreground-muted">
+                      {v ? (
+                        <>
+                          {grade && <span className={RISK_GRADE_TONE[grade].text}>{grade} </span>}
+                          {v.incident.title}
+                        </>
+                      ) : watch ? (
+                        <><span className="text-primary-text">감시</span> · {watch.alert?.reason ?? watch.reasons[0]?.summary}</>
+                      ) : (
+                        d.target
+                      )}
+                    </span>
                   </span>
-                  <span className="shrink-0 text-caption text-foreground-subtle">
-                    {district.kind}
-                  </span>
-                </span>
-                <span className="truncate text-caption text-foreground-muted">
-                  {event && view && spec
-                    ? /* 재난유형은 행에서 반복하지 않는다(03 §1). 주요 재난 카드가 이미 말했다 */
-                      `${spec.label} ${view.value} ${event.unit} · ${processStateAt(event, now, event.id === HERO_EVENT_ID ? approvedResponseLevel : null)}`
-                    : district.target}
-                </span>
-              </span>
-              <Icon
-                icon="mdi:chevron-right"
-                className="size-4 shrink-0 text-foreground-subtle"
-                aria-hidden
-              />
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+                  <Icon icon="mdi:chevron-right" className="size-4 shrink-0 text-foreground-subtle" aria-hidden />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+      <footer className="shrink-0 border-t border-border">
+        <DistrictStatusLegend />
+      </footer>
+    </section>
   );
 }

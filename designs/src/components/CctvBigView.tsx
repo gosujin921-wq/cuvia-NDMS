@@ -36,10 +36,25 @@ const TOP_SCRIM =
     (CctvStill 의 질감 색과 같은 취급), 테마가 바뀌어도 같아야 한다. 원본 값 그대로 */
 const OFFLINE_SURFACE = "#393a42";
 
-export function CctvBigView({ device, onClose }: { device: Device; onClose: () => void }) {
-  const { now } = useScenario();
-  const scene = cctvSceneOf(device);
-  const offline = device.status !== "정상";
+/** Phase 2 채널 — 장비 대장 없이 스틸·장면·분석 문장으로 선다 */
+export interface CctvChannelView {
+  name: string;
+  address: string;
+  scene: string;
+  still: string;
+  /** 장면 분석이 있으면 라벨에 함께 세운다 */
+  analysis?: string;
+  at: Date;
+}
+
+export function CctvBigView({ device, channel, onClose }: { device?: Device; channel?: CctvChannelView; onClose: () => void }) {
+  const { now: phase1Now } = useScenario();
+  const now = channel?.at ?? phase1Now;
+  const scene = channel ? { scene: channel.scene, bearing: channel.analysis ?? "" } : device ? cctvSceneOf(device) : undefined;
+  const offline = device ? device.status !== "정상" : false;
+  const name = channel?.name ?? device?.name ?? "";
+  const address = channel?.address ?? device?.address ?? "";
+  const status = device?.status ?? "";
 
   return (
     <Modal
@@ -68,8 +83,8 @@ export function CctvBigView({ device, onClose }: { device: Device; onClose: () =
             mono 로 세우면 대체 서체로 떨어져 도크·스트립의 같은 이름과 어긋난다 */}
         <div className="flex items-center gap-2 pr-8 pb-2">
           <ModalTitle className="min-w-0 flex-1 truncate text-body font-semibold text-foreground">
-            {device.name}
-            <span className="ml-1.5 font-normal text-muted-foreground">{device.address}</span>
+            {name}
+            <span className="ml-1.5 font-normal text-muted-foreground">{address}</span>
           </ModalTitle>
         </div>
 
@@ -87,7 +102,7 @@ export function CctvBigView({ device, onClose }: { device: Device; onClose: () =
                 />
               </div>
             ) : (
-              <CctvStill device={device} className="absolute inset-0" />
+              <CctvStill device={device} src={channel ? { still: channel.still } : undefined} className="absolute inset-0" />
             )}
 
             <div
@@ -98,7 +113,7 @@ export function CctvBigView({ device, onClose }: { device: Device; onClose: () =
 
             <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-caption backdrop-blur-sm">
               {offline ? (
-                <span className="font-medium text-white/90">{device.status}</span>
+                <span className="font-medium text-white/90">{status}</span>
               ) : (
                 <>
                   <span
@@ -110,7 +125,7 @@ export function CctvBigView({ device, onClose }: { device: Device; onClose: () =
                     <>
                       <span className="text-white/40">·</span>
                       <span className="text-white/70">
-                        {scene.scene} · {scene.bearing}
+                        {scene.scene}{scene.bearing && ` · ${scene.bearing}`}
                       </span>
                     </>
                   )}

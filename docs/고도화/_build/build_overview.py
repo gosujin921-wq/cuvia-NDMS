@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """docs/고도화/overview.html 생성기.
 
-다섯 정본 MD(README · 01 · 02 · 03 · IA)에서 절 · 표 · 텍스트 그림을 뽑아 한 파일로 만든다.
+여섯 정본 MD(README · 01 · 02 · 03 · 04 · IA)에서 절 · 표 · 텍스트 그림을 뽑아 한 파일로 만든다.
 사람이 타이핑하는 내용은 없다. 정본이 바뀌면 다시 돌린다:
 
     python3 docs/고도화/_build/build_overview.py            # → docs/고도화/overview.html
@@ -24,6 +24,7 @@ DOCS = {
     "01": "01_이벤트·사건모델.md",
     "02": "02_대표데모시나리오.md",
     "03": "03_유형별디지털트윈.md",
+    "04": "04_사건작업공간_화면상세.md",
     "IA": "CUVIA_NDMS_기능및정보구조도.md",
 }
 TEXT = {k: (ROOT / v).read_text(encoding="utf-8") for k, v in DOCS.items()}
@@ -190,8 +191,8 @@ def mm_label(s):
     return s.replace('"', "'")
 
 
-def mermaid_architecture():
-    """01 §1 텍스트 흐름도 → flowchart TD. 들여쓰기 없는 줄이 노드, '↓' 줄이 화살표(뒤의 말은 간선 라벨)."""
+def architecture_flow():
+    """01 §1 텍스트 흐름도를 노드와 간선 설명으로 읽는다."""
     _, body = section("01", "1")
     block, on = [], False
     for l in body:
@@ -210,6 +211,12 @@ def mermaid_architecture():
         m = re.match(r"^(\S+(?: \S+)*?)\s{2,}(.*)$", l)
         name, desc = (m.group(1), m.group(2)) if m else (l.strip(), "")
         nodes.append((name.strip(), desc.strip()))
+    return nodes, edges
+
+
+def mermaid_architecture():
+    """01 §1 텍스트 흐름도 → flowchart TD."""
+    nodes, edges = architecture_flow()
     out = ["flowchart TD"]
     for i, (name, desc) in enumerate(nodes):
         lab = name if not desc else f"{name}<br/><small>{desc}</small>"
@@ -220,19 +227,59 @@ def mermaid_architecture():
     return "\n".join(out)
 
 
+def product_flow_spine():
+    """첫 화면용 핵심 제품 흐름. 문구는 01 §1에서만 가져온다."""
+    nodes, edges = architecture_flow()
+    items = []
+    for i, (name, desc) in enumerate(nodes):
+        edge = edges[i - 1] if i > 0 and i - 1 < len(edges) else ""
+        connector = (
+            f'<div class="spine-edge">{html.escape(edge) if edge else "↓"}</div>'
+            if i > 0 else ""
+        )
+        items.append(
+            connector
+            + f'<div class="spine-step"><span>{i + 1:02d}</span><div><strong>{html.escape(name)}</strong>'
+            + (f'<small>{html.escape(desc)}</small>' if desc else "")
+            + '</div></div>'
+        )
+    return '<div class="flow-spine" aria-label="CUVIA 핵심 제품 흐름">' + "".join(items) + '</div>'
+
+
 def mermaid_state():
-    """01 §7.4 전환표 → stateDiagram-v2. 간선 라벨은 표의 행 번호. 표는 옆에 같이 낸다."""
+    """01 §7.4 전환표 → 기본 흐름과 예외·재개 흐름. 상세 조건은 접은 표로 함께 낸다."""
     header, rows = first_table("01", "7.4", ["현재 상태", "전환 조건", "다음 상태", "확정 주체"])
-    out = ["stateDiagram-v2", "  direction TB", "  [*] --> 후보"]
-    numbered = []
-    for i, (cur, cond, nxt, who) in enumerate(rows, 1):
-        numbered.append([str(i), cur, cond, nxt, who])
-        for a in re.split(r"·", cur):
-            for b in re.split(r" 또는 ", nxt):
-                out.append(f"  {a.strip()} --> {b.strip()} : {i}")
-    for terminal in ("오탐", "병합됨"):
-        out.append(f"  {terminal} --> [*]")
-    return "\n".join(out), (["#"] + header, numbered)
+    required = {
+        ("후보", "확인중"), ("후보", "오탐"), ("후보·확인중·확인됨", "병합됨"),
+        ("확인중", "확인됨"), ("확인중", "오탐"), ("확인됨", "대응중"),
+        ("대응중", "통제"), ("통제", "종료"), ("종료", "확인중 또는 대응중"),
+    }
+    actual = {(cur, nxt) for cur, _, nxt, _ in rows}
+    if actual != required:
+        raise SystemExit("[01_이벤트·사건모델.md] §7.4 전환 행이 바뀌었다. overview 상태도를 다시 검토해야 한다.")
+
+    primary = "\n".join([
+        "flowchart TD",
+        '  START((시작)) --> CAND["후보"]',
+        '  CAND -->|후보 검토 시작·업무 인수| REVIEW["확인중"]',
+        '  REVIEW -->|실제 대응 사건 확인| CONFIRMED["확인됨"]',
+        '  CONFIRMED -->|대응 승인·조치 시작| RESPONDING["대응중"]',
+        '  RESPONDING -->|확대 정지·감시 전환| CONTROLLED["통제"]',
+        '  CONTROLLED -->|종료 조건·잔여사항 정리| CLOSED["종료"]',
+    ])
+    exceptions = "\n".join([
+        "flowchart TD",
+        '  FALSE_SRC["오탐 판정 가능 상태<br/><small>후보 · 확인중</small>"]',
+        '  FALSE_SRC -->|시험·중복·오경보 판정| FALSE["오탐<br/><small>기록 보존</small>"]',
+        '  FALSE ~~~ MERGE_SRC',
+        '  MERGE_SRC["병합 가능 상태<br/><small>후보 · 확인중 · 확인됨</small>"]',
+        '  MERGE_SRC -->|같은 원인·영향·업무 단위| MERGED["병합됨<br/><small>대상 사건으로 연결</small>"]',
+        '  MERGED ~~~ CLOSED',
+        '  CLOSED["종료"] -->|같은 원인 지속·위험 징후 재발| REOPEN{"재개"}',
+        '  REOPEN -->|확인중으로 재개| REVIEW["확인중"]',
+        '  REOPEN -->|대응중으로 재개| RESPONDING["대응중"]',
+    ])
+    return primary, exceptions, (header, rows)
 
 
 def demo_transitions():
@@ -311,35 +358,21 @@ def mermaid_ia():
 
 
 def mermaid_hazard():
-    """03 §13 재난명↔유형군 표 → graph LR. 주 유형군 실선, 결합 점선."""
+    """03 §13 재난명↔유형군 표 → 재난별 세로 묶음. 주 유형군 실선, 결합 점선."""
     header, rows = first_table("03", "13", ["재난·상황", "주 유형군", "결합 가능 유형군", "비고"])
-    _, grows = first_table("03", "5", ["유형군"])
-    gname = {}
-    for r in grows:
-        code = r[0].split(".")[0].strip()
-        gname[code] = r[0].strip()
-    out = ["flowchart TB", "  subgraph H[재난 · 상황]", "    direction TB"]
-    for hz, *_ in rows:
-        out.append(f'    H_{mm_id(hz)}["{mm_label(hz)}"]')
-    out.append("  end")
-    out.append("  subgraph G[트윈 유형군]")
-    out.append("    direction TB")
-    out.append('    G_W(["기상 조건<br/><small>사건 아님</small>"])')
-    for code in sorted(gname):
-        out.append(f'    G_{code}["{mm_label(gname[code])}"]')
-    out.append("  end")
-    for hz, main, combo, note in rows:
-        src = f"H_{mm_id(hz)}"
-        if main.startswith("해당 없음"):
-            out.append(f"  {src} --> G_W")
+    out = ["flowchart TD"]
+    tails = []
+    for i, (hz, main, combo, note) in enumerate(rows):
+        h, m, c = f"H{i}", f"M{i}", f"C{i}"
+        out.append(f'  {h}["<b>{mm_label(hz)}</b>"]')
+        out.append(f'  {h} -->|주 유형군| {m}["{mm_label(main)}"]')
+        if combo and combo not in ("없음", "-"):
+            out.append(f'  {m} -.->|결합 가능| {c}["{mm_label(combo)}"]')
+            tails.append(c)
         else:
-            out.append(f"  {src} --> G_{main.split()[0][0]}")
-        for c in [x.strip() for x in combo.split(",")]:
-            code = c.split()[0][0]
-            if code in gname:
-                out.append(f"  {src} -.-> G_{code}")
-            elif c.startswith("모든"):
-                out.append(f'  {src} -.->|모든 유형| G_A')
+            tails.append(m)
+        if i > 0:
+            out.append(f"  {tails[i - 1]} ~~~ {h}")
     return "\n".join(out), (header, rows)
 
 
@@ -394,12 +427,14 @@ _, s3 = section("01", "3")
 _, s6 = section("01", "6")
 _, s71 = section("01", "7.1")
 _, s8 = section("01", "8")
-state_mm, (sh, srows) = mermaid_state()
+state_primary_mm, state_exception_mm, (sh, srows) = mermaid_state()
 parts.append(sec_html("incident", "2", "이벤트에서 사건으로", (
     "<h3>먼저 가르는 세 축</h3>" + render_md(s3)
-    + "<h3>사건 처리상태와 전환</h3>"
-    + mermaid_block(state_mm, "간선의 숫자는 아래 표의 행 번호")
-    + render_table(sh, srows)
+    + "<h3>사건 처리상태 기본 흐름</h3>"
+    + mermaid_block(state_primary_mm, "대표 사건이 후보에서 종료까지 진행하는 주 흐름")
+    + "<h3>예외 판정과 종료 후 재개</h3>"
+    + mermaid_block(state_exception_mm, "오탐·병합은 기록을 보존하고, 종료 사건은 확인중 또는 대응중으로 재개")
+    + details("전환 조건 상세", render_table(sh, srows))
     + "<h3>사건 구조</h3>" + render_md(s8)
     + details("표준 이벤트 유형 22개 (01 §6)", render_md(s6))
     + details("사건 후보가 만들어지는 조건 (01 §7.1)", render_md(s71))
@@ -440,6 +475,7 @@ for key, label in (("6", "IA-01 종합상황"), ("7", "IA-02 사건 작업공간
     space_blocks.append(details(t, render_md(b, skip_headings=False)))
 parts.append(sec_html("ia", "4", "업무 공간과 화면 관계", (
     mermaid_block(ia_mm, "상시 메뉴, 사건 내부 화면 모드와 팝업을 구분한 IA §5 흐름")
+    + '<p>SCR-02의 지도·관련 이벤트·판단·전망·대응 집중 팝업 배치는 ' + src("04", "2") + '에서 확인한다.</p>'
     + render_table(ih, irows, "wide")
     + details("전체 메뉴·화면 구조 (IA §4)", render_md(ia4))
     + details("라우트 계약·전환·예외 처리 (IA §5.2)", render_md(subsection(ia5, "5.2 Phase 2 라우트 계약"), skip_headings=False))
@@ -467,7 +503,7 @@ parts.append(sec_html("twin", "5", "유형별 디지털트윈", (
     render_md(t2)
     + "<h3>Phase 2 트윈 유형군</h3>" + render_md(t5)
     + "<h3>재난명과 유형군</h3>"
-    + mermaid_block(hz_mm, "실선은 주 유형군, 점선은 결합 가능 유형군. 03 §13")
+    + mermaid_block(hz_mm, "재난별로 주 유형군을 먼저 읽고, 점선의 결합 가능 유형군을 확인한다. 03 §13")
     + "<h3>복합재난</h3>" + render_md(t14)
     + "<h3>준비도</h3>" + render_md(t15)
     + "<h3>대표 데모 밖 비교 유형</h3>" + render_md(subsection(t16, "Phase 2 비교 기준안"))
@@ -556,6 +592,15 @@ nav.toc .meta{margin-top:18px;padding:10px;border-top:1px solid var(--line);colo
 main{min-width:0;max-width:980px}
 h1{font-size:clamp(28px,4vw,42px);font-weight:600;line-height:1.12;letter-spacing:-.035em;margin:0 0 10px;text-wrap:balance}
 .lede{color:var(--muted);margin:0 0 52px;max-width:64ch;font-size:16px}
+.flow-intro{margin:0 0 64px;padding:24px 26px;background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--accent)}
+.flow-intro h2{margin:0 0 4px;font-size:21px;letter-spacing:-.02em}
+.flow-intro>p{margin-bottom:22px;color:var(--muted)}
+.flow-spine{display:flex;flex-direction:column;max-width:720px}
+.spine-step{display:grid;grid-template-columns:42px 1fr;gap:12px;align-items:start}
+.spine-step>span{font-family:var(--mono);font-size:11px;color:var(--accent);padding-top:4px}
+.spine-step strong{display:block;font-size:16px;font-weight:600}
+.spine-step small{display:block;margin-top:2px;color:var(--muted);font-size:13px;line-height:1.45}
+.spine-edge{margin:5px 0 5px 19px;padding:5px 0 5px 34px;border-left:1px solid var(--accent);color:var(--accent-ink);font-size:12px}
 section{margin:0 0 72px;padding-top:8px}
 section>header{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:18px}
 section>header .num{font-family:var(--mono);font-size:13px;color:var(--accent);letter-spacing:.06em}
@@ -599,7 +644,12 @@ body = f"""
 <nav class="toc" aria-label="문서 목차">{toc_html}<div class="meta">정본에서 생성 · {built}<br/>{mtimes}<br/>값이 다르면 MD가 우선한다</div></nav>
 <main id="main">
 <h1>CUVIA NDMS Phase 2 고도화 개요</h1>
-<p class="lede">제품 방향, 이벤트에서 사건으로 이어지는 구조, 대표 데모와 화면 관계를 다섯 정본에서 모아 보는 읽기 전용 뷰어. 상세 판단은 각 절의 근거 링크에서 확인한다.</p>
+<p class="lede">한 건의 재난 사건으로 데이터 수집부터 위험 판단, 예측, 대응과 보고까지 보여주는 Phase 2 방향.</p>
+<div class="flow-intro">
+<h2>한눈에 보는 제품 흐름</h2>
+<p>데모와 이후 제품 개발이 공통으로 따라갈 중심 동선</p>
+{product_flow_spine()}
+</div>
 {''.join(parts)}
 </main>
 </div>

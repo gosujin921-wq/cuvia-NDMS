@@ -17,7 +17,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { CITY_CENTER, KOREA_BOUNDS, MAP_VIEW_DEFAULTS } from "./map-config";
+import { CITY_BOUNDS, CITY_CENTER, CITY_MASK_COLOR, CITY_MASK_OPACITY, KOREA_BOUNDS, MAP_VIEW_DEFAULTS } from "./map-config";
+import { CITY_GU_SHAPES } from "./city-shape";
 import { loadPatchedStyle } from "./map-style";
 
 interface UseMapLibreOptions {
@@ -60,7 +61,8 @@ export function useMapLibre(
         zoom: options.zoom ?? MAP_VIEW_DEFAULTS.zoom,
         minZoom: MAP_VIEW_DEFAULTS.minZoom,
         maxZoom: MAP_VIEW_DEFAULTS.maxZoom,
-        maxBounds: KOREA_BOUNDS,
+        /* 창원시 밖으로 나가지 않는다. 다른 시는 마스크가 덮는다(아래 load) */
+        maxBounds: CITY_BOUNDS,
         pitch: options.pitch ?? MAP_VIEW_DEFAULTS.pitch,
         bearing: MAP_VIEW_DEFAULTS.bearing,
         attributionControl: false,
@@ -78,7 +80,20 @@ export function useMapLibre(
         map.addImage(e.id, { width: 1, height: 1, data: new Uint8ClampedArray([0, 0, 0, 0]) });
       });
 
-      map.on("load", () => setReady(true));
+      map.on("load", () => {
+        /* 창원 밖 마스크 — 한국 범위를 덮는 면에 5개 구 경계를 구멍으로 뚫는다. 스타일 맨 위에 올려
+           타일의 도로·라벨·바다를 가라앉히고, 이 앱이 나중에 얹는 레이어(침수 자료·기상·영향 범위)는 그 위에
+           선다. 반투명이라 관할 밖 해안·인접 시가 흐리게 남아 위치가 읽힌다 (map-config CITY_MASK_OPACITY) */
+        const [[w, s], [e, n]] = KOREA_BOUNDS;
+        const outer: [number, number][] = [[w, s], [e, s], [e, n], [w, n], [w, s]];
+        const holes = CITY_GU_SHAPES.flatMap((gu) => gu.rings.map((ring) => [...ring, ring[0]]));
+        map.addSource("city-mask", {
+          type: "geojson",
+          data: { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [outer, ...holes] } },
+        });
+        map.addLayer({ id: "city-mask", type: "fill", source: "city-mask", paint: { "fill-color": CITY_MASK_COLOR, "fill-opacity": CITY_MASK_OPACITY } });
+        setReady(true);
+      });
     })();
 
     return () => {

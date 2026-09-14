@@ -33,6 +33,11 @@ import { DISPATCH_HISTORY, type DispatchRecord } from "../demo/dispatch";
 import type { AgentMessage } from "../agent";
 import { answerMessage, matchQuery, unknownMessage } from "../demo/ai";
 import { seaTempOnce } from "../demo/sea-temp";
+import type { DemoStage, DemoStageSpec, DemoTick } from "../model/stage";
+import { DEMO_STAGE_SPECS } from "../model/stage";
+import type { TrainingScenario, TrainingScenarioRequest } from "../model/training";
+import { HERO_INCIDENT_ID } from "../fixtures";
+import { buildTrainingScenario, ticksOf } from "../model/selectors";
 
 /** S0~S9 (04 §0). S2 는 진입(17:20)과 격상(17:22) 두 국면을 가진다 */
 export type ScenarioStep = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
@@ -277,6 +282,30 @@ interface ScenarioContextValue {
   /** 배수문 수동 개폐 실행. 기록 시각은 호출부가 이 컨텍스트에서 읽은 `now` 를 그대로
    *  넘긴다 — 시계의 주인은 여전히 엔진 하나다 */
   setGateClosed: (facilityId: string, closed: boolean, at: Date) => void;
+
+  /* ── Phase 2 시연 시점 엔진 (IA §5.2 · CLAUDE.md) ──
+     시계와 단계는 tick 에서 파생된다. 화면의 [검토 인수]·[확인]·[승인]·[통제]·[종료]는 상태를 쓰지 않고
+     advanceTick 으로 시계를 그 전환의 tick 으로 옮긴다 — 업무 이벤트가 시계 안으로 들어와 화면 전체가
+     같은 프레임에 바뀐다. URL 이 드는 것(incidentId · forecastId · validAt …)은 여기 두지 않는다.
+     ★ `demoNow` 는 임시 이름이다. /scr-* 화면 재편이 끝나면 위의 `now` 와 Phase 1 필드를 걷고
+       이 시계가 `now` 가 된다. 두 시계가 나란히 사는 것은 재편 기간뿐이다 */
+  heroIncidentId: string;
+  ticks: DemoTick[];
+  tick: DemoTick;
+  tickIndex: number;
+  stage: DemoStage;
+  stageSpec: DemoStageSpec;
+  /** Phase 2 시나리오 시계 — tick 에서 파생 */
+  demoNow: Date;
+  /** 특정 tick 으로 전진 — 단조 증가. 새로고침이 리셋이다 */
+  advanceTick: (tickId: string) => void;
+  /** 한 tick 전진 — 발표자 조작판이 시간 경과(세계 tick)를 밟을 때만 쓴다 */
+  nextTick: () => void;
+  /** 다음 tick 이 시간 경과인가 */
+  nextIsWorld: boolean;
+  /** D8 훈련 시나리오 생성 — 스냅샷을 묶어 목록에 넣는다(IA §13.1). 원 사건은 바뀌지 않는다 */
+  trainingScenarios: TrainingScenario[];
+  createTrainingScenario: (req: TrainingScenarioRequest) => TrainingScenario | null;
 }
 
 const ScenarioContext = createContext<ScenarioContextValue | null>(null);
@@ -294,6 +323,31 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
   const [dispatches, setDispatches] = useState<DispatchRecord[]>(DISPATCH_HISTORY);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [gateOverrides, setGateOverrides] = useState<Record<string, GateOverride>>({});
+
+  /* ── Phase 2 tick 상태 ── */
+  const heroIncidentId = HERO_INCIDENT_ID;
+  const ticks = useMemo(() => ticksOf(heroIncidentId), [heroIncidentId]);
+  const [tickIndex, setTickIndex] = useState(0);
+  const [trainingScenarios, setTrainingScenarios] = useState<TrainingScenario[]>([]);
+  const advanceTick = useCallback(
+    (tickId: string) => {
+      const target = ticks.findIndex((t) => t.id === tickId);
+      if (target < 0) return;
+      setTickIndex((prev) => (target > prev ? target : prev));
+    },
+    [ticks],
+  );
+  const nextTick = useCallback(() => {
+    setTickIndex((prev) => Math.min(prev + 1, ticks.length - 1));
+  }, [ticks.length]);
+  const createTrainingScenario = useCallback(
+    (req: TrainingScenarioRequest) => {
+      const scenario = buildTrainingScenario(req, new Date(ticks[tickIndex].at));
+      if (scenario) setTrainingScenarios((prev) => (prev.some((x) => x.scenarioId === scenario.scenarioId) ? prev : [...prev, scenario]));
+      return scenario;
+    },
+    [ticks, tickIndex],
+  );
 
   const selectDevice = useCallback((deviceId: string | null) => {
     setSelectedDeviceId(deviceId);
@@ -622,6 +676,7 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     /* 답변을 만들 때 읽는다 — 콜백 안에서 최신 시계를 보려면 ref 여야 한다 (04 §14-6) */
     const now = new Date(`${spec.datePrefix}${clock}:00`);
     nowRef.current = now;
+    const tick = ticks[tickIndex];
 
     return {
       track,
@@ -649,6 +704,18 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
       selectDevice,
       gateOverrides,
       setGateClosed,
+      heroIncidentId,
+      ticks,
+      tick,
+      tickIndex,
+      stage: tick.stage,
+      stageSpec: DEMO_STAGE_SPECS[tick.stage],
+      demoNow: new Date(tick.at),
+      advanceTick,
+      nextTick,
+      nextIsWorld: ticks[tickIndex + 1]?.driver === "세계",
+      trainingScenarios,
+      createTrainingScenario,
       agentOpen,
       agentMessages,
       agentResponding,
@@ -681,6 +748,13 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     selectDevice,
     gateOverrides,
     setGateClosed,
+    heroIncidentId,
+    ticks,
+    tickIndex,
+    advanceTick,
+    nextTick,
+    trainingScenarios,
+    createTrainingScenario,
     agentOpen,
     agentMessages,
     agentResponding,
