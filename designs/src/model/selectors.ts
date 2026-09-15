@@ -8,14 +8,14 @@
 
 import type { EventEnvelope, EventType } from "./event";
 import type { Forecast, AlternativeId } from "./forecast";
-import type { CityOperationalState, HazardAssessment, Incident, StatusChange, WorkflowStatus } from "./incident";
+import type { CityOperationalState, HazardAssessment, Incident, IncidentPhase, StatusChange, WorkflowStatus } from "./incident";
 import { ACTIVE_WORKFLOW_STATUSES } from "./incident";
 import type { AttentionAlert, AlertStatus } from "./alert";
 import type { RiskMatrixResult } from "./risk-matrix";
 import type { Action, ActionStatus, Decision, Dissemination, DisseminationResult, Outcome, Recommendation, Report } from "./response";
-import type { TrainingScenario, TrainingScenarioRequest } from "./training";
+import type { TrainingConditionSet, TrainingScenario, TrainingScenarioRequest } from "./training";
 import type { DemoStage, DemoTick } from "./stage";
-import { ALL_FORECASTS, EVENTS, INCIDENTS, DEMO_TICKS_BY_INCIDENT, ALTERNATIVE_FORECAST_IDS, ALERTS, CCTV_CHANNELS, type CctvChannel } from "../fixtures";
+import { ALL_FORECASTS, EVENTS, INCIDENTS, DEMO_TICKS_BY_INCIDENT, ALTERNATIVE_FORECAST_IDS, ALERTS, CCTV_CHANNELS, RISK_MATRIX_SPECS, TRAINING_CONDITION_SETS, type CctvChannel } from "../fixtures";
 
 const ms = (iso: string): number => new Date(iso).getTime();
 
@@ -55,11 +55,15 @@ export function latestOnly(events: EventEnvelope[]): EventEnvelope[] {
 export interface IncidentView {
   incident: Incident;
   workflowStatus: WorkflowStatus;
+  /** 대응중 안의 국면. 통제면 종료 검토가 열린다 */
+  phase: IncidentPhase | null;
   mergedInto: string | null;
   createdAt: string | null;
   firstObservedAt: string | null;
   lastUpdatedAt: string | null;
   assessment: HazardAssessment | null;
+  /** 직전 판단 — 위험도 카드의 변화 방향(상승·하락·같음)이 여기서 나온다 */
+  previousAssessment: HazardAssessment | null;
   pendingDecision: Decision | null;
   openReviews: number;
   forecastHeadline: string | null;
@@ -85,6 +89,7 @@ export function incidentViewAt(incidentId: string, now: Date): IncidentView | nu
 
   const status = lastOfType<StatusChange>(events, "INCIDENT_STATUS_CHANGED");
   const workflowStatus: WorkflowStatus = status?.payload.to ?? "후보";
+  const phase: IncidentPhase | null = workflowStatus === "대응중" ? (status?.payload.phase ?? null) : null;
   const mergedInto = workflowStatus === "병합됨" ? (status?.payload.mergedInto ?? null) : null;
 
   const decisions = allOfType<Decision>(events, "DECISION_RECORDED").map((e) => e.payload);
@@ -95,16 +100,18 @@ export function incidentViewAt(incidentId: string, now: Date): IncidentView | nu
   const referenced = new Set(decisions.flatMap((d) => d.references));
   const openReviews = reviews.filter((r) => !referenced.has(r.payload.targetEventId)).length;
 
-  const assessment = lastOfType<HazardAssessment>(events, "ASSESSMENT_UPDATED")?.payload ?? null;
+  const assessmentEvents = allOfType<HazardAssessment>(events, "ASSESSMENT_UPDATED");
+  const assessment = assessmentEvents[assessmentEvents.length - 1]?.payload ?? null;
+  const previousAssessment = assessmentEvents[assessmentEvents.length - 2]?.payload ?? null;
   const forecast = currentForecastsOf(incidentId, now).find((f) => f.alternativeId === "baseline") ?? null;
   const forecastHeadline = forecast ? forecastHeadlineAt(forecast, now) : null;
 
   const firstObservedAt = (created.derivedFrom ?? []).map(findEvent).filter((e): e is EventEnvelope => Boolean(e)).map((e) => e.observedAt).sort()[0] ?? created.observedAt;
 
   return {
-    incident, workflowStatus, mergedInto, createdAt: created.observedAt, firstObservedAt,
+    incident, workflowStatus, phase, mergedInto, createdAt: created.observedAt, firstObservedAt,
     lastUpdatedAt: events[events.length - 1]?.receivedAt ?? created.receivedAt,
-    assessment, pendingDecision, openReviews, forecastHeadline,
+    assessment, previousAssessment, pendingDecision, openReviews, forecastHeadline,
     sourceAlerts: alertsAt(now).filter((a) => a.incidentId === incidentId),
     events,
   };
@@ -188,11 +195,16 @@ export type ForecastResolution =
   | { kind: "expired"; forecast: Forecast }
   | { kind: "not-yet"; forecast: Forecast };
 
+/** 예측판 찾기 — 유효성은 보지 않는다. 훈련 스냅샷처럼 고정 참조를 읽을 때 쓴다(IA §13.1) */
+export function findForecast(forecastId: string): Forecast | undefined {
+  return ALL_FORECASTS.find((f) => f.forecastId === forecastId);
+}
+
 /** forecastId 해석 — 잘못되거나 만료된 forecastId 를 다른 Forecast 로 바꾸지 않는다(IA §5.2) */
 export function resolveForecast(forecastId: string, now: Date): ForecastResolution {
   const forecast = ALL_FORECASTS.find((f) => f.forecastId === forecastId);
   if (!forecast) return { kind: "not-found" };
-  const src = findEvent(forecast.sourceEventId);
+  const src = forecast.sourceEventId ? findEvent(forecast.sourceEventId) : undefined;
   if (src && ms(src.receivedAt) > now.getTime()) return { kind: "not-yet", forecast };
   if (ms(forecast.validUntil) < now.getTime()) return { kind: "expired", forecast };
   return { kind: "ok", forecast };
@@ -385,7 +397,7 @@ export function buildTrainingScenario(req: TrainingScenarioRequest, now: Date): 
   const outcomes = outcomesAt(req.sourceIncidentId, now);
   const alternatives = alternativesOf(req.sourceIncidentId, now).map((a) => a.forecast.forecastId);
   return {
-    scenarioId: `TS-${view.incident.incidentId}-v1`, snapshotVersion: 1, createdAt: req.requestedAt,
+    scenarioId: `TS-${view.incident.incidentId}-v1`, snapshotVersion: 1, createdAt: req.requestedAt, origin: "incident-snapshot",
     source: { sourceIncidentId: view.incident.incidentId, hazardKind: view.incident.hazardKind, twinFamily: view.incident.twinFamily, scopeKind: view.incident.scopeKind, scope: view.incident.scope },
     timing: { snapshotAt: now.toISOString(), originalStartAt: view.firstObservedAt ?? view.createdAt ?? now.toISOString(), trainingBaseTime: view.incident.scenarioContext.scenarioBaseTime },
     conditionEvents: evidence.map((e) => ({ eventId: e.eventId, demoRef: e.demoRef, schemaVersion: e.schemaVersion })),
@@ -394,6 +406,38 @@ export function buildTrainingScenario(req: TrainingScenarioRequest, now: Date): 
     training: { changeableConditions: ["펌프 가용성", "통제 시작 시각", "전파 채널 구성"], alternativeForecastIds: alternatives.length ? alternatives : ALTERNATIVE_FORECAST_IDS, objectives: ["후보 확인까지의 판단 시간 단축", "실패 채널 대체조치 선택", "전망 기준 통제 시각 결정"] },
     provenance: { composition: view.incident.scenarioContext.scenarioMode, transformRules: [...new Set(evidence.map((e) => e.scenario?.scenarioRuleId).filter(Boolean) as string[])], calculationActor: forecast.basis.calculationActor, replacementTargets: [forecast.basis.replacementNote ?? ""].filter(Boolean) },
   };
+}
+
+/**
+ * 사전 조건 세트 → 훈련 시나리오 (IA-T01 사전 조건분석). 사건 없이 조건을 골라 여는 길이다.
+ * 범위·유형은 대표 사건에서 빌리고, 이력·조건 이벤트는 비어 있다. 예측판은 세트가 가리키는 사전 작성 결과다.
+ */
+export function conditionScenarioOf(set: TrainingConditionSet): TrainingScenario | null {
+  const incident = set.incidentId ? findIncident(set.incidentId) : undefined;
+  const forecast = set.baselineForecastId ? ALL_FORECASTS.find((f) => f.forecastId === set.baselineForecastId) : undefined;
+  /* 개념 장면은 사건이 없다 — 세트가 든 범위·유형으로 세우고 기준시각은 예측판 기준시각이다 */
+  const source = incident
+    ? { sourceIncidentId: incident.incidentId, hazardKind: incident.hazardKind, twinFamily: incident.twinFamily, scopeKind: incident.scopeKind, scope: incident.scope }
+    : set.source
+      ? { sourceIncidentId: "", hazardKind: set.source.hazardKind, twinFamily: set.source.twinFamily, scopeKind: set.source.scope.kind, scope: set.source.scope }
+      : null;
+  if (!source) return null;
+  const base = incident?.scenarioContext.scenarioBaseTime ?? forecast?.basis.baseTime ?? "";
+  return {
+    scenarioId: `TS-COND-${set.setId}`, snapshotVersion: 1, createdAt: base, origin: "condition-set", conditionSet: set,
+    source,
+    timing: { snapshotAt: base, originalStartAt: base, trainingBaseTime: base },
+    conditionEvents: [],
+    selectedForecast: forecast ? { forecastId: forecast.forecastId, validAt: forecast.marks[0]?.validAt ?? forecast.basis.baseTime, alternativeId: forecast.alternativeId, affectedGeometryId: forecast.marks[forecast.marks.length - 1]?.extentGeometryId } : null,
+    history: { evidenceEventIds: [], decisionIds: [], actionIds: [], outcomeIds: [] },
+    training: { changeableConditions: set.changeableConditions, alternativeForecastIds: set.alternativeForecastIds, objectives: set.objectives },
+    provenance: { composition: "완전 모의", transformRules: [], calculationActor: forecast?.basis.calculationActor ?? "해당 없음", replacementTargets: ["모델 연계 시 같은 조건의 ModelRun 결과로 교체"] },
+  };
+}
+
+/** 준비된 조건 세트 전부 — 예측판이 없는 조합도 세운다(정직한 빈 자리) */
+export function conditionScenarios(): TrainingScenario[] {
+  return TRAINING_CONDITION_SETS.map(conditionScenarioOf).filter((s): s is TrainingScenario => Boolean(s));
 }
 
 /* ── 사건 작업공간 (IA §7 · 초안 §4) ── */
@@ -420,15 +464,19 @@ export function relatedEventsAt(incidentId: string, now: Date): RelatedEventRow[
   for (const a of alerts) for (const id of a.evidenceEventIds) if (!reasonOf.has(id)) reasonOf.set(id, `${a.demoRole} · ${a.reason}`);
   const reviews = allOfType<{ targetEventId: string }>(view.events, "REVIEW_REQUESTED").map((r) => r.payload.targetEventId);
   const decided = new Set(decisionsAt(incidentId, now).flatMap((d) => d.references));
-  const evidence = evidenceEventsAt(incidentId, now);
+  /* 정정·갱신으로 대체된 것(호우주의보 → 호우경보)은 세우지 않는다 */
+  const evidence = latestOnly(evidenceEventsAt(incidentId, now));
   const lastObs = new Map<string, EventEnvelope>();
   const rows: EventEnvelope[] = [];
   for (const e of evidence) {
     if (e.eventType === "OBSERVATION_RECORDED") lastObs.set(e.subjectId, e);
     else rows.push(e);
   }
+  /* 관측 마지막 값은 그 주체가 파생·분석 줄로 이미 근거에 서 있으면 겹쳐 세우지 않는다 — 현재값은 좌측 관측 카드 몫이다.
+     그래서 `지구의 다른 이벤트`에는 사건과 무관한 주체의 관측만 남는다 (2026-09-14 사용자 지적) */
+  const linkedSubjects = new Set(rows.map((e) => e.subjectId));
   const keys = new Set(view.incident.correlationKeys);
-  return [...rows, ...lastObs.values()]
+  return [...rows, ...[...lastObs.values()].filter((e) => !linkedSubjects.has(e.subjectId))]
     .map((event) => ({
       event,
       linkReason: reasonOf.get(event.eventId) ?? (event.incidentId === incidentId ? "사건에 직접 기록" : `사건 공간 키 ${(event.correlationKeys ?? []).find((k) => keys.has(k)) ?? ""}`),
@@ -465,7 +513,7 @@ export function qualityOf(subjectId: string, now: Date): string {
 
 import { DISTRICTS } from "../demo/districts";
 import { DEVICES } from "../demo/devices";
-import { eventCategoryOf, EVENT_CATEGORY_ORDER, type DistrictStatus, type EventCategory } from "../lib/status-tone";
+import { alertRoleLabel, eventCategoryOf, EVENT_CATEGORY_ORDER, type DistrictStatus, type EventCategory } from "../lib/status-tone";
 import type { RiskGrade } from "./risk-matrix";
 
 const GRADE_RANK: Record<RiskGrade, number> = { 심각: 3, 경계: 2, 주의: 1, 관심: 0 };
@@ -493,7 +541,9 @@ export function districtStatusAt(now: Date): Map<string, DistrictStatus> {
   const out = new Map<string, DistrictStatus>();
   for (const d of DISTRICTS) {
     const v = top.get(d.id);
-    out.set(d.id, !v ? "정상" : gradeOf(v) === "심각" ? "위험" : "주의");
+    /* 등급 램프 그대로. 판단 전(등급 없음)·관심은 사건이 서 있으니 주의로 둔다 */
+    const g = v ? gradeOf(v) : null;
+    out.set(d.id, !v ? "정상" : g === "심각" || g === "경계" ? g : "주의");
   }
   return out;
 }
@@ -503,7 +553,8 @@ export interface DistrictSummary { total: number; onlineCctv: number; danger: nu
 export function districtSummaryAt(now: Date): DistrictSummary {
   const status = districtStatusAt(now);
   let danger = 0, warning = 0;
-  for (const s of status.values()) { if (s === "위험") danger++; else if (s === "주의") warning++; }
+  /* 위험 지구 = 심각·경계, 주의 지구 = 주의 (지구 현황 두 칸) */
+  for (const s of status.values()) { if (s === "심각" || s === "경계") danger++; else if (s === "주의") warning++; }
   return { total: DISTRICTS.length, onlineCctv: DEVICES.filter((d) => d.kind === "CV" && d.status === "정상").length, danger, warning };
 }
 
@@ -515,7 +566,7 @@ export function riskCountsAt(now: Date): RiskCounts {
   return {
     severe: active.filter((v) => gradeOf(v) === "심각").length,
     high: active.filter((v) => gradeOf(v) === "경계").length,
-    responding: active.filter((v) => v.workflowStatus === "대응중" || v.workflowStatus === "통제").length,
+    responding: active.filter((v) => v.workflowStatus === "대응중").length,
   };
 }
 
@@ -592,8 +643,8 @@ export function feedItemsAt(now: Date): FeedItem[] {
     if (a.incidentId && incidentExistsAt(a.incidentId, now)) continue; // 사건이 된 알림은 사건 카드가 잇는다
     if (!a.open) continue;
     items.push({
-      id: a.alertId, kind: "감지", title: a.demoRole.replace(" 알림", ""), grade: a.grade === "심각" ? "심각" : a.grade === "경계" ? "경계" : "주의",
-      districtId: INCIDENTS.find((i) => i.scope.label === a.target.label)?.legacyDistrictId ?? null, subjectLabel: a.target.label, at: a.updatedAt,
+      id: a.alertId, kind: "감지", title: alertRoleLabel(a.demoRole).replace(" 알림", ""), grade: a.grade === "심각" ? "심각" : a.grade === "경계" ? "경계" : "주의",
+      districtId: incidentOfAlert(a)?.legacyDistrictId ?? null, subjectLabel: a.target.label, at: a.updatedAt,
       needsAck: false, process: null, sop: null, statusText: a.task, incidentId: null, alertId: a.alertId, active: true,
     });
   }
@@ -627,8 +678,13 @@ export function sopItemsAt(incidentId: string, now: Date): SopItem[] {
   const approval = decisionsAt(incidentId, now).find((d) => d.kind === "대응 승인" && d.status === "승인") ?? null;
   const actions = actionsAt(incidentId, now);
   const diss = disseminationsAt(incidentId, now)[0] ?? null;
+  /* 어떤 항목이 서는지는 위험등급이 정한다 — 세기를 사람이 고르지 않는다 (2026-09-14). 판단 전에는 주의 취급 */
+  const grade = lastOfType<HazardAssessment>(events, "ASSESSMENT_UPDATED")?.payload.matrix.grade ?? "주의";
+  const enabled = catalog.filter((c) => !c.minGrade || GRADE_RANK[grade] >= GRADE_RANK[c.minGrade]
+    /* 등급이 내려가도 이미 배정된 조치는 남는다 — 목록에서 사라지면 완료 기록도 같이 사라진다 */
+    || (c.binding.kind === "action" && (() => { const b = c.binding; return actions.some((a) => a.kind === b.actionKind && a.target === b.target); })()));
 
-  return catalog.map<SopItem>((c) => {
+  return enabled.map<SopItem>((c) => {
     const head = { id: c.id, label: c.label, priority: c.priority, execMode: c.execMode, chain: c.chain };
     const b = c.binding;
     if (b.kind === "auto") {
@@ -646,7 +702,7 @@ export function sopItemsAt(incidentId: string, now: Date): SopItem[] {
       const status: SopItemStatus = live ? ACTION_TO_SOP[live.status] : "대기";
       return {
         ...head, status, actionId: live?.actionId, organization: live?.organization ?? draft?.organization ?? c.organization, assignee: live?.assignee ?? draft?.organization ?? c.organization,
-        at: live?.updatedAt, detail: live?.detail ?? draft?.summary ?? (rec ? undefined : "권고 생성 전"), failReason: status === "실패" ? live?.detail ?? undefined : undefined,
+        at: live?.updatedAt, detail: live?.detail ?? draft?.summary ?? (rec ? undefined : "조치안 준비 중"), basis: live ? undefined : draft?.basis, failReason: status === "실패" ? live?.detail ?? undefined : undefined,
         facility: facility ? { label: `가동 ${facility.label}`, engaged: facility.engaged } : undefined,
       };
     }
@@ -669,7 +725,7 @@ export function sopItemsAt(incidentId: string, now: Date): SopItem[] {
     const lastAt = [...recipients, ...recipients.map((r) => r.fallback)].map((r) => r?.at).filter(Boolean).sort().pop();
     return {
       ...head, status, confirm: "cap", recipients, at: lastAt ?? diss.message.sent,
-      detail: `${diss.message.identifier} · ${diss.message.severity}/${diss.message.urgency}/${diss.message.certainty} · ${diss.message.areaDesc}`,
+      detail: `전파문 · ${diss.message.areaDesc}`,
       failReason: failedOpen[0] ? `${failedOpen[0].name} ${failedOpen[0].detail ?? "실패"}` : undefined,
       fallbackAvailable: failedOpen.length > 0,
     };
@@ -696,7 +752,7 @@ export function chainStagesAt(incidentId: string, now: Date): ChainStageView[] {
   return CHAIN_STAGES.map((stage) => {
     let state: SopItemStatus;
     if (stage === "HQ") {
-      state = closed || status === "대응중" || status === "통제" || items.some((i) => i.status === "완료") ? "완료" : status === "확인중" || status === "확인됨" ? "진행 중" : "대기";
+      state = closed || status === "대응중" || items.some((i) => i.status === "완료") ? "완료" : status === "확인중" ? "진행 중" : "대기";
     } else if (stage === "FIELD") {
       const mine = byStage(stage);
       const must = mine.filter((i) => i.priority === "MUST");
@@ -722,11 +778,20 @@ export interface WatchView {
  * 종합상황 감지 카드에서 넘어온 알림 — 사건이 아직 없을 때 사건 작업공간이 여는 것.
  * 알림이 이미 사건을 만들었으면 null 이다(그때는 사건을 연다). 사건을 만들어 내지 않는다(IA §5.2 예외).
  */
-export function watchViewAt(alertId: string, now: Date): WatchView | null {
+/** 알림이 가리키는 사건 정의 — 사건 ID, 범위 라벨, 근거 이벤트의 주체 순으로 찾는다 */
+function incidentOfAlert(alert: AttentionAlert): Incident | undefined {
+  if (alert.incidentId) { const byId = INCIDENTS.find((i) => i.incidentId === alert.incidentId); if (byId) return byId; }
+  const byLabel = INCIDENTS.find((i) => i.scope.label === alert.target.label);
+  if (byLabel) return byLabel;
+  const subjects = alert.evidenceEventIds.map((id) => findEvent(id)?.subjectId).filter(Boolean) as string[];
+  return INCIDENTS.find((i) => subjects.some((sid) => i.correlationKeys.includes(sid)));
+}
+
+export function watchViewAt(alertId: string, now: Date, districtId?: string): WatchView | null {
   const alert = findAlert(alertId, now);
   if (!alert) return null;
   if (alert.incidentId && incidentExistsAt(alert.incidentId, now)) return null;
-  const incident = INCIDENTS.find((i) => i.incidentId === alert.incidentId) ?? INCIDENTS.find((i) => i.scope.label === alert.target.label);
+  const incident = incidentOfAlert(alert) ?? (districtId ? INCIDENTS.find((i) => i.legacyDistrictId === districtId && !incidentExistsAt(i.incidentId, now)) : undefined);
   if (!incident) return null;
   const cut = now.getTime();
   const evidence = alert.evidenceEventIds.map(findEvent).filter((e): e is EventEnvelope => Boolean(e) && ms(e!.receivedAt) <= cut);
@@ -737,4 +802,88 @@ export function watchViewAt(alertId: string, now: Date): WatchView | null {
     ...context.map((event) => ({ event, linkReason: "같은 구역의 광역 맥락", needsReview: false, linked: false })),
   ];
   return { incident, alert, rows: rows.sort((a, b) => Number(b.linked) - Number(a.linked) || b.event.observedAt.localeCompare(a.event.observedAt)) };
+}
+
+/* ── 지구 현황 (04 §3 · 2026-09-14) — 사건도 알림도 없는 지구. 같은 골격에 관측·이벤트만 서고 판단·전망·대응은 잠긴다 ── */
+
+export interface DistrictView {
+  incident: Incident;
+  rows: RelatedEventRow[];
+  /** 최근 수신 시각 */
+  lastReceivedAt: string | null;
+}
+
+/** 사건이 생기지 않은 지구의 정적 정의와 그 지구 이벤트(연결 없음). 정의가 없는 지구는 null */
+export function districtViewAt(districtId: string, now: Date): DistrictView | null {
+  const incident = INCIDENTS.find((i) => i.legacyDistrictId === districtId && !incidentExistsAt(i.incidentId, now));
+  if (!incident) return null;
+  const keys = new Set(incident.correlationKeys);
+  const cut = now.getTime();
+  const events = latestOnly(EVENTS.filter((e) => ms(e.receivedAt) <= cut && e.eventClass !== "업무" && !e.incidentId && (e.correlationKeys ?? []).some((k) => keys.has(k))));
+  const lastObs = new Map<string, EventEnvelope>();
+  const rows: EventEnvelope[] = [];
+  for (const e of events) {
+    if (e.eventType === "OBSERVATION_RECORDED") lastObs.set(e.subjectId, e);
+    else rows.push(e);
+  }
+  const all = [...rows, ...lastObs.values()].sort((a, b) => b.observedAt.localeCompare(a.observedAt));
+  return {
+    incident,
+    rows: all.map((event) => ({ event, linkReason: "지구 상시 관측 · 사건·알림 없음", needsReview: false, linked: false })),
+    lastReceivedAt: events.map((e) => e.receivedAt).sort().pop() ?? null,
+  };
+}
+
+/** 범위 정의가 가진 카메라 — 사건·알림·지구 현황이 같은 함수로 도크를 채운다 */
+export function channelsOfScope(scope: Incident, now: Date): CctvChannelView[] {
+  const scenes = eventsUntil(now).filter((e) => e.eventType === "SCENE_ANALYZED");
+  return CCTV_CHANNELS.filter((c) => scope.correlationKeys.includes(c.id)).map((c) => {
+    const scene = [...scenes].reverse().find((e) => e.subjectId === c.id);
+    const p = scene?.payload as { still?: string; description: string; confidence: number; analyzedAt: string; model: string; version: string } | undefined;
+    return { ...c, still: p?.still ?? c.calmStill, analysis: p ? { description: p.description, confidence: p.confidence, analyzedAt: p.analyzedAt, model: p.model, version: p.version } : null, incidentId: incidentExistsAt(scope.incidentId, now) ? scope.incidentId : null };
+  });
+}
+
+/* ── 위험도 띠 — 점수를 숫자로 보이지 않고 등급 구간 안의 위치로 읽는다 (2026-09-14 결정) ──
+   담당자는 등급으로 판단한다. 점수가 전하는 것은 "다음 문턱까지 얼마나 남았나"와 "지난 판단보다 올랐나"뿐이라
+   그 둘만 말로 바꾼다. 숫자는 fixture 와 기록·검증에 남는다 */
+export interface RiskBandView {
+  /** 등급 구간 — 띠의 조각. 폭 = 문턱 사이 거리 */
+  segments: { grade: RiskGrade; from: number; to: number }[];
+  /** 현재 점수의 띠 위 위치 0~1 */
+  position: number;
+  /** 다음 등급과 그 문턱까지 거리. 최고 등급이면 null */
+  next: { grade: RiskGrade; gap: number } | null;
+  /** 지난 판단 대비 방향. 첫 판단이면 null */
+  change: "상승" | "하락" | "같음" | null;
+}
+const NEAR_THRESHOLD = 0.05;
+export function riskBandOf(matrix: RiskMatrixResult, previous: RiskMatrixResult | null): RiskBandView {
+  const spec = RISK_MATRIX_SPECS[matrix.ruleId];
+  const thresholds = [...(spec?.gradeThresholds ?? [])].sort((a, b) => a.minScore - b.minScore);
+  const segments = thresholds.map((t, i) => ({ grade: t.grade, from: t.minScore, to: thresholds[i + 1]?.minScore ?? 1 }));
+  const idx = segments.findIndex((s) => s.grade === matrix.grade);
+  const nextSeg = idx >= 0 ? segments[idx + 1] : undefined;
+  const change = previous ? (matrix.score > previous.score ? "상승" : matrix.score < previous.score ? "하락" : "같음") : null;
+  return { segments, position: Math.min(1, Math.max(0, matrix.score)), next: nextSeg ? { grade: nextSeg.grade, gap: nextSeg.from - matrix.score } : null, change };
+}
+/** 띠 아래 한 줄 — `지난 판단보다 상승 · 심각 문턱 직전` */
+export function riskBandSentence(band: RiskBandView): string {
+  const move = band.change === null ? "첫 판단" : band.change === "같음" ? "지난 판단과 같음" : `지난 판단보다 ${band.change}`;
+  const near = band.next ? (band.next.gap <= NEAR_THRESHOLD ? `${band.next.grade} 문턱 직전` : `${band.next.grade}까지 여유`) : "최고 등급";
+  return `${move} · ${near}`;
+}
+
+/** 위험도 계산에 들어간 근거 이벤트 — 판단의 evidenceEventIds 와 지표별 근거의 합집합. 좌측 근거의 `위험도에 쓰인 것만` 토글이 쓴다 */
+export function riskEvidenceIdsOf(assessment: HazardAssessment | null): Set<string> {
+  if (!assessment) return new Set();
+  return new Set([...assessment.evidenceEventIds, ...assessment.matrix.contributions.flatMap((c) => c.evidenceEventIds)]);
+}
+
+/** 지구에 열린 알림 — 링크에 alertId 가 없어도 사건 없는 지구는 이 알림으로 연다 (2026-09-14 검수 6번). 등급 높은 것 우선 */
+const ALERT_GRADE_RANK: Record<string, number> = { 심각: 3, 경계: 2, 주의: 1 };
+export function districtAlertAt(districtId: string, now: Date): AlertView | null {
+  return alertsAt(now)
+    .filter((a) => a.open && !(a.incidentId && incidentExistsAt(a.incidentId, now)) && incidentOfAlert(a)?.legacyDistrictId === districtId)
+    .sort((a, b) => (ALERT_GRADE_RANK[b.grade] ?? 0) - (ALERT_GRADE_RANK[a.grade] ?? 0))[0] ?? null;
 }

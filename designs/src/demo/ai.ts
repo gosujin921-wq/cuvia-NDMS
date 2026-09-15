@@ -240,7 +240,7 @@ export function districtRanking(): DistrictRisk[] {
 
 export const RISK_ANSWER = {
   headlineOf: (top: DistrictRisk) =>
-    `${top.name} — 최근 30일 ${top.total}건 중 경보 이상 ${top.severe}건`,
+    `${top.name} · 최근 30일 ${top.total}건 중 경보 이상 ${top.severe}건`,
   detail:
     "되풀이가 이 지구를 위험하게 만든다. 한 번 크게 난 곳이 아니라, 같은 자리에서 계속 나는 곳이다.",
   /* 건수를 문장에 박지 않는다 — 원장에 사건을 더하면(폭염 12건처럼) 이 줄만 낡는다.
@@ -493,7 +493,7 @@ function seaTempCauseMessage(id: string, now: Date): AgentMessage {
 
   /* ① 이유 — 뚜껑. 숫자보다 그림이 먼저다 */
   const why = [
-    "① 이유 — 열돔입니다",
+    "① 이유: 열돔입니다",
     "바다 위에 뜨거운 공기 뚜껑이 덮여 있습니다. 뚜껑이 있으면 낮에 받은 열이 위로 못 빠집니다. 육지는 밤마다 식지만 바다는 못 식습니다.",
     dome.peak
       ? `공기 기둥이 두꺼울수록 뚜껑이 깊습니다. 창원 상공은 5.5km 와 12km 두 층이 모두 세력권 선 안쪽이었고, 그런 날이 ${dome.deepDays}일이었습니다.`
@@ -503,21 +503,21 @@ function seaTempCauseMessage(id: string, now: Date): AgentMessage {
   /* ② 현 상황 — 곡선이 센 값 그대로 */
   const gap = coolGap(sea);
   const now2 = [
-    `② 현 상황 — ${watch}℃ 위에 ${sea.hotDays}일입니다`,
+    `② 현 상황: ${watch}℃ 위에 ${sea.hotDays}일입니다`,
     `${day(sea.stageDates.advisory)}에 ${sea.threshold.advisory}℃, ${day(sea.stageDates.watch)}에 ${watch}℃를 넘었고, 그 뒤로 여름 들어 ${sea.hotDays}일을 ${watch}℃ 위에서 보냈습니다. 가장 높았던 날은 ${day(sea.peakDate)} ${sea.peak}℃입니다.`,
     sea.ongoing
       ? `오늘 ${sea.current}℃로 ${sea.ongoing.days}일 연속입니다. ${sea.threshold.warningDays}일 연속이면 경보라 기준을 채웠습니다.`
       : gap
-        ? `찬 물덩어리가 들어와 ${gap.days}일째 ${watch}℃ 아래입니다. 오늘은 ${sea.current}℃입니다 — 다만 앞선 구간이 ${gap.days}일 만에 돌아온 적이 있습니다.`
+        ? `찬 물덩어리가 들어와 ${gap.days}일째 ${watch}℃ 아래입니다. 오늘은 ${sea.current}℃입니다. 다만 앞선 구간이 ${gap.days}일 만에 돌아온 적이 있습니다.`
         : `오늘은 ${sea.current}℃로 ${watch}℃ 아래입니다.`,
   ];
 
   /* ③ 조건이 유지되면 — 하한을 말한다. 예측이 아니라 조건이다 */
   const ahead = outlook
     ? [
-        `③ 조건이 유지되면 — 최소 ${day(outlook.floorDate)}까지입니다`,
+        `③ 조건이 유지되면: 최소 ${day(outlook.floorDate)}까지입니다`,
         `적어도 ${outlook.floorDays}일 더 갑니다. ${day(outlook.floorDate)}까지는 대비를 풀 수 없습니다.`,
-        `짧게 가면 ${outlook.floorDays}일, 길게 가면 ${outlook.ceilDays}일이 남습니다. ${day(outlook.floorDate)}은 짧은 쪽입니다 — 그보다 일찍 끝날 근거가 지금 없습니다.`,
+        `짧게 가면 ${outlook.floorDays}일, 길게 가면 ${outlook.ceilDays}일이 남습니다. ${day(outlook.floorDate)}은 짧은 쪽입니다. 그보다 일찍 끝날 근거가 지금 없습니다.`,
         "끝나는 시점은 열돔이 정합니다. 뚜껑이 물러나면 바다도 식기 시작하고, 그전에는 안 내려옵니다.",
       ]
     : [
@@ -537,7 +537,7 @@ function seaTempCauseMessage(id: string, now: Date): AgentMessage {
    * 되돌릴 수 없는 것을 끝에 둔다 — 재난문자는 한 번 나가면 거둘 수 없다.
    */
   const act = [
-    "④ 대처방법 — 지금 승인할 것이 넷입니다",
+    "④ 대처방법: 지금 승인할 것이 넷입니다",
     "관내 양식장에 고수온 대응 요령 공문 발송, 관계기관 협조 요청(국립수산과학원 · 경상남도 해양수산과 · 수협), 해안 마을방송 · 전광판 송출, 그리고 취약지역 어업인에게 안내 재난문자 발송입니다.",
     "마지막 하나는 한 번 나가면 거둘 수 없어 승인 없이 나가지 않습니다.",
     "특보 기록 · 담당 부서 알림 · 경상남도 재난안전상황실 보고 셋은 이미 자동으로 처리됐습니다.",
@@ -557,7 +557,7 @@ function seaTempCauseMessage(id: string, now: Date): AgentMessage {
       outlook
         ? `${day(outlook.floorDate)}은 앞선 구간이 얼마나 갔는지에서 나온 값입니다. 열돔이 물러나면 그날 달라집니다.`
         : null,
-      "수온 자료의 격자가 약 5km 라 진해만·마산만을 따로 가르지 못합니다 — 창원 앞바다를 하나로 봅니다.",
+      "수온 자료의 격자가 약 5km 라 진해만·마산만을 따로 가르지 못합니다. 창원 앞바다를 하나로 봅니다.",
     ]
       .filter(Boolean)
       .join("\n"),
@@ -659,7 +659,7 @@ export function unknownMessage(asked: string, id: string): AgentMessage {
   return {
     id,
     role: "assistant",
-    content: `“${asked}” — 이 질문에는 답할 수 없습니다.\n데모가 답하는 질의는 아래 3종뿐입니다. 없는 답을 지어내지 않습니다.`,
+    content: `“${asked}”: 이 질문에는 답할 수 없습니다.\n데모가 답하는 질의는 아래 3종뿐입니다. 없는 답을 지어내지 않습니다.`,
     actions: CANNED_QUERIES.map((query) => ({
       label: query.text,
       action: "send_query" as const,

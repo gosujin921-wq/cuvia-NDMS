@@ -34,25 +34,24 @@ import { CITY_CENTER } from "../../lib/map-config";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import { MapPopup } from "../../components/MapPopup";
 import { CctvBigView } from "../../components/CctvBigView";
-import { CCTV_DOCK, CENTER_RIGHT, EDGE, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP, utilStripStyle } from "../../lib/layout";
+import { CCTV_DOCK, CENTER_LEFT, CENTER_RIGHT, EDGE, LEFT_RAIL, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP, utilStripStyle } from "../../lib/layout";
 import { useScenario } from "../../state/ScenarioProvider";
+import { useTrainingEntry } from "../../state/useTrainingEntry";
 import { formatClock, formatElapsed } from "../../lib/datetime";
-import { ALERT_GRADE_TONE, RISK_GRADE_TONE, statusTone } from "../../lib/status-tone";
+import { ALERT_GRADE_TONE, alertRoleLabel, statusTone } from "../../lib/status-tone";
 import type { Device } from "../../demo/devices";
 import type { Facility } from "../../demo/facilities";
 import type { EventEnvelope } from "../../model/event";
 import type { Forecast, AlternativeId } from "../../model/forecast";
-import { ALTERNATIVE_LABEL } from "../../model/forecast";
 import {
-  alternativesOf, cctvChannelsAt, chainStagesAt, currentForecastsOf, decisionsAt, derivedFlagOf, disseminationsAt,
-  incidentViewAt, incidentsAt, isActiveStatus, recommendationsAt, relatedEventsAt, resolveForecast, sopItemsAt, watchViewAt, type CctvChannelView,
+  alternativesOf, chainStagesAt, channelsOfScope, currentForecastsOf, dataFaultsAt, decisionsAt, derivedFlagOf, disseminationsAt, districtViewAt,
+  districtAlertAt, riskEvidenceIdsOf, incidentViewAt, incidentsAt, isActiveStatus, recommendationsAt, relatedEventsAt, resolveForecast, sopItemsAt, watchViewAt, type CctvChannelView,
 } from "../../model/selectors";
 import { GEOMETRIES, SCOPE_ZOOM, SUBJECTS, deviceOfSubject, facilityOfSubject, isFacilitySubject, isSensorSubject } from "../../fixtures";
 import { DISTRICTS } from "../../demo/districts";
-import { TimelinePanel } from "../scr-05/widgets/TimelinePanel";
-import { AnalysisBasisCard } from "../scr-05/widgets/AnalysisBasisCard";
-import type { TimeMark, Timeline } from "../../demo/scenario-timeline";
-import type { AnalysisBasis } from "../../demo/analysis";
+import { ForecastRail } from "./widgets/ForecastRail";
+import { ALTERNATIVE_LABEL } from "../../model/forecast";
+import { depthLevel, extentPaint, scopePaint, upsertPolygonLayer } from "../../lib/map-polygon";
 import { DeviceMarkers, type SubjectPin } from "./widgets/DeviceMarkers";
 import { FacilityMarkers } from "./widgets/FacilityMarkers";
 import { DevicePopup } from "./widgets/DevicePopup";
@@ -63,22 +62,16 @@ import { RiskCard } from "./widgets/RiskCard";
 import { ImpactPanel } from "./widgets/ImpactPanel";
 import { JudgeActionBar } from "./widgets/JudgeActionBar";
 import { WatchAlertCard } from "./widgets/WatchAlertCard";
+import { DistrictStatusCard } from "./widgets/DistrictStatusCard";
+import { DistrictPickerChip } from "./widgets/DistrictPickerChip";
 import { EventTimeline } from "./widgets/EventTimeline";
 import { type ConfirmRequest } from "./widgets/SopPanel";
 import { ResponsePopup } from "./widgets/ResponsePopup";
 import { ResponseSummaryCard } from "./widgets/ResponseSummaryCard";
 import { ExecutionPopup } from "./widgets/ExecutionPopup";
 
-/** 좌측 열 폭 — 우선 420 (결정 2026-09-14 · 구현 후 재검토). 제품 300 과 다르지만 좌측 열이 서는 화면은 이 화면뿐이다 */
-const LEFT_COL = 420;
 
 type Mode = "judge" | "twin";
-
-/** 토큰 → 실제 색. MapLibre paint 는 var() 를 못 읽는다. 리터럴을 박지 않고 토큰을 풀어 쓴다 */
-function cssColor(token: string, fallback: string): string {
-  if (typeof document === "undefined") return fallback;
-  return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || fallback;
-}
 
 const EXTENT_SOURCE = "incident-extent";
 const SCOPE_SOURCE = "incident-scope";
@@ -88,27 +81,41 @@ export function EarlyWarningPage() {
   const districtName = DISTRICTS.find((d) => d.id === districtId)?.name ?? districtId;
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const { demoNow: now, ticks, tickIndex, advanceTick, agentOpen } = useScenario();
+  const { demoNow: now, ticks, tickIndex, advanceTick, agentOpen, selectDistrict, heroIncidentId, falsePositiveIds, markFalsePositive } = useScenario();
+  const training = useTrainingEntry();
+  /* URL 의 지구를 엔진의 선택 지구로 비춘다 — 종합상황으로 돌아가면 이 지구의 이름표·줄이 선택 상태로 선다 */
+  useEffect(() => {
+    if (districtId) selectDistrict(districtId);
+  }, [districtId, selectDistrict]);
   /* 실행 결과가 도착한 뒤에만 통제 전환 — 결과 tick 이전의 담당자 조작으로 시계가 결과를 건너뛰지 않게 */
-  const resultsArrived = tickIndex >= ticks.findIndex((t) => t.id === "d7-results");
+  const resultsArrived = tickIndex >= ticks.findIndex((t) => t.id === "d7-pump");
   const panel = params.get("panel");
   const mode: Mode = panel === "twin" ? "twin" : "judge";
   /* 대응 실행 팝업 — 열림은 UI 상태. 긴급 경로(판단·전망 전) 여부는 여는 순간의 상태로 정한다 */
   const [responseOpen, setResponseOpen] = useState(false);
+  /* 위험도 기여도 줄 → 좌측 근거 강조. 같은 지표를 다시 누르면 해제 */
 
   /* ── 이 지구의 사건 — 진행 중인 것이 우선, 없으면 기록(오탐·종료)이라도 찾아 예외를 안내한다 ── */
   const all = useMemo(() => incidentsAt(now), [now]);
   const found = all.find((v) => v.incident.legacyDistrictId === districtId && isActiveStatus(v.workflowStatus)) ?? all.find((v) => v.incident.legacyDistrictId === districtId) ?? null;
   const incidentId = found?.incident.incidentId ?? "";
-  const view = useMemo(() => (incidentId ? incidentViewAt(incidentId, now) : null), [incidentId, now]);
+  /* 오탐은 담당자가 닫은 결과다 — 엔진 상태(falsePositiveIds)를 사건 뷰 위에 얹는다. 시나리오 이벤트를 고치지 않는다 */
+  const view = useMemo(() => {
+    const raw = incidentId ? incidentViewAt(incidentId, now) : null;
+    return raw && falsePositiveIds.includes(raw.incident.incidentId) ? { ...raw, workflowStatus: "오탐" as const } : raw;
+  }, [incidentId, now, falsePositiveIds]);
+  const riskEvidenceIds = useMemo(() => riskEvidenceIdsOf(view?.assessment ?? null), [view]);
   const incident = view?.incident ?? null;
   /* 사건 전 알림 — 종합상황 감지 카드가 query `alertId` 로 보낸다. 사건이 없을 때만 그 알림의 근거를 세운다(IA §7).
      알림이 사건을 만든 뒤에는 사건이 우선이고 알림은 그 사건의 sourceAlerts 로 남는다 */
-  const alertId = params.get("alertId");
-  const watch = useMemo(() => (!found && alertId ? watchViewAt(alertId, now) : null), [found, alertId, now]);
-  /* 지도 범위·주체·카메라의 기준 — 사건이 있으면 사건, 없으면 알림이 가리키는 구역의 정의 */
-  const scope = incident ?? watch?.incident ?? null;
-  const rows = useMemo(() => (view ? relatedEventsAt(incidentId, now) : watch?.rows ?? []), [view, incidentId, now, watch]);
+  const alertId = params.get("alertId") ?? (!found ? districtAlertAt(districtId, now)?.alertId ?? null : null);
+  const watch = useMemo(() => (!found && alertId ? watchViewAt(alertId, now, districtId) : null), [found, alertId, now, districtId]);
+  /* 지구 현황 — 사건도 알림도 없는 지구. 정의(주체·범위)가 있는 지구만 (04 §3 · 2026-09-14 결정) */
+  const district = useMemo(() => (!found && !watch ? districtViewAt(districtId, now) : null), [found, watch, districtId, now]);
+  /* 지도 범위·주체·카메라의 기준 — 사건 → 알림이 가리키는 구역 → 지구 정의 순 */
+  const scope = incident ?? watch?.incident ?? district?.incident ?? null;
+  const rows = useMemo(() => (view ? relatedEventsAt(incidentId, now) : watch?.rows ?? district?.rows ?? []), [view, incidentId, now, watch, district]);
+  const faults = useMemo(() => (scope ? dataFaultsAt(now).filter((r) => scope.correlationKeys.includes(r.subjectId)) : []), [scope, now]);
   const forecasts = useMemo(() => currentForecastsOf(incidentId, now), [incidentId, now]);
   const baseline = forecasts.find((f) => f.alternativeId === "baseline") ?? forecasts[0] ?? null;
   const recommendation = useMemo(() => recommendationsAt(incidentId, now).at(-1) ?? null, [incidentId, now]);
@@ -116,7 +123,7 @@ export function EarlyWarningPage() {
   const disseminations = useMemo(() => disseminationsAt(incidentId, now), [incidentId, now]);
   const sopItems = useMemo(() => sopItemsAt(incidentId, now), [incidentId, now]);
   const chain = useMemo(() => chainStagesAt(incidentId, now), [incidentId, now]);
-  const channels = useMemo(() => cctvChannelsAt(now).filter((c) => scope?.correlationKeys.includes(c.id)), [now, scope]);
+  const channels = useMemo(() => (scope ? channelsOfScope(scope, now) : []), [now, scope]);
 
   /* 사건 주체 → Phase 1 핀 부품이 받는 모양으로 */
   const legacyDistrict = scope?.legacyDistrictId ?? "seohang";
@@ -142,12 +149,15 @@ export function EarlyWarningPage() {
   const selected = devices.find((d) => d.id === selectedId) ?? null;
   const selectedChannel = selected?.kind === "CV" ? channels.find((c) => c.id === selected.id) ?? null : null;
 
-  const [safemapOn, setSafemapOn] = useState<Record<string, boolean>>(Object.fromEntries(SAFEMAP_LAYERS.map((spec) => [spec.id, true])));
+  /* 안전지도 층(해안침수예상도·침수흔적도)은 기본 끔 — 전망 범위와 겹치면 어느 것이 예측인지 안 보인다 (2026-09-15) */
+  const [safemapOn, setSafemapOn] = useState<Record<string, boolean>>(Object.fromEntries(SAFEMAP_LAYERS.map((spec) => [spec.id, false])));
+  /* 침수 전망 범위 층 — 전망 탭에서만 서고 영향 표현 목록에서 끌 수 있다 */
+  const [extentOn, setExtentOn] = useState(true);
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance) return;
     ensureSafemapLayers(instance);
-    for (const spec of SAFEMAP_LAYERS) setSafemapVisible(instance, spec.id, safemapOn[spec.id] ?? true);
+    for (const spec of SAFEMAP_LAYERS) setSafemapVisible(instance, spec.id, safemapOn[spec.id] ?? false);
   }, [map, ready, safemapOn]);
   const [weather, setWeather] = useState<WeatherState>(WEATHER_OFF);
   useWindLayer(map, ready, weather.wind);
@@ -158,7 +168,7 @@ export function EarlyWarningPage() {
     (duration: number) => {
       const instance = map.current;
       if (!instance || !scope) return;
-      const padding = { top: 72, bottom: CCTV_DOCK + EDGE * 2, left: LEFT_COL + EDGE * 2, right: CENTER_RIGHT };
+      const padding = { top: 72, bottom: CCTV_DOCK + EDGE * 2, left: CENTER_LEFT, right: CENTER_RIGHT };
       const ring = scope.scope.affectedGeometryId ? GEOMETRIES[scope.scope.affectedGeometryId] : undefined;
       if (scope.scope.kind === "전역") {
         instance.easeTo({ center: CITY_CENTER, zoom: SCOPE_ZOOM.전역, padding, pitch: 0, bearing: 0, duration });
@@ -186,23 +196,10 @@ export function EarlyWarningPage() {
     const instance = map.current;
     if (!ready || !instance || !scope) return;
     const ring = scope.scope.affectedGeometryId ? GEOMETRIES[scope.scope.affectedGeometryId] : null;
-    const scopeData = ring ? { type: "Feature" as const, geometry: { type: "Polygon" as const, coordinates: [[...ring, ring[0]]] }, properties: {} } : null;
-    const extentRing = mode === "twin" && selectedMark ? GEOMETRIES[selectedMark.extentGeometryId] : null;
-    const extentData = extentRing ? { type: "Feature" as const, geometry: { type: "Polygon" as const, coordinates: [[...extentRing, extentRing[0]]] }, properties: {} } : null;
-    const empty = { type: "FeatureCollection" as const, features: [] };
-    const upsert = (id: string, data: GeoJSON.Feature | null, paint: { fill: string; line: string; opacity: number }) => {
-      const src = instance.getSource(id) as maplibregl.GeoJSONSource | undefined;
-      if (!src) {
-        instance.addSource(id, { type: "geojson", data: data ?? empty });
-        instance.addLayer({ id: `${id}-fill`, type: "fill", source: id, paint: { "fill-color": paint.fill, "fill-opacity": paint.opacity } });
-        instance.addLayer({ id: `${id}-line`, type: "line", source: id, paint: { "line-color": paint.line, "line-width": 1.5, "line-dasharray": [2, 2] } });
-      } else {
-        src.setData(data ?? empty);
-      }
-    };
-    upsert(SCOPE_SOURCE, scopeData, { fill: cssColor("--color-primary", "#3b82f6"), line: cssColor("--color-primary", "#3b82f6"), opacity: 0.06 });
-    upsert(EXTENT_SOURCE, extentData, { fill: cssColor("--color-risk-lv4", "#f97316"), line: cssColor("--color-risk-lv4", "#f97316"), opacity: 0.28 });
-  }, [map, ready, scope, mode, selectedMark]);
+    const extentRing = mode === "twin" && selectedMark && extentOn ? GEOMETRIES[selectedMark.extentGeometryId] : null;
+    upsertPolygonLayer(instance, SCOPE_SOURCE, ring, scopePaint());
+    upsertPolygonLayer(instance, EXTENT_SOURCE, extentRing, extentPaint(depthLevel(selectedMark?.maxDepthM)));
+  }, [map, ready, scope, mode, selectedMark, extentOn]);
 
   /* 패널에서 고른 주체 — 지도도 그 주체로 끌어온다 */
   const focusDevice = useCallback(
@@ -211,7 +208,7 @@ export function EarlyWarningPage() {
       const instance = map.current;
       if (!instance || !ready) return;
       const el = instance.getContainer();
-      const target = { x: (LEFT_COL + EDGE * 2 + (el.clientWidth - CENTER_RIGHT)) / 2, y: el.clientHeight - (CCTV_DOCK + EDGE * 2) - 32 };
+      const target = { x: (CENTER_LEFT + (el.clientWidth - CENTER_RIGHT)) / 2, y: el.clientHeight - (CCTV_DOCK + EDGE * 2) - 32 };
       const pt = instance.project(device.center);
       instance.panBy([pt.x - target.x, pt.y - target.y], { duration: 500 });
     },
@@ -271,7 +268,9 @@ export function EarlyWarningPage() {
   };
   const toJudge = () => setParams(setPanel(new URLSearchParams(params), "judge"));
   const openResponse = () => setResponseOpen(true);
-  const closeReview = () => { setResponseOpen(false); navigate("/scr-04"); };
+  /* 종료 검토 — D8 종료 tick 으로 시계를 옮기고 기록·검증으로 간다(02 D8 "종료 조건 확인 → 종료"). 종료된 사건은 읽기 전용이 되고
+     이 지구 작업공간에는 훈련 시나리오 진입점이 선다 */
+  const closeReview = () => { setResponseOpen(false); advanceTick("d8-close"); navigate("/scr-04"); };
   /* 탭 직접 클릭 — 마지막 맥락(forecastId · validAt · alternativeId)은 query 에 남아 있어 그대로 이어진다.
      전망 탭을 처음 열면 기준 전망을 고른다(다른 전망을 자동 선택하는 것이 아니라 아직 고른 것이 없을 때만) */
   const onTab = (value: string) => {
@@ -283,20 +282,25 @@ export function EarlyWarningPage() {
     toJudge();
   };
   const twinAvailable = forecasts.length > 0;
-  const responseAvailable = view ? ["확인됨", "대응중", "통제"].includes(view.workflowStatus) : false;
+  const responseAvailable = view?.workflowStatus === "대응중";
 
   /* 집중 확인 팝업 — 열림·종류만 화면이 든다 */
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const confirmAction = () => {
     if (!confirm) return;
-    if (confirm.kind === "approve") advanceTick("d6-approve");
+    if (confirm.kind === "approve") {
+      /* 대응 중 악화로 항목이 늘면 두 번째 승인 — 틱은 지금 어디까지 왔는지가 정한다 */
+      const escalated = tickIndex >= ticks.findIndex((t) => t.id === "d7-escalate");
+      advanceTick(escalated ? "d7-escalate-approve" : "d6-approve");
+    }
     if (confirm.kind === "fallback") advanceTick("d7-fallback");
     if (confirm.kind === "control") advanceTick("d7-control");
+    if (confirm.kind === "dismiss" && incident) { markFalsePositive(incident.incidentId); setResponseOpen(false); }
     setConfirm(null);
   };
 
   /* ── 예외 (IA §5.2) — 골격은 유지하고 좌측 열에 사실과 복귀 길을 세운다 ── */
-  const exception = watch
+  const exception = watch || district
     ? null
     : !view || !incident
     ? { title: "진행 중인 사건 없음", body: "이 지구에 확인할 사건 후보가 없습니다. 감시 우선대상과 알림은 종합상황에서 봅니다.", to: "/scr-01", label: "종합상황으로" }
@@ -307,6 +311,17 @@ export function EarlyWarningPage() {
         : null;
 
   const tone = view ? statusTone(view.workflowStatus) : null;
+
+  /* D8 진입점 (02 D8 · IA §13.1) — 종료된 사건의 대응 이력으로 훈련 시나리오 스냅샷을 만든다(state/useTrainingEntry) */
+  const closed = view?.workflowStatus === "종료";
+  const existingScenario = incident ? training.existingFor(incident.incidentId) : null;
+
+  /* 검토 인수는 버튼이 아니라 여는 순간이다 (2026-09-14 사용자 지적 "검토 인수와 사건 확인이 같은 뎁스").
+     후보를 연 담당자가 곧 인수자다 — 종합상황의 `확인 필요` 카드를 눌러 들어오면 확인중이 되고 이력에 인수가 남는다.
+     화면 이동이 진행을 미는 것은 허용된 길이다(CLAUDE.md 데모 상태 엔진). 확인중의 버튼은 [오탐] [사건 대응] 둘이다 */
+  useEffect(() => {
+    if (view?.workflowStatus === "후보" && view.incident.incidentId === heroIncidentId) advanceTick("d2-review");
+  }, [view, heroIncidentId, advanceTick]);
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -351,11 +366,14 @@ export function EarlyWarningPage() {
             {
               title: "영향 표현",
               items: [
-                ...SAFEMAP_LAYERS.map((spec) => ({ id: spec.id, label: spec.label, color: spec.color, icon: spec.icon, shape: "area" as const, visible: safemapOn[spec.id] ?? true })),
+                /* 전망 탭에서만 — 지금 지도가 그리는 그 면이 무엇인지 목록에 있어야 한다 */
+                ...(mode === "twin" && twinForecast && selectedMark ? [{ id: "forecast-extent", label: `침수 전망 범위 · ${formatClock(selectedMark.validAt)} · ${ALTERNATIVE_LABEL[twinForecast.alternativeId]}`, color: extentPaint(depthLevel(selectedMark.maxDepthM)).fill, icon: "mdi:waves", shape: "area" as const, visible: extentOn }] : []),
+                ...SAFEMAP_LAYERS.map((spec) => ({ id: spec.id, label: spec.label, color: spec.color, icon: spec.icon, shape: "area" as const, visible: safemapOn[spec.id] ?? false })),
                 ...weatherLayerItems(weather),
               ],
-              onToggle: (id: string) => (isWeatherKey(id) ? setWeather((prev) => ({ ...prev, [id]: !prev[id] })) : setSafemapOn((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }))),
+              onToggle: (id: string) => (id === "forecast-extent" ? setExtentOn((v) => !v) : isWeatherKey(id) ? setWeather((prev) => ({ ...prev, [id]: !prev[id] })) : setSafemapOn((prev) => ({ ...prev, [id]: !(prev[id] ?? false) }))),
               onSetAll: (visible: boolean) => {
+                setExtentOn(visible);
                 setSafemapOn(Object.fromEntries(SAFEMAP_LAYERS.map((s) => [s.id, visible])));
                 setWeather({ rain: visible, temp: visible, wind: visible });
               },
@@ -364,14 +382,22 @@ export function EarlyWarningPage() {
         />
       </div>
 
-      {/* 상단 중앙 — 사건 캡슐 (IA §7 공통 헤더 · 초안 §3). 종합상황 상태 스트립과 같은 자리 문법.
-          `[등급 배지] 제목 [처리상태] · 재난유형 · 생성 · 경과`. 등급 배지는 판단 갱신 전에는 그리지 않고 점수는 위험도
-          카드가 든다. 범위·담당은 좌측 머리말이 들고 탭 전환은 우측 레일이 든다 */}
+      {/* 상단 좌측 · 어디를 보고 있는지. 종합상황으로 되돌아가는 길이기도 하다 (CSMS 사업장 집중관제 상단 좌측 캡슐 그대로,
+          2026-09-14 사용자 지시). 좌측 열 바로 오른쪽에 붙인다 · 읽기 시작점이 왼쪽 열이라 그 열에 세운다.
+          그 옆에 상태 캡슐 — 사건 `[등급] 제목 [처리상태] · 유형 · 생성 · 경과` / 알림 / 지구 현황. 브레드크럼은 길, 캡슐은 상태 */}
+      <div className="pointer-events-none absolute top-3 z-30 flex items-start justify-between gap-2" style={{ left: CENTER_LEFT, right: CENTER_RIGHT }}>
+        <GlassPanel borderStyle="none" className="pointer-events-auto flex h-10 shrink-0 items-center gap-2 rounded-full px-4">
+          <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-foreground-muted" onClick={() => navigate("/scr-01")}>
+            <Icon icon="mdi:chevron-left" width={16} height={16} aria-hidden />
+            종합상황
+          </Button>
+          <span className="h-4 w-px bg-border" aria-hidden />
+          <DistrictPickerChip districtId={districtId} label={scope?.scope.label ?? districtName} onSelect={(id) => navigate(`/scr-02/${id}`)} />
+        </GlassPanel>
       {watch && (
-        <div className="pointer-events-none absolute top-3 z-30 flex justify-center" style={{ left: LEFT_COL + EDGE * 2, right: CENTER_RIGHT }}>
-          <GlassPanel borderStyle="none" className="pointer-events-auto flex max-w-full items-center gap-3 whitespace-nowrap rounded-full px-5 py-2" aria-label="알림 헤더">
+          <GlassPanel borderStyle="none" className="pointer-events-auto flex min-w-0 h-10 items-center gap-3 whitespace-nowrap rounded-full px-4" aria-label="알림 헤더">
             <Badge variant={ALERT_GRADE_TONE[watch.alert.grade].badge} className="shrink-0">{watch.alert.grade}</Badge>
-            <span className="min-w-0 truncate text-body font-bold tracking-tight text-foreground">{watch.alert.demoRole} · {watch.alert.target.label}</span>
+            <span className="min-w-0 truncate text-body font-bold tracking-tight text-foreground">{alertRoleLabel(watch.alert.demoRole)} · {watch.alert.target.label}</span>
             <Badge variant="gray" className="shrink-0">감지</Badge>
             <span className="h-4 w-px shrink-0 bg-border" aria-hidden />
             <span className="flex shrink-0 items-center gap-1 font-mono text-caption text-foreground-muted">
@@ -379,14 +405,20 @@ export function EarlyWarningPage() {
               <span>· 경과 {formatElapsed(watch.alert.createdAt, now)}</span>
             </span>
           </GlassPanel>
-        </div>
+      )}
+      {district && (
+          <GlassPanel borderStyle="none" className="pointer-events-auto flex min-w-0 h-10 items-center gap-3 whitespace-nowrap rounded-full px-4" aria-label="지구 헤더">
+            <Tag className="shrink-0">지구 현황</Tag>
+            <Tag className="shrink-0">{district.incident.hazardKind}</Tag>
+            <span className="h-4 w-px shrink-0 bg-border" aria-hidden />
+            <span className="shrink-0 font-mono text-caption text-foreground-muted">{district.lastReceivedAt ? `최근 수신 ${formatClock(district.lastReceivedAt)}` : "수신 없음"}</span>
+          </GlassPanel>
       )}
       {view && tone && incident && (
-        <div className="pointer-events-none absolute top-3 z-30 flex justify-center" style={{ left: LEFT_COL + EDGE * 2, right: CENTER_RIGHT }}>
-          <GlassPanel borderStyle="none" className="pointer-events-auto flex max-w-full items-center gap-3 whitespace-nowrap rounded-full px-5 py-2" aria-label="사건 헤더">
-            {view.assessment && <Badge variant={RISK_GRADE_TONE[view.assessment.matrix.grade].badge} className="shrink-0">{view.assessment.matrix.grade}</Badge>}
-            <span className="min-w-0 truncate text-body font-bold tracking-tight text-foreground">{incident.title}</span>
+          <GlassPanel borderStyle="none" className="pointer-events-auto flex min-w-0 h-10 items-center gap-3 whitespace-nowrap rounded-full px-4" aria-label="사건 헤더">
+            {/* 제목은 크럼(범위 이름)과 팝업 헤더가, 등급은 우측 위험도 카드가 든다 — 캡슐은 처리상태 · 유형 · 시간만 (2026-09-14 사용자 지시) */}
             <StatusBadge status={tone.badge} label={view.workflowStatus} className="shrink-0" />
+            {view.phase && <Tag className="shrink-0">{view.phase}</Tag>}
             <Tag className="shrink-0">{incident.hazardKind}</Tag>
             <span className="h-4 w-px shrink-0 bg-border" aria-hidden />
             <span className="flex shrink-0 items-center gap-1 font-mono text-caption text-foreground-muted">
@@ -394,31 +426,23 @@ export function EarlyWarningPage() {
               {view.createdAt && <span>· 경과 {formatElapsed(view.createdAt, now)}</span>}
             </span>
           </GlassPanel>
-        </div>
       )}
 
-      {/* 좌측 열 — 머리말 · 관측 추이 · 관련 이벤트 현황 (근거는 왼쪽) */}
-      <div className={`${RAIL_BASE} left-3`} style={{ width: LEFT_COL }}>
-        <GlassPanel className="pointer-events-auto shrink-0">
-          <div className="flex items-center gap-2 px-3 py-2">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/scr-01")} aria-label="종합상황으로" className="size-7 shrink-0 text-foreground-subtle hover:text-foreground">
-              <Icon icon="mdi:arrow-left" className="size-4" aria-hidden />
-            </Button>
-            <div className="flex min-w-0 flex-col">
-              <div className="flex items-center gap-1.5">
-                <h1 className="truncate text-h6 font-semibold text-foreground">{scope?.scope.label ?? districtName}</h1>
-                {scope && <Tag className="shrink-0">{scope.scope.kind}</Tag>}
-              </div>
-              <span className="truncate text-caption text-foreground-muted">
-                {incident ? `${incident.ownership.organization} · ${incident.ownership.officer} · 주체 ${devices.length + facilities.length}` : watch ? `감시 우선구역 · 주체 ${devices.length + facilities.length}` : `지구 · 진행 사건 없음`}
-              </span>
-            </div>
-          </div>
-        </GlassPanel>
+      </div>
+
+      {/* 좌측 열 — 관측 · 근거 (근거는 왼쪽). 머리말은 상단 좌측 캡슐로 옮겼다 */}
+      <div className={`${RAIL_BASE} left-3`} style={{ width: LEFT_RAIL }}>
 
         {exception ? (
           <GlassPanel className="pointer-events-auto shrink-0 p-3">
             <Notice variant={exception.title.includes("찾을 수") ? "danger" : "warning"} title={exception.title} description={exception.body} action={<Button size="sm" onClick={() => navigate(exception.to)}>{exception.label}</Button>} />
+            {closed && (
+              /* D8 — 이 사건의 대응 이력으로 대응 모의훈련 시나리오 후보를 만드는 진입점 (02 D8) */
+              <Button size="sm" variant="secondary" className="mt-2 w-full" onClick={() => incident && training.open(incident, forecastId)}>
+                <Icon icon="mdi:school-outline" className="size-4" aria-hidden />
+                {existingScenario ? "디지털트윈에서 훈련 열기" : "이 사건으로 훈련 스냅샷 만들기"}
+              </Button>
+            )}
           </GlassPanel>
         ) : (
           <>
@@ -426,7 +450,7 @@ export function EarlyWarningPage() {
               <TrendPanel sensors={sensors} selected={selected} onSelect={focusDevice} />
             </GlassPanel>
             <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
-              <CrossCheckPanel rows={rows} selectedEventId={selectedEventId} onSelect={selectEvidence} onOpenForecast={openTwin} />
+              <CrossCheckPanel rows={rows} selectedEventId={selectedEventId} riskEventIds={riskEvidenceIds} onSelect={selectEvidence} onOpenForecast={openTwin} />
             </GlassPanel>
           </>
         )}
@@ -434,9 +458,30 @@ export function EarlyWarningPage() {
 
       {/* 하단 중앙 — 현장영상 */}
       {!exception && (
-        <div className="absolute bottom-3 z-20" style={{ left: LEFT_COL + EDGE * 2, right: CENTER_RIGHT, height: CCTV_DOCK }}>
+        <div className="absolute bottom-3 z-20" style={{ left: CENTER_LEFT, right: CENTER_RIGHT, height: CCTV_DOCK }}>
           <GlassPanel className="h-full">
             <CctvDock channels={channels} onSelect={openChannel} />
+          </GlassPanel>
+        </div>
+      )}
+
+      {/* 우측 레일 · 지구 현황 — 사건·알림 없음. 판단 탭 자리에 지구 현황 카드만 */}
+      {district && (
+        <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
+          <div className="pointer-events-auto shrink-0">
+            <Tabs value="judge">
+              <TabsList variant="panel" className="w-full" aria-label="우측 레일 탭">
+                <TabsTrigger variant="panel" value="judge"><span className="size-1.5 rounded-full bg-success" aria-hidden />판단</TabsTrigger>
+                <TabsTrigger variant="panel" value="twin" disabled title="사건 후보가 생기면 열립니다">전망</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+          <GlassPanel className="pointer-events-auto shrink-0">
+            <DistrictStatusCard incident={district.incident} subjectCount={devices.length + facilities.length} eventCount={district.rows.length} lastReceivedAt={district.lastReceivedAt} faults={faults} />
+          </GlassPanel>
+          <GlassPanel className="pointer-events-auto flex shrink-0 items-center gap-2 p-2">
+            <span className="min-w-0 flex-1 truncate text-caption text-foreground-subtle">상시 관측 · 알림·사건 없음</span>
+            <Button size="sm" variant="secondary" onClick={() => navigate("/scr-01")}>종합상황으로</Button>
           </GlassPanel>
         </div>
       )}
@@ -444,19 +489,19 @@ export function EarlyWarningPage() {
       {/* 우측 레일 · 사건 전 알림 — 탭은 같은 자리에 두되 판단만 열린다. 전망·대응은 사건이 있어야 한다 */}
       {watch && !view && (
         <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
-          <GlassPanel className="pointer-events-auto shrink-0 p-1.5">
+          <div className="pointer-events-auto shrink-0">
             <Tabs value="judge">
               <TabsList variant="panel" className="w-full" aria-label="우측 레일 탭">
                 <TabsTrigger variant="panel" value="judge"><span className="size-1.5 rounded-full bg-risk-lv3" aria-hidden />판단</TabsTrigger>
                 <TabsTrigger variant="panel" value="twin" disabled title="사건 후보가 생기면 열립니다">전망</TabsTrigger>
               </TabsList>
             </Tabs>
-          </GlassPanel>
+          </div>
           <GlassPanel className="pointer-events-auto shrink-0">
             <WatchAlertCard alert={watch.alert} />
           </GlassPanel>
           <GlassPanel className="pointer-events-auto flex shrink-0 items-center gap-2 p-2">
-            <span className="min-w-0 flex-1 truncate text-caption text-foreground-subtle">감시 중 · 사건 후보는 규칙이 만든다</span>
+            <span className="min-w-0 flex-1 truncate text-caption text-foreground-subtle">감시 중 · 아직 사건 아님</span>
             <Button size="sm" variant="secondary" onClick={() => navigate("/scr-01")}>종합상황으로</Button>
           </GlassPanel>
         </div>
@@ -465,7 +510,7 @@ export function EarlyWarningPage() {
       {/* 우측 레일 — 판단 · 전망 · 대응 탭 (결정은 오른쪽). 탭은 KISA 관제 우측 레일의 패널 탭 문법 */}
       {view && !exception && (
         <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
-          <GlassPanel className="pointer-events-auto shrink-0 p-1.5">
+          <div className="pointer-events-auto shrink-0">
             <Tabs value={mode} onValueChange={onTab}>
               <TabsList variant="panel" className="w-full" aria-label="우측 레일 탭">
                 <TabsTrigger variant="panel" value="judge">
@@ -473,34 +518,44 @@ export function EarlyWarningPage() {
                   판단
                 </TabsTrigger>
                 <TabsTrigger variant="panel" value="twin" disabled={!twinAvailable} title={twinAvailable ? undefined : "유효한 전망 없음"}>
-                  전망{twinAvailable && <span className="font-mono text-caption text-foreground-subtle">{forecasts.length}</span>}
+                  전망
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-          </GlassPanel>
+          </div>
 
           {mode === "judge" && (
             <>
+              {/* 브라우저 높이에 맞춘다 (2026-09-15) — 카드 묶음이 남는 높이를 나눠 갖고, 모자라면 이 묶음이 스크롤한다. 액션 바는 바닥 고정 */}
+              <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
               <GlassPanel className="pointer-events-auto shrink-0">
-                <RiskCard assessment={view.assessment} />
+                <RiskCard assessment={view.assessment} previous={view.previousAssessment} />
               </GlassPanel>
               <GlassPanel className="pointer-events-auto shrink-0">
                 <ImpactPanel forecast={baseline} onOpenTwin={openTwin} />
               </GlassPanel>
               {sopItems.length > 0 && (
                 <GlassPanel className="pointer-events-auto shrink-0">
-                  <ResponseSummaryCard items={sopItems} chain={chain} approval={approval} onOpen={openResponse} />
+                  <ResponseSummaryCard items={sopItems} chain={chain} approval={approval} />
                 </GlassPanel>
               )}
-              <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
+              <GlassPanel className="pointer-events-auto flex min-h-[168px] flex-1 flex-col">
                 <EventTimeline events={view.events} />
               </GlassPanel>
+              </div>
               <GlassPanel className="pointer-events-auto shrink-0">
                 <JudgeActionBar
                   status={view.workflowStatus}
+                  phase={view.phase}
                   assessed={view.assessment !== null}
+                  approved={approval !== null}
+                  failure={sopItems.find((i) => i.status === "실패" && i.fallbackAvailable)?.label ?? null}
+                  pendingApproval={approval ? sopItems.filter((i) => i.execMode === "수동" && i.status === "대기").length : 0}
+                  resultsArrived={resultsArrived}
                   onTakeReview={() => advanceTick("d2-review")}
-                  onConfirm={() => advanceTick("d2-confirm")}
+                  onDismiss={() => setConfirm({ kind: "dismiss" })}
+                  /* 사건 대응 = 확인 + 대응 팝업. 확인을 따로 누르는 뎁스를 없앤다 (2026-09-14 사용자 지시) */
+                  onRespond={() => { advanceTick("d2-confirm"); setResponseOpen(true); }}
                   onOpenResponse={openResponse}
                   onCloseReview={closeReview}
                 />
@@ -541,9 +596,8 @@ export function EarlyWarningPage() {
           items={sopItems}
           chain={chain}
           baseline={baseline}
-          basisHint={twinForecast && selectedMark ? `${formatClock(selectedMark.validAt)} 전망 · ${ALTERNATIVE_LABEL[twinForecast.alternativeId]} 기준으로 검토 중` : null}
           selectedBasis={twinForecast && selectedMark ? { validAt: selectedMark.validAt, alternativeId: twinForecast.alternativeId } : null}
-          emergency={view.assessment === null || !recommendation?.basis && !twinForecast}
+          emergency={view.assessment === null || !baseline}
           resultsArrived={resultsArrived}
           onRequestConfirm={setConfirm}
           onCloseReview={closeReview}
@@ -559,128 +613,13 @@ export function EarlyWarningPage() {
           onConfirm={confirmAction}
           incidentTitle={incident.title}
           now={now}
-          approver={incident.ownership.approver ?? incident.ownership.officer}
-          message={disseminations[0]?.message ?? null}
+          /* 오탐은 담당자의 결정이고 승인·전파·통제는 승인권자의 결정이다 */
+          approver={confirm.kind === "dismiss" ? incident.ownership.officer : (incident.ownership.approver ?? incident.ownership.officer)}
+          message={confirm.kind === "approve" && !confirm.itemLabels.some((l) => l.includes("전파")) ? null : (disseminations[0]?.message ?? null)}
           channels={disseminations[0]?.channels ?? ["알림톡", "마을방송", "전광판", "기관 통보"]}
           recipients={disseminations[0]?.recipients ?? "신포동 주민 알림톡 등록자 · 해안도로 전광판 2기 · 마산합포구청 · 경찰서 교통과"}
         />
       )}
     </div>
-  );
-}
-
-/* ── 전망 모드 우측 레일 (IA-03) — scr-05 의 시간축·근거 카드를 그대로 쓴다 ── */
-
-function ForecastRail({ now, resolution, forecast, mark, alternatives, onPickAlternative, onPickValidAt, onBack, onReview, onRepick }: {
-  now: Date;
-  resolution: ReturnType<typeof resolveForecast> | null;
-  forecast: Forecast | null;
-  mark: Forecast["marks"][number] | null;
-  alternatives: { id: AlternativeId; forecast: Forecast }[];
-  onPickAlternative: (id: AlternativeId) => void;
-  onPickValidAt: (at: string) => void;
-  onBack: () => void;
-  onReview: () => void;
-  onRepick: (forecastId: string) => void;
-}) {
-  if (!forecast || !mark) {
-    const reason = !resolution ? "예측판을 고르지 않았다." : resolution.kind === "not-found" ? "존재하지 않는 예측판이다." : resolution.kind === "expired" ? `유효 종료 ${formatClock(resolution.forecast.validUntil)} 가 지난 예측판이다.` : "이 시각에는 아직 생성되지 않은 예측판이다.";
-    return (
-      <GlassPanel className="pointer-events-auto flex flex-col gap-3 p-3">
-        <Notice variant="warning" title="선택한 예측판이 유효하지 않음" description={`${reason} 다른 예측판으로 바꾸지 않는다 — 목록에서 다시 고른다.`} />
-        <ul className="flex flex-col gap-1.5">
-          {alternatives.map((a) => (
-            <li key={a.forecast.forecastId}>
-              <Button size="sm" variant="secondary" className="w-full justify-start" onClick={() => onRepick(a.forecast.forecastId)}>
-                {ALTERNATIVE_LABEL[a.id]} · 기준 {formatClock(a.forecast.basis.baseTime)} · ~{formatClock(a.forecast.validUntil)}
-              </Button>
-            </li>
-          ))}
-        </ul>
-        <Button size="sm" variant="ghost" onClick={onBack}>현재 상태로</Button>
-      </GlassPanel>
-    );
-  }
-
-  /* 시간축 — 눈금은 예측판 유효시각. 눈금 사이 값은 판단에 쓰지 않는다(IA §8) */
-  const timeline: Timeline = {
-    marks: [
-      { id: "now", at: now, label: "현재", kind: "now", value: 0, level: null },
-      ...forecast.marks.map<TimeMark>((m) => ({
-        id: m.validAt,
-        at: new Date(m.validAt),
-        label: `+${Math.round((new Date(m.validAt).getTime() - new Date(forecast.basis.baseTime).getTime()) / 60_000)}분`,
-        kind: "projection",
-        value: m.maxDepthM,
-        level: null,
-      })),
-    ],
-    nowIndex: 0,
-    leadMinutes: Math.max(0, Math.round((new Date(forecast.arrivalAt).getTime() - now.getTime()) / 60_000)),
-    unit: "m",
-  };
-  const current = timeline.marks.find((m) => m.id === mark.validAt);
-  const basis: AnalysisBasis = {
-    at: new Date(forecast.basis.generatedAt),
-    projectedAt: new Date(mark.validAt),
-    terms: [
-      { label: "모델", value: `${forecast.basis.modelName} ${forecast.basis.modelVersion}`, note: forecast.basis.calculationActor },
-      { label: "기준시각", value: formatClock(forecast.basis.baseTime), note: `입력 품질 ${forecast.basis.inputQuality}` },
-      { label: "불확실성", value: forecast.basis.uncertainty.grade, note: forecast.basis.uncertainty.sensitiveTo.join(" · ") },
-    ],
-    sources: forecast.basis.inputEventIds,
-    assumptions: forecast.basis.assumptions,
-  };
-
-  return (
-    <>
-      <GlassPanel className="pointer-events-auto shrink-0 p-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="min-w-0 truncate text-body font-semibold text-foreground">디지털트윈 · {ALTERNATIVE_LABEL[forecast.alternativeId]}</h2>
-          <div className="flex gap-1">
-            {alternatives.map((a) => (
-              <Button key={a.id} size="sm" variant={a.id === forecast.alternativeId ? "default" : "secondary"} onClick={() => onPickAlternative(a.id)}>{ALTERNATIVE_LABEL[a.id]}</Button>
-            ))}
-          </div>
-        </div>
-        {forecast.deltaSummary && <p className="mt-1 text-caption text-warning">기준 대비: {forecast.deltaSummary}</p>}
-      </GlassPanel>
-
-      <GlassPanel className="pointer-events-auto shrink-0">
-        <TimelinePanel
-          timeline={timeline}
-          at={current?.at}
-          mark={current}
-          onScrub={() => undefined}
-          onPick={(m) => { if (m.kind === "projection") onPickValidAt(m.id); }}
-          title="유효 시각"
-          formatAt={formatClock}
-          caption={`도달 예상 ${formatClock(forecast.arrivalAt)}`}
-        />
-      </GlassPanel>
-
-      <GlassPanel className="pointer-events-auto shrink-0 p-3">
-        <div className="mb-1 text-caption font-semibold text-foreground-muted">영향 결과 · {formatClock(mark.validAt)} 최대 {mark.maxDepthM.toFixed(2)} m</div>
-        <ul className="flex flex-col gap-1 text-caption">
-          {forecast.targets.map((t) => (
-            <li key={t.id} className="flex items-center gap-2">
-              <Tag className="w-[56px] justify-center">{t.kind}</Tag>
-              <span className="min-w-0 flex-1 truncate text-foreground">{t.label}</span>
-              <span className="shrink-0 font-mono text-foreground-muted">{t.arrivalAt ? formatClock(t.arrivalAt) : "-"}</span>
-              <Tag tone={t.exposure === "통제됨" ? "success" : t.exposure === "노출" ? "warning" : "danger"}>{t.exposure}</Tag>
-            </li>
-          ))}
-        </ul>
-      </GlassPanel>
-
-      <GlassPanel className="pointer-events-auto min-h-0 flex-1 overflow-y-auto">
-        <AnalysisBasisCard basis={basis} />
-      </GlassPanel>
-
-      <GlassPanel className="pointer-events-auto flex shrink-0 gap-2 p-2">
-        <Button variant="ghost" size="sm" className="flex-1" onClick={onBack}>현재 상태로</Button>
-        <Button size="sm" className="flex-1" onClick={onReview}>이 전망으로 대응 검토</Button>
-      </GlassPanel>
-    </>
   );
 }

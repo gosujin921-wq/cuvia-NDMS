@@ -250,21 +250,21 @@ def mermaid_state():
     """01 §7.4 전환표 → 기본 흐름과 예외·재개 흐름. 상세 조건은 접은 표로 함께 낸다."""
     header, rows = first_table("01", "7.4", ["현재 상태", "전환 조건", "다음 상태", "확정 주체"])
     required = {
-        ("후보", "확인중"), ("후보", "오탐"), ("후보·확인중·확인됨", "병합됨"),
-        ("확인중", "확인됨"), ("확인중", "오탐"), ("확인됨", "대응중"),
-        ("대응중", "통제"), ("통제", "종료"), ("종료", "확인중 또는 대응중"),
+        ("후보", "확인중"), ("후보", "오탐"), ("후보·확인중", "병합됨"),
+        ("확인중", "대응중"), ("확인중", "오탐"),
+        ("대응중", "대응중 (국면 통제)"), ("대응중 (통제)", "종료"), ("종료", "확인중 또는 대응중"),
     }
     actual = {(cur, nxt) for cur, _, nxt, _ in rows}
     if actual != required:
         raise SystemExit("[01_이벤트·사건모델.md] §7.4 전환 행이 바뀌었다. overview 상태도를 다시 검토해야 한다.")
 
+    # 처리상태 다섯(후보·확인중·대응중·종료·오탐) + 예외 병합됨. 통제는 대응중 안의 국면 (2026-09-14)
     primary = "\n".join([
         "flowchart TD",
         '  START((시작)) --> CAND["후보"]',
-        '  CAND -->|후보 검토 시작·업무 인수| REVIEW["확인중"]',
-        '  REVIEW -->|실제 대응 사건 확인| CONFIRMED["확인됨"]',
-        '  CONFIRMED -->|대응 승인·조치 시작| RESPONDING["대응중"]',
-        '  RESPONDING -->|확대 정지·감시 전환| CONTROLLED["통제"]',
+        '  CAND -->|담당자가 열어 검토 인수| REVIEW["확인중"]',
+        '  REVIEW -->|실제 사건 판단 · 대응 시작<br/><small>자동 조치 즉시 · 승인 항목 대기</small>| RESPONDING["대응중"]',
+        '  RESPONDING -->|확대 정지·감시 전환| CONTROLLED["대응중 · 통제 국면"]',
         '  CONTROLLED -->|종료 조건·잔여사항 정리| CLOSED["종료"]',
     ])
     exceptions = "\n".join([
@@ -272,7 +272,7 @@ def mermaid_state():
         '  FALSE_SRC["오탐 판정 가능 상태<br/><small>후보 · 확인중</small>"]',
         '  FALSE_SRC -->|시험·중복·오경보 판정| FALSE["오탐<br/><small>기록 보존</small>"]',
         '  FALSE ~~~ MERGE_SRC',
-        '  MERGE_SRC["병합 가능 상태<br/><small>후보 · 확인중 · 확인됨</small>"]',
+        '  MERGE_SRC["병합 가능 상태<br/><small>후보 · 확인중</small>"]',
         '  MERGE_SRC -->|같은 원인·영향·업무 단위| MERGED["병합됨<br/><small>대상 사건으로 연결</small>"]',
         '  MERGED ~~~ CLOSED',
         '  CLOSED["종료"] -->|같은 원인 지속·위험 징후 재발| REOPEN{"재개"}',
@@ -476,6 +476,7 @@ for key, label in (("6", "IA-01 종합상황"), ("7", "IA-02 사건 작업공간
 parts.append(sec_html("ia", "4", "업무 공간과 화면 관계", (
     mermaid_block(ia_mm, "상시 메뉴, 사건 내부 화면 모드와 팝업을 구분한 IA §5 흐름")
     + '<p>SCR-02의 지도·관련 이벤트·판단·전망·대응 집중 팝업 배치는 ' + src("04", "2") + '에서 확인한다.</p>'
+    + '<p>디지털트윈의 유형별 장면·광역 인셋·표현 부품과 메뉴의 조건 세트·훈련은 ' + src("03", "22") + '에서 확인한다.</p>'
     + render_table(ih, irows, "wide")
     + details("전체 메뉴·화면 구조 (IA §4)", render_md(ia4))
     + details("라우트 계약·전환·예외 처리 (IA §5.2)", render_md(subsection(ia5, "5.2 Phase 2 라우트 계약"), skip_headings=False))
@@ -506,7 +507,7 @@ parts.append(sec_html("twin", "5", "유형별 디지털트윈", (
     + mermaid_block(hz_mm, "재난별로 주 유형군을 먼저 읽고, 점선의 결합 가능 유형군을 확인한다. 03 §13")
     + "<h3>복합재난</h3>" + render_md(t14)
     + "<h3>준비도</h3>" + render_md(t15)
-    + "<h3>대표 데모 밖 비교 유형</h3>" + render_md(subsection(t16, "Phase 2 비교 기준안"))
+    + "<h3>디지털트윈 메뉴의 유형별 조건 기준안</h3>" + render_md(subsection(t16, "디지털트윈 메뉴의 유형별 조건 기준안 (2026-09-15)"))
     + "<h3>IA에서의 역할</h3>" + render_md(t17)
     + "<h3>유형군별 계약</h3>" + "".join(type_blocks)
 ), [("03", "2"), ("03", "5"), ("03", "13"), ("03", "14"), ("03", "15"), ("03", "16")]))

@@ -12,14 +12,30 @@
 import type { ScopeKind, SpatialRef } from "./event";
 import type { RiskMatrixResult } from "./risk-matrix";
 
-export type WorkflowStatus = "후보" | "확인중" | "확인됨" | "대응중" | "통제" | "종료" | "오탐" | "병합됨";
+/** 처리상태 — CSMS 이벤트상세의 발생·접수·조치중·완료·오탐과 같은 다섯 자리 (2026-09-14 확정).
+ *  후보 = 시스템이 만들고 아무도 안 맡음 · 확인중 = 담당자가 열어 보는 중 · 대응중 = 사람이 "사건"이라 했고 SOP 가 돎.
+ *  `확인됨`은 대응중에 합쳤고 `통제`는 상태가 아니라 대응중 안의 국면(IncidentPhase)이다 */
+export type WorkflowStatus = "후보" | "확인중" | "대응중" | "종료" | "오탐" | "병합됨";
+/** 대응중 안의 국면 — 확대가 멈추고 잔여 대응·감시만 남았을 때 `통제`. 보고용 꼬리표이지 승인 경계가 아니다 */
+export type IncidentPhase = "통제";
 
 /** 담당자가 작업 경로로 열 수 있는 상태. 오탐·종료·병합됨은 기록으로 안내한다(IA §5.2 예외) */
-export const ACTIVE_WORKFLOW_STATUSES: readonly WorkflowStatus[] = ["후보", "확인중", "확인됨", "대응중", "통제"];
+export const ACTIVE_WORKFLOW_STATUSES: readonly WorkflowStatus[] = ["후보", "확인중", "대응중"];
 
 export type RelationKind = "원인" | "악화" | "파생" | "동시발생" | "외부참조" | "병합" | "파생 훈련";
 export type HazardKind = "도시침수" | "하천범람" | "해안월류" | "산불" | "폭염" | "지반" | "기반시설 장애";
 export type TwinFamily = "A" | "B" | "C" | "D" | "E" | "F" | "G";
+
+/** 트윈 유형군 이름 — 03 §5 Phase 2 트윈 유형군 */
+export const TWIN_FAMILY_LABEL: Record<TwinFamily, string> = {
+  A: "도시 배수·침수",
+  B: "하천 흐름·범람",
+  C: "해안 경계·월류",
+  D: "이동 전선·확산",
+  E: "대기·면 노출",
+  F: "지반·구조 영향",
+  G: "기반시설·네트워크 장애",
+};
 
 /** 4축 설명값 — 매트릭스 결과를 담당자가 이해하도록 풀어낸 값 (01 §6.2) */
 export type Severity = "낮음" | "보통" | "높음" | "매우 높음";
@@ -36,6 +52,8 @@ export interface HazardAssessment {
   urgency: Urgency;
   certainty: Certainty;
   trend: Trend;
+  /** 담당자가 읽는 판단 요약 1~3줄 — 왜 이 등급인가 · 무엇이 달라졌고 어디쯤인가 · 무엇을 못 믿나. 실개발은 시스템 생성 (2026-09-14 결정) */
+  narrative: string[];
   riskFactors: string[];
   mitigatingFactors: string[];
   counterEvidence: string[];
@@ -116,4 +134,6 @@ export interface StatusChange {
   recordedAt: string;
   /** 병합됨일 때 기준 사건 (01 §7.5 merged_into) */
   mergedInto?: string;
+  /** 대응중 안의 국면 전환 — from·to 가 둘 다 대응중이고 phase 만 바뀐다 */
+  phase?: IncidentPhase;
 }

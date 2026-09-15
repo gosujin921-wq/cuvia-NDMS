@@ -19,7 +19,8 @@ export function DistrictSummaryCard() {
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
         <Stat label="전체 지구" value={s.total} unit="곳" />
         <Stat label="온라인 CCTV" value={s.onlineCctv} unit="대" />
-        <Stat label="위험 지구" value={s.danger} unit="곳" dot={DISTRICT_STATUS_TONE.위험.dot} valueClass={s.danger > 0 ? DISTRICT_STATUS_TONE.위험.text : undefined} />
+        {/* 위험 지구 = 심각·경계 지구 수. 점은 램프 맨 위 색 */}
+        <Stat label="위험 지구" value={s.danger} unit="곳" dot={DISTRICT_STATUS_TONE.심각.dot} valueClass={s.danger > 0 ? DISTRICT_STATUS_TONE.심각.text : undefined} />
         <Stat label="주의 지구" value={s.warning} unit="곳" dot={DISTRICT_STATUS_TONE.주의.dot} valueClass={s.warning > 0 ? DISTRICT_STATUS_TONE.주의.text : undefined} />
       </dl>
     </section>

@@ -10,7 +10,7 @@
  * ───────────────────────────────────────────── */
 
 import { Icon } from "@iconify/react";
-import { Button, GlassPanel, StatusDotLabel, Tag } from "@ds";
+import { Button, GlassPanel, StatusDotLabel } from "@ds";
 import { deviceKindSpec, type Device } from "../../../demo/devices";
 import { derivedFlagOf, observationSeriesAt, qualityOf } from "../../../model/selectors";
 import { levelSpec } from "../../../demo/levels";
@@ -52,27 +52,16 @@ export function DevicePopup({ device, onClose, onShowEvents, onRespond }: { devi
 
       <div className="flex flex-col gap-3 p-3">
         <dl className="flex flex-col gap-1 text-caption">
-          {flag && (
-            <div className="flex items-center gap-2">
-              <dt className="w-14 shrink-0 text-foreground-subtle">규칙</dt>
-              <dd className="flex min-w-0 flex-1 items-center gap-1.5 text-foreground-muted">
-                <span className="truncate font-mono">{(flag.payload as { ruleId: string; ruleVersion: string }).ruleId} {(flag.payload as { ruleVersion: string }).ruleVersion}</span>
-                <Tag className="shrink-0">CUVIA 규칙</Tag>
-              </dd>
-            </div>
-          )}
-          {!flag && (
-            <div className="flex gap-2">
-              <dt className="w-14 shrink-0 text-foreground-subtle">주소</dt>
-              <dd className="min-w-0 flex-1 text-foreground-muted">{device.address}</dd>
-            </div>
-          )}
+          <div className="flex gap-2">
+            <dt className="w-14 shrink-0 text-foreground-subtle">주소</dt>
+            <dd className="min-w-0 flex-1 text-foreground-muted">{device.address}</dd>
+          </div>
           <div className="flex gap-2">
             <dt className="w-14 shrink-0 text-foreground-subtle">지점</dt>
             <dd className="min-w-0 flex-1 text-foreground-muted">{device.spot}</dd>
           </div>
           <div className="flex items-center gap-2">
-            <dt className="w-14 shrink-0 text-foreground-subtle">품질</dt>
+            <dt className="w-14 shrink-0 text-foreground-subtle">데이터</dt>
             <dd className="min-w-0 flex-1">
               <StatusDotLabel status={quality === "정상" ? "success" : quality === "결측" ? "danger" : "pending"} label={quality} />
             </dd>

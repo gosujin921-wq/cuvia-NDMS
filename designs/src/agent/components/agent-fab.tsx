@@ -32,8 +32,11 @@ export function AgentFab({
         zIndex: "var(--z-overlay)",
         opacity: hidden ? 0 : 1,
         visibility: hidden ? "hidden" : "visible",
-        transition:
-          "bottom var(--duration-slow) var(--ease-in-out), right var(--duration-slow) var(--ease-in-out), opacity var(--duration-base) var(--ease-out)",
+        /* 자리(bottom·right)는 전환하지 않는다. 이 버튼은 셸에 한 번만 붙어 화면을 옮겨도 살아남고,
+           자리는 화면 성격(레일·도크)에 따라 호스트가 바꿔 준다(lib/layout.ts FAB_SLOT_*). 여기에
+           transition 을 걸면 라우트가 바뀔 때마다 이전 자리에서 새 자리로 미끄러져 가 화면을 따라다니는
+           것처럼 보인다 — 새 화면에서는 처음부터 제자리에 서 있어야 한다. 페이드만 남긴다 (2026-09-15) */
+        transition: "opacity var(--duration-base) var(--ease-out)",
       }}
     >
       <button

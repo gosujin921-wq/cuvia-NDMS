@@ -12,7 +12,7 @@
 export const MAP_STYLE_URL =
   "https://api.maptiler.com/maps/019cd585-7992-7faa-9a87-243ab5ce8247/style.json?key=WPWmpNf4y5nzKDA7mQXe";
 
-import { CITY_GU_SHAPES } from "./city-shape";
+import { CITY_OUTLINE_RINGS } from "./city-shape";
 
 /** 한국 범위 — 마스크 바깥 링과 예비 상한 */
 export const KOREA_BOUNDS: [[number, number], [number, number]] = [
@@ -21,27 +21,46 @@ export const KOREA_BOUNDS: [[number, number], [number, number]] = [
 ];
 
 /**
- * 창원시 범위 — 5개 구 경계 링의 외곽 상자 + 여백. 지도가 이 밖으로 나가지 않는다(maxBounds).
- * 여백은 가장자리 지구(내서읍 광려천 · 진해 용원항)의 이름표와 패널 여백이 들어올 만큼이다.
- * 경계 링 자체는 시각 배경 전용 근사 형상이다(city-shape.ts 머리말) — 포함 판정에 쓰지 않는다.
+ * 창원시 형상 상자 — 시 외곽 링(본토 + 섬 · city-shape CITY_OUTLINE_RINGS)의 외곽 상자. 시 전체를 화면에 맞출 때
+ * (fitBounds) 쓴다. 섬까지 든 링이라 남쪽 진해만 섬이 맞춤에서 잘리지 않는다. 포함 판정에 쓰지 않는다.
  */
-const CITY_MARGIN_DEG = 0.35;
-export const CITY_BOUNDS: [[number, number], [number, number]] = (() => {
+export const CITY_SHAPE_BOUNDS: [[number, number], [number, number]] = (() => {
   let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
-  for (const gu of CITY_GU_SHAPES) for (const ring of gu.rings) for (const [x, y] of ring) {
+  for (const ring of CITY_OUTLINE_RINGS) for (const [x, y] of ring) {
     if (x < west) west = x; if (x > east) east = x; if (y < south) south = y; if (y > north) north = y;
   }
-  return [[west - CITY_MARGIN_DEG, south - CITY_MARGIN_DEG], [east + CITY_MARGIN_DEG, north + CITY_MARGIN_DEG]];
+  return [[west, south], [east, north]];
 })();
 
 /**
- * 창원 밖을 덮는 마스크 — 색은 바닥(Background)과 같고 반투명으로 얹는다.
+ * 창원시 범위 — 형상 상자 + 여백. 지도가 이 밖으로 나가지 않는다(maxBounds).
  *
- * 불투명으로 덮으면 바다·인접 해안까지 지워져 시 하나가 허공에 뜬 모양이 되고, 어느 지역인지
- * 읽히지 않는다(2026-09-14). 관할 밖은 흐리게 남겨 위치 맥락만 주고, 강조는 창원 안에만 둔다.
+ * 여백은 시 전체 맞춤이 좌우 레일·하단 도크·질의 바를 패딩으로 비울 때 그 패딩만큼 카메라가
+ * 바깥으로 나가야 하는 몫이다. 작은 창(1280×800)에서 우측 패딩이 약 0.43° 까지 커지므로 0.5 로 둔다.
+ * 부족하면 maxBounds 가 카메라를 되밀어 시 가장자리가 패널 밑으로 들어간다.
  */
-export const CITY_MASK_COLOR = "hsl(228, 8%, 13%)";
-export const CITY_MASK_OPACITY = 0.6;
+const CITY_MARGIN_DEG = 0.5;
+export const CITY_BOUNDS: [[number, number], [number, number]] = [
+  [CITY_SHAPE_BOUNDS[0][0] - CITY_MARGIN_DEG, CITY_SHAPE_BOUNDS[0][1] - CITY_MARGIN_DEG],
+  [CITY_SHAPE_BOUNDS[1][0] + CITY_MARGIN_DEG, CITY_SHAPE_BOUNDS[1][1] + CITY_MARGIN_DEG],
+];
+
+/**
+ * 창원 밖을 덮는 마스크 — 불투명한 땅색.
+ *
+ * 관할 밖은 도로·건물·라벨을 전부 지우고 땅과 바다만 남긴다(2026-09-14). 마스크가 타일을 통째로
+ * 덮은 뒤, 스타일의 물 레이어를 그 위에 한 벌 더 올려 바다·호수 형상만 되살린다(useMapLibre).
+ * 반투명으로 낮춰 봤더니 밖의 도로망이 흐리게 비쳐 창원 안팎의 경계가 흐트러졌다.
+ *
+ * 다크 그레이(10%)다 — 창원의 가장 어두운 면(건물 12% · 바닥 13%)보다 아래라 창원이 밝은 쪽으로 도드라진다.
+ * 바닥과 같은 대역(13~20%)은 안팎이 붙어 보였고, 30~78% 밝은 회색은 너무 밝았다
+ * (사용자 지시, 2026-09-14 · 13 → 16 → 19 → 78 → 40 → 30 → 10). 물(23%)은 그대로라 관할 밖 바다는 땅보다 밝다.
+ * 채도는 바닥(8%)보다 낮춰 회색으로 가라앉힌다.
+ */
+export const CITY_MASK_COLOR = "hsl(228, 4%, 10%)";
+
+/** 마스크 위에 되살리는 물 레이어의 원본 id — 이 레이어의 소스·필터를 그대로 복제한다 */
+export const CITY_MASK_WATER_SOURCE_LAYER_ID = "Water";
 
 /**
  * 창원시 중심 — 04 데모 데이터 §1.

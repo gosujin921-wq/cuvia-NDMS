@@ -372,15 +372,28 @@ export function historySeries(districtId: string, from: Date, to: Date): History
 export interface ForecastSlot {
   /** 시각 라벨 (예: 18시) */
   label: string;
+  /** 시각 (0~23) */
+  hour: number;
   windDirection: string;
+  /** 바람이 불어오는 방위각(도) — 화살표는 +180° 로 돌려 가는 방향을 가리킨다 */
+  windFromBearing: number;
   windSpeed: number;
+  /** 풍속 등급 — 기상청 시간별 예보의 약 · 약간 강 · 강 */
+  windLabel: "약" | "약간 강" | "강";
   rain: number;
   rainProbability: number;
+  /** 강수강도 — 기상청 용어. 없으면 "-" */
+  rainIntensity: "-" | "약한비" | "보통비" | "강한비";
+  /** 하늘 상태 아이콘 (mdi) */
+  skyIcon: string;
+  temperature: number;
+  feelsLike: number;
+  humidity: number;
 }
 
 const WIND_DIRECTIONS = ["북", "북동", "동", "남동", "남", "남서", "서", "북서"];
 
-/** 시간대별 예보 — 3시간 간격 8구간 (04 §5) */
+/** 시간대별 예보 — 3시간 간격 8구간 (04 §5). 기상청 시간별 예보 항목(날씨·기온·체감·강수강도·강수확률·바람·습도)을 갖춘다 */
 export function hourlyForecast(districtId: string): ForecastSlot[] {
   const rand = seededRandom(hashSeed(`forecast-${districtId}`));
   /* 예보 슬롯은 정적 앵커(17시)에서 시작 — 시연 중 시계가 흘러도 슬롯이 밀리지 않는다 */
@@ -390,12 +403,26 @@ export function hourlyForecast(districtId: string): ForecastSlot[] {
     const hour = (startHour + i * 3) % 24;
     const gust = 4 + rand() * 6;
     const probability = Math.round(rand() * 70);
+    const dirIndex = Math.floor(rand() * WIND_DIRECTIONS.length);
+    const rain = probability > 50 ? Number((rand() * 6).toFixed(1)) : 0;
+    /* 기온은 저녁부터 밤으로 내려가고 새벽에 바닥, 아침에 다시 오른다 — 29.8 에서 시작하는 하루 곡선 */
+    const night = Math.cos(((hour - 15) / 24) * Math.PI * 2);
+    const temperature = Number((26 + night * 3.8 - rain * 0.3).toFixed(1));
+    const humidity = Math.min(98, Math.round(72 + probability * 0.3 + rain * 2));
     return {
       label: `${String(hour).padStart(2, "0")}시`,
-      windDirection: WIND_DIRECTIONS[Math.floor(rand() * WIND_DIRECTIONS.length)],
+      hour,
+      windDirection: WIND_DIRECTIONS[dirIndex],
+      windFromBearing: dirIndex * 45,
       windSpeed: Number(gust.toFixed(1)),
-      rain: probability > 50 ? Number((rand() * 6).toFixed(1)) : 0,
+      windLabel: gust < 4 ? "약" : gust < 9 ? "약간 강" : "강",
+      rain,
       rainProbability: probability,
+      rainIntensity: rain === 0 ? "-" : rain < 3 ? "약한비" : rain < 15 ? "보통비" : "강한비",
+      skyIcon: rain > 0 ? (rain >= 3 ? "mdi:weather-pouring" : "mdi:weather-rainy") : probability >= 40 ? "mdi:weather-cloudy" : hour >= 19 || hour < 6 ? "mdi:weather-night-partly-cloudy" : "mdi:weather-partly-cloudy",
+      temperature,
+      feelsLike: Number((temperature + (humidity - 70) * 0.06).toFixed(1)),
+      humidity,
     };
   });
 }

@@ -52,7 +52,7 @@ function series(args: {
 
 /* E0 실측강우 (mm/h) — 시나리오 시계열. 17:16~17:28 미수신은 E10 과 맞물린다 */
 export const E0_RAIN = series({
-  prefix: "EV-E0", subject: SUBJECTS.rainGauge, source: "창원 계측(시나리오)", unit: "mm/h", label: "강우강도",
+  prefix: "EV-E0", subject: SUBJECTS.rainGauge, source: "창원 계측", unit: "mm/h", label: "강우강도",
   readiness: "연계 가능", origin: "합성 데이터", mode: "모의", demoRef: "E0", delayMin: 4,
   rows: [["16:00", 2.5], ["16:30", 4.0], ["16:50", 6.5], ["17:00", 8.5], ["17:10", 12.0], ["17:30", 15.5, "지연"], ["17:40", 16.0], ["18:00", 18.0], ["18:30", 16.5], ["19:00", 17.5], ["19:30", 14.0], ["20:00", 9.0], ["20:30", 5.0], ["21:00", 2.0]],
 });
@@ -86,20 +86,20 @@ export const E2_ALERT_WARNING = base({
 
 /* E3a 예측조위 · E3b 실측조위 — 시나리오 (기존 바다누리 API 중단) */
 export const E3A_TIDE_FORECAST = base({
-  id: "EV-E3A-01", type: "FORECAST_UPDATED", eventClass: "원천", producerRole: "원천 기관", source: "해양 데이터(시나리오)",
+  id: "EV-E3A-01", type: "FORECAST_UPDATED", eventClass: "원천", producerRole: "원천 기관", source: "해양 데이터",
   subject: SUBJECTS.tide, observedAt: t("16:20"), validFrom: t("16:20"), validTo: t("22:00"), readiness: "협의 필요", origin: "합성 데이터",
   mode: "모의", calc: "외부 모델 수신", demoRef: "E3a", summary: "예측 만조 18:24 · 176 cm",
   payload: { forecastBaseTime: t("16:00"), highTideAt: t("18:24"), highTideCm: 176 }, incident: false,
 });
 export const E3B_TIDE = series({
-  prefix: "EV-E3B", subject: SUBJECTS.tide, source: "해양 데이터(시나리오)", unit: "cm", label: "실측조위",
+  prefix: "EV-E3B", subject: SUBJECTS.tide, source: "해양 데이터", unit: "cm", label: "실측조위",
   readiness: "협의 필요", origin: "합성 데이터", mode: "모의", demoRef: "E3b",
   rows: [["16:20", 118], ["16:50", 132], ["17:20", 151], ["17:50", 166], ["18:20", 175], ["18:50", 172], ["19:20", 160], ["19:50", 143], ["20:20", 124], ["20:50", 106]],
 });
 
 /* E4a 관로수위 (m) — 급상승 구간 17:00→17:10 */
 export const E4A_PIPE = series({
-  prefix: "EV-E4A", subject: SUBJECTS.pipeLevel, source: "창원 계측(시나리오)", unit: "m", label: "관로수위",
+  prefix: "EV-E4A", subject: SUBJECTS.pipeLevel, source: "창원 계측", unit: "m", label: "관로수위",
   readiness: "연계 가능", origin: "합성 데이터", mode: "모의", demoRef: "E4a",
   rows: [["16:30", 0.58], ["16:40", 0.62], ["16:50", 0.71], ["17:00", 0.96], ["17:05", 1.28], ["17:10", 1.6], ["17:15", 1.82], ["17:20", 2.04], ["17:30", 2.21], ["17:40", 2.36], ["17:50", 2.44], ["18:00", 2.48], ["18:20", 2.41], ["18:40", 2.3], ["19:00", 2.35], ["19:30", 2.12], ["20:00", 1.74], ["20:30", 1.38], ["21:00", 1.02]],
 });
@@ -114,7 +114,7 @@ export const E4B_PIPE_RATE = base({
 
 /* E5a 도로수위 (cm) — 관로 상승 뒤 지표면 영향 */
 export const E5A_ROAD = series({
-  prefix: "EV-E5A", subject: SUBJECTS.roadLevel, source: "창원 계측(시나리오)", unit: "cm", label: "도로수위",
+  prefix: "EV-E5A", subject: SUBJECTS.roadLevel, source: "창원 계측", unit: "cm", label: "도로수위",
   readiness: "연계 가능", origin: "합성 데이터", mode: "모의", demoRef: "E5a",
   rows: [["16:40", 0], ["17:00", 0], ["17:10", 1], ["17:15", 3], ["17:20", 6], ["17:22", 8], ["17:30", 12], ["17:40", 17], ["17:50", 22], ["18:00", 26], ["18:10", 27], ["18:20", 25], ["18:40", 21], ["19:00", 23], ["19:30", 16], ["20:00", 9], ["20:30", 3], ["21:00", 0]],
 });
@@ -126,22 +126,29 @@ export const E5B_ROAD_THRESHOLD = base({
   summary: "도로수위 경계 기준(8 cm) 진입", measurement: { value: 8, unit: "cm" }, derivedFrom: ["EV-E5A-06"],
   payload: { ruleId: "RULE-THRESHOLD-ROAD", ruleVersion: "0.1", level: "경계", thresholdCm: 8 },
 });
+/* D7 대응 중 악화 — 도로수위가 침수 기준(20 cm)을 10분 넘게 넘는다. 위험도가 심각으로 오르고 SOP 항목이 는다 (2026-09-14 결정) */
+export const E5B_ROAD_FLOODED = base({
+  id: "EV-E5B-02", type: "THRESHOLD_CROSSED", eventClass: "파생", producerRole: "CUVIA 규칙", source: "CUVIA 규칙", subject: SUBJECTS.roadLevel,
+  observedAt: t("18:00"), readiness: "내부 생성", origin: "합성 데이터", mode: "모의", demoRef: "E5b",
+  summary: "도로수위 침수 기준(20 cm) 10분 지속 · 26 cm", measurement: { value: 26, unit: "cm" }, derivedFrom: ["EV-E5A-09", "EV-E5A-10"],
+  payload: { ruleId: "RULE-THRESHOLD-ROAD", ruleVersion: "0.1", level: "심각", thresholdCm: 20 },
+});
 
 /* E6a 펌프 가용성 — 사건 전 악화 조건 (17:05 2호기 정지) → D7 재가동 (18:35) */
 export const E6A_PUMP_DOWN = base({
-  id: "EV-E6A-01", type: "FACILITY_STATE_CHANGED", eventClass: "원천", producerRole: "원천 기관", source: "시설물 시스템(시나리오)",
+  id: "EV-E6A-01", type: "FACILITY_STATE_CHANGED", eventClass: "원천", producerRole: "원천 기관", source: "시설물 시스템",
   subject: SUBJECTS.pumpStation, observedAt: t("17:05"), readiness: "협의 필요", origin: "합성 데이터", mode: "모의", demoRef: "E6a",
   summary: "펌프 2호기 정지 · 가용 2/3", payload: { unit: "2호기", state: "정지", available: 2, total: 3, cause: "전기 계통 점검 필요" },
 });
 export const E6A_PUMP_UP = base({
-  id: "EV-E6A-02", type: "FACILITY_STATE_CHANGED", eventClass: "원천", producerRole: "원천 기관", source: "시설물 시스템(시나리오)",
+  id: "EV-E6A-02", type: "FACILITY_STATE_CHANGED", eventClass: "원천", producerRole: "원천 기관", source: "시설물 시스템",
   subject: SUBJECTS.pumpStation, observedAt: t("18:35"), readiness: "협의 필요", origin: "합성 데이터", mode: "모의", demoRef: "E6a",
   summary: "펌프 2호기 재가동 · 가용 3/3", supersedes: "EV-E6A-01", payload: { unit: "2호기", state: "가동", available: 3, total: 3, cause: null },
 });
 
 /* E6b 저류시설 상태 */
 export const E6B_RETENTION = base({
-  id: "EV-E6B-01", type: "FACILITY_STATE_CHANGED", eventClass: "원천", producerRole: "원천 기관", source: "시설물 시스템(시나리오)",
+  id: "EV-E6B-01", type: "FACILITY_STATE_CHANGED", eventClass: "원천", producerRole: "원천 기관", source: "시설물 시스템",
   subject: SUBJECTS.retention, observedAt: t("17:18"), readiness: "협의 필요", origin: "합성 데이터", mode: "모의", demoRef: "E6b",
   summary: "저류시설 여유 62 %", measurement: { value: 62, unit: "%" }, payload: { state: "정상", spareRatio: 0.62 },
 });
@@ -149,7 +156,7 @@ export const E6B_RETENTION = base({
 /* E7 CCTV/VLM — 보유 표본 + 시나리오 분석 문장 (사건 일치·사용권·실제 VLM 미확인)
    // TODO(adapter): 실제 VLM 결과가 오면 model·version·still 교체 */
 export const E7_SCENE = base({
-  id: "EV-E7-01", type: "SCENE_ANALYZED", eventClass: "분석", producerRole: "모델", source: "CCTV·VLM(시나리오)", subject: SUBJECTS.cctvPump,
+  id: "EV-E7-01", type: "SCENE_ANALYZED", eventClass: "분석", producerRole: "모델", source: "CCTV·VLM", subject: SUBJECTS.cctvPump,
   observedAt: t("17:24"), readiness: "협의 필요", origin: "합성 데이터", mode: "모의", calc: "CUVIA 계산", demoRef: "E7",
   summary: "차로 일부 침수 추정 · 신뢰도 0.82", derivedFrom: [],
   payload: { model: "VLM-scene", version: "0.3", analyzedAt: t("17:24"), confidence: 0.82, description: "해안도로 방향 차로 일부에 물고임이 보이며 차량 통행이 느려지고 있다.", still: "/cctv/06_city_flood_start.jpg", calmStill: "/cctv/05_city_normal_01.jpg" },
@@ -182,6 +189,6 @@ export const E10_QUALITY_RECOVER = base({
 /** 관측·외부·분석 이벤트 전부 (E8 은 forecasts.ts 가 Forecast 객체와 함께 든다) */
 export const SOURCE_EVENTS: EventEnvelope[] = [
   ...E0_RAIN, E1_FORECAST_RAIN, E2_ALERT_ADVISORY, E2_ALERT_WARNING, E3A_TIDE_FORECAST, ...E3B_TIDE, ...E4A_PIPE, E4B_PIPE_RATE,
-  ...E5A_ROAD, E5B_ROAD_THRESHOLD, E6A_PUMP_DOWN, E6A_PUMP_UP, E6B_RETENTION, E7_SCENE, E9_FIELD_CONTROL, E9_FIELD_RECEDE,
+  ...E5A_ROAD, E5B_ROAD_THRESHOLD, E5B_ROAD_FLOODED, E6A_PUMP_DOWN, E6A_PUMP_UP, E6B_RETENTION, E7_SCENE, E9_FIELD_CONTROL, E9_FIELD_RECEDE,
   E10_QUALITY_DELAY, E10_QUALITY_RECOVER,
 ];

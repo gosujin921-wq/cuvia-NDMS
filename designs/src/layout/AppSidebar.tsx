@@ -46,11 +46,13 @@ export function AppSidebar() {
       className={cn("lnb-surface flex h-full shrink-0 flex-col items-center px-3 py-2", RAIL)}
       aria-label="메인 내비게이션"
     >
-      {/* 브랜드 — 클릭 시 허브(SCR-01)로 */}
+      {/* 브랜드 — 클릭 시 초기 화면으로. 라우터 이동이 아니라 전체 새로고침이다: 시연 상태 엔진(ScenarioProvider)은
+          라우터 밖에 살아 navigate 로는 시계·단계·선택이 남는다. 새로고침이 곧 S0 리셋이다(CLAUDE.md 데모 상태 엔진 ·
+          "새로고침 = S0 리셋"). 사용자 지시, 2026-09-14 · "로고 누르면 아예 초기화면" */}
       <button
         type="button"
-        onClick={() => go(HUB_ROUTE)}
-        aria-label="종합상황으로 이동"
+        onClick={() => window.location.assign(HUB_ROUTE)}
+        aria-label="초기 화면으로 (종합상황 · 시연 처음부터)"
         className="group mb-4 flex h-[69px] w-full shrink-0 cursor-pointer flex-col items-center justify-center border-x-0 border-b border-t-0 border-sidebar-divider bg-transparent p-0"
       >
         <img

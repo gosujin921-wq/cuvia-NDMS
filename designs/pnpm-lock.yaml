@@ -13,10 +13,10 @@ importers:
         version: 0.1.0
       '@cuvia/components':
         specifier: ^0.14.0
-        version: 0.14.0(@cuvia/tokens@0.7.0)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 0.14.0(@cuvia/tokens@0.7.1)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@cuvia/tokens':
-        specifier: ^0.7.0
-        version: 0.7.0
+        specifier: ^0.7.1
+        version: 0.7.1
       '@iconify/react':
         specifier: ^6.0.2
         version: 6.0.2(react@19.2.8)
@@ -78,8 +78,8 @@ packages:
       '@cuvia/tokens': ^0.7.0
       react: ^19
 
-  '@cuvia/tokens@0.7.0':
-    resolution: {integrity: sha512-Gcik6XgDg/4LyDiANFg7L5b2Fz0VwKnR4pkengZXo/K/ffmIsdhplNugb3hfU8k/pSydWU0+ZepMZtZAp9qoyA==, tarball: https://gitea.cudodev.synology.me:5001/api/packages/cuvia/npm/%40cuvia%2Ftokens/-/0.7.0/tokens-0.7.0.tgz}
+  '@cuvia/tokens@0.7.1':
+    resolution: {integrity: sha512-0fiAi6fbeisp6YZYBhXIFih6wgyM+tyr0u4MddtaM6FdQGTEnsktj4xTAwQNwIg+rRCd+13rCc5aRnvl9bXjHA==, tarball: https://gitea.cudodev.synology.me:5001/api/packages/cuvia/npm/%40cuvia%2Ftokens/-/0.7.1/tokens-0.7.1.tgz}
 
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
@@ -1395,9 +1395,9 @@ snapshots:
 
   '@cuvia/assets@0.1.0': {}
 
-  '@cuvia/components@0.14.0(@cuvia/tokens@0.7.0)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@cuvia/components@0.14.0(@cuvia/tokens@0.7.1)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
-      '@cuvia/tokens': 0.7.0
+      '@cuvia/tokens': 0.7.1
       '@iconify/react': 6.0.2(react@19.2.8)
       '@radix-ui/react-accordion': 1.2.20(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@radix-ui/react-checkbox': 1.3.11(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1421,7 +1421,7 @@ snapshots:
       - '@types/react-dom'
       - react-dom
 
-  '@cuvia/tokens@0.7.0':
+  '@cuvia/tokens@0.7.1':
     dependencies:
       pretendard: 1.3.9
 

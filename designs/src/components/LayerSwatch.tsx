@@ -13,9 +13,10 @@
 import { Icon } from "@iconify/react";
 import { cn } from "@ds";
 import type { HazardSwatch } from "../demo/hazard-layers";
+import { FLOOD_DEPTH_LEGEND } from "../lib/safemap";
 
-/** 목록 표식 모양 — 위험요소 4종 + 장치 핀 + 지구 이름표 */
-export type LegendShape = HazardSwatch | "device" | "pill";
+/** 목록 표식 모양 — 위험요소 4종 + 장치 핀 + 지구 이름표 + 공식 침수 래스터 */
+export type LegendShape = HazardSwatch | "device" | "pill" | "raster";
 
 interface LayerSwatchProps {
   shape: LegendShape;
@@ -75,6 +76,17 @@ export function LayerSwatch({ shape, color, icon, className }: LayerSwatchProps)
       >
         {icon && <Icon icon={icon} className="size-[62%]" style={{ color }} />}
       </span>
+    );
+  }
+
+  /* 공식 침수예상도(안전지도 WMS) — 지도에는 침수심 5등급 색면이 반투명으로 깔린다. 점선 면이 아니라 그 색 띠 그대로 */
+  if (shape === "raster") {
+    return (
+      <span
+        aria-hidden
+        className={cn("flex shrink-0 items-center justify-center rounded-[3px]", className)}
+        style={{ background: `linear-gradient(90deg, ${FLOOD_DEPTH_LEGEND.map((l) => l.color).join(", ")})`, opacity: 0.6 }}
+      />
     );
   }
 

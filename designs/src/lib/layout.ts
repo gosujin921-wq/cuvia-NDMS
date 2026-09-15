@@ -86,6 +86,8 @@ export const CCTV_DOCK = 160;
  *
  * 도크는 좌우 레일 사이에만 서므로(03 §1) 도크가 있는 화면에는 우측 레일도 반드시 있다.
  */
+/** 질의 버튼 한 변(px) — 버튼 왼쪽에 무언가를 세울 때 비켜 설 폭 */
+export const FAB_SIZE = 56;
 export const FAB_SLOT = { right: 16, bottom: 16 };
 export const FAB_SLOT_RAIL = { right: CENTER_RIGHT, bottom: EDGE };
 export const FAB_SLOT_DOCK = { right: CENTER_RIGHT, bottom: EDGE + CCTV_DOCK + EDGE };

@@ -15,7 +15,7 @@ import type { SpatialRef } from "./event";
 export type AlertKind = "단일 심각" | "복합 징후" | "예측 영향" | "품질·연계" | "공식 상황";
 
 /** 시연 역할 (02 §5.2.1 표) */
-export type AlertDemoRole = "사전 감시 알림" | "복합 징후 알림" | "영상 교차확인 알림" | "예측 영향 알림" | "품질·대체 확인 알림";
+export type AlertDemoRole = "사전 감시 알림" | "단일 심각 알림" | "복합 징후 알림" | "영상 교차확인 알림" | "예측 영향 알림" | "품질·대체 확인 알림";
 
 export type AlertGrade = "주의" | "경계" | "심각";
 export type AlertStatus = "생성" | "갱신" | "확인" | "억제" | "해제";

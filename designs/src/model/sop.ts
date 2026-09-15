@@ -67,6 +67,8 @@ export interface SopItem {
   at?: string;
   /** 상태 칸 아래 한 줄 */
   detail?: string;
+  /** 시스템이 채운 근거 — 전망·판단 한 줄. 권고를 따로 보이지 않고 항목이 든다 (2026-09-14) */
+  basis?: string;
   /** 실패 사유 — 실패일 때 detail 대신 선다 */
   failReason?: string;
   recipients?: SopRecipient[];

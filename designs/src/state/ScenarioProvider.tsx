@@ -35,9 +35,13 @@ import { answerMessage, matchQuery, unknownMessage } from "../demo/ai";
 import { seaTempOnce } from "../demo/sea-temp";
 import type { DemoStage, DemoStageSpec, DemoTick } from "../model/stage";
 import { DEMO_STAGE_SPECS } from "../model/stage";
-import type { TrainingScenario, TrainingScenarioRequest } from "../model/training";
+import type { TrainingRun, TrainingScenario, TrainingScenarioRequest, TrainingEntry } from "../model/training";
+import { DEMO_USER } from "../demo/user";
 import { HERO_INCIDENT_ID } from "../fixtures";
 import { buildTrainingScenario, ticksOf } from "../model/selectors";
+
+/** 세계 틱 한 칸 간격 — 승인 뒤 결과가 "도착하는" 느낌. CSMS 자동조치 0.7초보다 길게, 읽을 시간을 준다 */
+const WORLD_TICK_MS = 1800;
 
 /** S0~S9 (04 §0). S2 는 진입(17:20)과 격상(17:22) 두 국면을 가진다 */
 export type ScenarioStep = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
@@ -79,7 +83,7 @@ const TRACK = {
     escalationTrigger: { step: 2 as ScenarioStep, delayMs: 3_000, waitForStage: false },
     escalationToast: {
       title: "서항지구 수위계 1호기 · 경보 격상",
-      description: "수위 3.41 EL.m — 경보 기준 3.35 EL.m 초과 (17:22)",
+      description: "수위 3.41 EL.m · 경보 기준 3.35 EL.m 초과 (17:22)",
       level: "warning" as AlertLevel,
       districtId: "seohang",
     },
@@ -116,7 +120,7 @@ const TRACK = {
     escalationTrigger: { step: 1 as ScenarioStep, delayMs: 2_000, waitForStage: true },
     escalationToast: {
       title: "봉암지구 수위계 2호기 · 내수침수 경보 격상",
-      description: "내수위 4.02 EL.m — 경보 기준 3.83 EL.m 초과 (08:52)",
+      description: "내수위 4.02 EL.m · 경보 기준 3.83 EL.m 초과 (08:52)",
       level: "warning" as AlertLevel,
       districtId: "bongam",
     },
@@ -147,13 +151,13 @@ const ONSET: Record<ScenarioTrack, OnsetSpec> = {
       null,
       {
         title: "구항지구 수위계 1호기 · 폭풍해일 주의보",
-        description: "수위 2.84 EL.m — 주의보 기준 2.8 초과 (16:48)",
+        description: "수위 2.84 EL.m · 주의보 기준 2.8 초과 (16:48)",
         level: "advisory",
         districtId: "guhang",
       },
       {
         title: "서항지구 수위계 1호기 · 폭풍해일 주의보",
-        description: "수위 3.02 EL.m — 주의보 기준 2.9 초과 (17:05) · 명동항 동시 발생",
+        description: "수위 3.02 EL.m · 주의보 기준 2.9 초과 (17:05) · 명동항 동시 발생",
         level: "advisory",
         districtId: "seohang",
       },
@@ -165,13 +169,13 @@ const ONSET: Record<ScenarioTrack, OnsetSpec> = {
       null,
       {
         title: "봉암지구 강우량계 1호기 · 집중호우 주의보",
-        description: "32 mm/h — 주의보 기준 30 초과 (08:14)",
+        description: "32 mm/h · 주의보 기준 30 초과 (08:14)",
         level: "advisory",
         districtId: "bongam",
       },
       {
         title: "봉암지구 수위계 2호기 · 내수침수 주의보",
-        description: "내수위 3.47 EL.m — 주의보 기준 3.45 초과 (08:26)",
+        description: "내수위 3.47 EL.m · 주의보 기준 3.45 초과 (08:26)",
         level: "advisory",
         districtId: "bongam",
       },
@@ -276,12 +280,20 @@ interface ScenarioContextValue {
    *  강조한다(03 §5 · 차수 K). URL(`?device=`)은 새로고침·직접 진입의 보조 복구다 */
   selectedDeviceId: string | null;
   selectDevice: (deviceId: string | null) => void;
+  /** 선택 지구 — 종합상황에서 고르거나 사건 작업공간이 URL 로 연 지구. 지구·사건의 정본은 URL 이고
+   *  이 값은 종합상황으로 돌아왔을 때 지도 이름표와 목록이 "방금 본 곳" 을 세우기 위한 거울이다
+   *  (CSMS selectedSiteId 문법) */
+  selectedDistrictId: string | null;
+  selectDistrict: (districtId: string | null) => void;
   /** 배수문 수동 개폐 — 시설 id 별 상황실 명령. 없으면 운영 로그(08:47 폐쇄)를 따른다.
    *  화면 로컬에 두면 지도를 떠났다 오는 순간 방금 내린 명령이 사라진다 */
   gateOverrides: Record<string, GateOverride>;
   /** 배수문 수동 개폐 실행. 기록 시각은 호출부가 이 컨텍스트에서 읽은 `now` 를 그대로
    *  넘긴다 — 시계의 주인은 여전히 엔진 하나다 */
   setGateClosed: (facilityId: string, closed: boolean, at: Date) => void;
+  /** 담당자가 오탐으로 닫은 사건 — 사건 뷰의 처리상태를 오탐으로 덮는다. 기록으로만 남고 되살리지 않는다(IA §5.2) */
+  falsePositiveIds: string[];
+  markFalsePositive: (incidentId: string) => void;
 
   /* ── Phase 2 시연 시점 엔진 (IA §5.2 · CLAUDE.md) ──
      시계와 단계는 tick 에서 파생된다. 화면의 [검토 인수]·[확인]·[승인]·[통제]·[종료]는 상태를 쓰지 않고
@@ -306,6 +318,14 @@ interface ScenarioContextValue {
   /** D8 훈련 시나리오 생성 — 스냅샷을 묶어 목록에 넣는다(IA §13.1). 원 사건은 바뀌지 않는다 */
   trainingScenarios: TrainingScenario[];
   createTrainingScenario: (req: TrainingScenarioRequest) => TrainingScenario | null;
+  /** 훈련 실행 이력 — 시나리오별 TrainingRun(IA §13.1). 훈련 중 결정·조치·결과는 여기만 쌓이고 원 사건은 바뀌지 않는다 */
+  trainingRuns: TrainingRun[];
+  /** 훈련 시작 — 준비 → 진행중. 시작 시각은 엔진 시계다 */
+  startTrainingRun: (scenarioId: string) => TrainingRun;
+  /** 훈련 중 기록 — `at` 은 훈련 축 위 시각(상대시간 재생)이라 호출부가 넘긴다 */
+  recordTrainingEntry: (runId: string, kind: "decisions" | "actions" | "outcomes", entry: TrainingEntry) => void;
+  /** 훈련 종료 — 회고 한 줄과 함께 완료로 */
+  endTrainingRun: (runId: string, retrospective?: string) => void;
 }
 
 const ScenarioContext = createContext<ScenarioContextValue | null>(null);
@@ -322,6 +342,7 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
   const [phoneReportedAt, setPhoneReportedAt] = useState<Date | null>(null);
   const [dispatches, setDispatches] = useState<DispatchRecord[]>(DISPATCH_HISTORY);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [selectedDistrictId, setSelectedDistrictId] = useState<string | null>(null);
   const [gateOverrides, setGateOverrides] = useState<Record<string, GateOverride>>({});
 
   /* ── Phase 2 tick 상태 ── */
@@ -329,14 +350,27 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
   const ticks = useMemo(() => ticksOf(heroIncidentId), [heroIncidentId]);
   const [tickIndex, setTickIndex] = useState(0);
   const [trainingScenarios, setTrainingScenarios] = useState<TrainingScenario[]>([]);
+  /* 세계 틱 자동 진행 (2026-09-14 사용자 지적 "대체조치했는데 또 9를 눌러야 함").
+     담당자가 조작하면(승인·대체조치·통제 전환) 그 뒤에 이어지는 세계 틱(결과 도착·악화)은 타이머가 한 칸씩 민다.
+     다음 담당자 칸에서 멈춘다 — 세상은 알아서 굴러가고 사람이 할 일 앞에서만 기다린다. 시연 시작(d0→d1)은 발표자가
+     `9` 로 연다. 9 는 리허설 복구용으로 남는다 */
+  const [autoPlay, setAutoPlay] = useState(false);
   const advanceTick = useCallback(
     (tickId: string) => {
       const target = ticks.findIndex((t) => t.id === tickId);
       if (target < 0) return;
       setTickIndex((prev) => (target > prev ? target : prev));
+      if (ticks[target].driver === "담당자") setAutoPlay(true);
     },
     [ticks],
   );
+  useEffect(() => {
+    if (!autoPlay) return;
+    const next = ticks[tickIndex + 1];
+    if (!next || next.driver !== "세계") { setAutoPlay(false); return; }
+    const id = window.setTimeout(() => setTickIndex((prev) => Math.min(prev + 1, ticks.length - 1)), WORLD_TICK_MS);
+    return () => window.clearTimeout(id);
+  }, [autoPlay, tickIndex, ticks]);
   const nextTick = useCallback(() => {
     setTickIndex((prev) => Math.min(prev + 1, ticks.length - 1));
   }, [ticks.length]);
@@ -348,9 +382,43 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     },
     [ticks, tickIndex],
   );
+  const [trainingRuns, setTrainingRuns] = useState<TrainingRun[]>([]);
+  const startTrainingRun = useCallback(
+    (scenarioId: string): TrainingRun => {
+      const run: TrainingRun = {
+        trainingRunId: `TR-${scenarioId}-${Date.now().toString(36)}`,
+        scenarioId,
+        status: "진행중",
+        participants: [DEMO_USER.name],
+        startedAt: ticks[tickIndex].at,
+        decisions: [],
+        actions: [],
+        outcomes: [],
+      };
+      setTrainingRuns((prev) => [...prev, run]);
+      return run;
+    },
+    [ticks, tickIndex],
+  );
+  const recordTrainingEntry = useCallback(
+    (runId: string, kind: "decisions" | "actions" | "outcomes", entry: TrainingEntry) => {
+      setTrainingRuns((prev) => prev.map((r) => (r.trainingRunId === runId && r.status === "진행중" ? { ...r, [kind]: [...r[kind], entry] } : r)));
+    },
+    [],
+  );
+  const endTrainingRun = useCallback(
+    (runId: string, retrospective?: string) => {
+      const endedAt = ticks[tickIndex].at;
+      setTrainingRuns((prev) => prev.map((r) => (r.trainingRunId === runId && r.status === "진행중" ? { ...r, status: "완료", endedAt, retrospective } : r)));
+    },
+    [ticks, tickIndex],
+  );
 
   const selectDevice = useCallback((deviceId: string | null) => {
     setSelectedDeviceId(deviceId);
+  }, []);
+  const selectDistrict = useCallback((districtId: string | null) => {
+    setSelectedDistrictId(districtId);
   }, []);
   /* state 의 ref 거울 — 토스트 같은 부수효과를 updater 밖에서 판단하기 위한 것.
      updater 안에서 쏘면 StrictMode 가 updater 를 두 번 돌려 토스트가 두 장 뜬다 */
@@ -514,6 +582,11 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
 
   /* 배수문 수동 개폐 — 운영 로그(08:47 폐쇄)를 사람이 덮어쓰는 유일한 자리다.
      시설 id 별로 마지막 명령만 남긴다 */
+  const [falsePositiveIds, setFalsePositiveIds] = useState<string[]>([]);
+  const markFalsePositive = useCallback((incidentId: string) => {
+    setFalsePositiveIds((prev) => (prev.includes(incidentId) ? prev : [...prev, incidentId]));
+  }, []);
+
   const setGateClosed = useCallback((facilityId: string, closed: boolean, at: Date) => {
     setGateOverrides((prev) => ({
       ...prev,
@@ -702,8 +775,12 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
       logPhoneReport,
       selectedDeviceId,
       selectDevice,
+      selectedDistrictId,
+      selectDistrict,
       gateOverrides,
       setGateClosed,
+      falsePositiveIds,
+      markFalsePositive,
       heroIncidentId,
       ticks,
       tick,
@@ -716,6 +793,10 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
       nextIsWorld: ticks[tickIndex + 1]?.driver === "세계",
       trainingScenarios,
       createTrainingScenario,
+      trainingRuns,
+      startTrainingRun,
+      recordTrainingEntry,
+      endTrainingRun,
       agentOpen,
       agentMessages,
       agentResponding,
@@ -746,8 +827,12 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     logPhoneReport,
     selectedDeviceId,
     selectDevice,
+    selectedDistrictId,
+    selectDistrict,
     gateOverrides,
     setGateClosed,
+    falsePositiveIds,
+    markFalsePositive,
     heroIncidentId,
     ticks,
     tickIndex,
@@ -755,6 +840,10 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     nextTick,
     trainingScenarios,
     createTrainingScenario,
+    trainingRuns,
+    startTrainingRun,
+    recordTrainingEntry,
+    endTrainingRun,
     agentOpen,
     agentMessages,
     agentResponding,

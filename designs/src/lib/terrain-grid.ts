@@ -30,6 +30,16 @@ export interface TerrainGrid {
 }
 
 let cache: Promise<TerrainGrid> | null = null;
+let fineCache: Promise<TerrainGrid> | null = null;
+
+/** 고해상(10m) 패치 — 서항 배수권역. scripts/fetch-terrain-fine.mjs 가 굽는다. 침수 수면(flood-surface)이 쓴다 */
+export function loadTerrainFine(): Promise<TerrainGrid> {
+  fineCache ??= fetch("/weather/terrain-fine.json").then((res) => {
+    if (!res.ok) throw new Error(`고해상 지형 격자를 받지 못했다 (HTTP ${res.status})`);
+    return res.json() as Promise<TerrainGrid>;
+  });
+  return fineCache;
+}
 
 export function loadTerrainGrid(): Promise<TerrainGrid> {
   cache ??= fetch("/weather/terrain-grid.json").then((res) => {

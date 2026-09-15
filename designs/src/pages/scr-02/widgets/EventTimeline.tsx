@@ -5,9 +5,13 @@
  * 행은 사건의 업무·분석 이벤트를 현재 시계로 자른 것이다 — 여기서 값을 만들지 않는다. 접지 않는다.
  * ───────────────────────────────────────────── */
 
+import { useState } from "react";
 import { cn } from "@ds";
 import type { EventEnvelope } from "../../../model/event";
 import { formatClock } from "../../../lib/datetime";
+
+/** 주체가 없는 이벤트의 표시 주체 — 모델 출력은 "예측 모델", 시스템 파생은 CUVIA. 원천 기관은 출처기관 이름을 쓴다 */
+const ACTOR_BY_ROLE: Partial<Record<string, string>> = { 모델: "예측 모델", 시스템: "CUVIA", "CUVIA 규칙": "CUVIA" };
 
 const DOT: Partial<Record<string, string>> = {
   INCIDENT_STATUS_CHANGED: "var(--color-primary)",
@@ -16,14 +20,23 @@ const DOT: Partial<Record<string, string>> = {
   ACTION_STATUS_CHANGED: "var(--color-success)",
 };
 
-export function EventTimeline({ events }: { events: EventEnvelope[] }) {
-  const entries = events.filter((e) => e.eventClass === "업무" || e.eventClass === "분석").slice().reverse();
-  if (entries.length === 0) return null;
+export function EventTimeline({ events, initial = 3 }: { events: EventEnvelope[]; /** 기본으로 보이는 건수 — 판단 탭은 3, 팝업 이력 탭은 전부 */ initial?: number }) {
+  /* 상태 전환이 참조하는 결정은 전환 줄에 흡수한다 — 한 번 누른 [사건 대응]이 두 줄로 서지 않게 (2026-09-14 검수 8번) */
+  const absorbed = new Set(events.filter((e) => e.eventType === "INCIDENT_STATUS_CHANGED").flatMap((e) => e.references ?? []));
+  const all = events.filter((e) => (e.eventClass === "업무" || e.eventClass === "분석") && !(e.eventType === "DECISION_RECORDED" && absorbed.has(e.eventId))).slice().reverse();
+  const [expanded, setExpanded] = useState(false);
+  const entries = expanded || all.length <= initial ? all : all.slice(0, initial);
+  if (all.length === 0) return null;
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="이력">
       <header className="flex shrink-0 items-baseline gap-2 px-3 pb-1 pt-2.5">
         <h2 className="text-body font-semibold text-foreground">이력</h2>
-        <span className="text-caption text-foreground-subtle">{entries.length}건</span>
+        <span className="text-caption text-foreground-subtle">{all.length}건</span>
+        {all.length > initial && (
+          <button type="button" onClick={() => setExpanded((v) => !v)} className="ml-auto cursor-pointer border-none bg-transparent p-0 text-caption text-foreground-subtle hover:text-foreground">
+            {expanded ? "최근만" : `${all.length - initial}건 더`}
+          </button>
+        )}
       </header>
       <ol className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-2">
         {entries.map((e, index) => {
@@ -39,7 +52,7 @@ export function EventTimeline({ events }: { events: EventEnvelope[] }) {
                   <span className="min-w-0 flex-1 truncate text-caption text-foreground">{e.summary}</span>
                   <span className="shrink-0 font-mono text-caption text-foreground-subtle">{formatClock(e.observedAt)}</span>
                 </div>
-                <p className="truncate text-caption text-foreground-subtle">{e.actor ?? e.sourceSystem}</p>
+                <p className="truncate text-caption text-foreground-subtle">{e.actor ?? ACTOR_BY_ROLE[e.producerRole] ?? e.sourceSystem}</p>
               </div>
             </li>
           );

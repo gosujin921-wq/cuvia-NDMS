@@ -6,9 +6,9 @@
  * 만들지 않는다(IA §5.2 예외 "지구나 이벤트로 임의 사건을 생성하지 않는다").
  * ───────────────────────────────────────────── */
 
-import { Badge, Notice, Tag } from "@ds";
+import { Badge, Tag } from "@ds";
 import type { AlertView } from "../../../model/selectors";
-import { ALERT_GRADE_TONE } from "../../../lib/status-tone";
+import { ALERT_GRADE_TONE, alertKindLabel, alertRoleLabel } from "../../../lib/status-tone";
 import { formatClock } from "../../../lib/datetime";
 
 export function WatchAlertCard({ alert }: { alert: AlertView }) {
@@ -16,19 +16,18 @@ export function WatchAlertCard({ alert }: { alert: AlertView }) {
     <section className="flex flex-col gap-2 px-3 py-2.5" aria-label="알림">
       <header className="flex items-baseline justify-between">
         <h2 className="text-body font-semibold text-foreground">알림</h2>
-        <span className="text-caption text-foreground-subtle">{alert.ruleId} {alert.ruleVersion} · {formatClock(alert.createdAt)}</span>
+        <span className="text-caption text-foreground-subtle">{formatClock(alert.createdAt)} 생성</span>
       </header>
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant={ALERT_GRADE_TONE[alert.grade].badge}>{alert.grade}</Badge>
-        <span className="text-body font-semibold text-foreground">{alert.demoRole}</span>
-        <Tag className="ml-auto">{alert.kind}</Tag>
+        <span className="text-body font-semibold text-foreground">{alertRoleLabel(alert.demoRole)}</span>
+        <Tag className="ml-auto">{alertKindLabel(alert.kind)}</Tag>
       </div>
       <dl className="flex flex-col gap-1 text-caption">
-        <div className="flex items-baseline gap-2"><dt className="w-[60px] shrink-0 text-foreground-subtle">연결 이유</dt><dd className="min-w-0 flex-1 text-foreground-muted">{alert.reason}</dd></div>
+        <div className="flex items-baseline gap-2"><dt className="w-[60px] shrink-0 text-foreground-subtle">왜</dt><dd className="min-w-0 flex-1 text-foreground-muted">{alert.reason}</dd></div>
         <div className="flex items-baseline gap-2"><dt className="w-[60px] shrink-0 text-foreground-subtle">할 일</dt><dd className="min-w-0 flex-1 text-foreground">{alert.task}</dd></div>
-        <div className="flex items-baseline gap-2"><dt className="w-[60px] shrink-0 text-foreground-subtle">반복 억제</dt><dd className="min-w-0 flex-1 text-foreground-muted">{alert.suppression.windowMin}분 · {alert.suppression.releaseCondition}</dd></div>
       </dl>
-      <Notice inline variant="info" title="아직 사건 후보가 아닙니다" description="관로·도로수위 징후와 예측 영향이 후보 조건을 충족하면 규칙이 후보를 만들고 이 화면이 사건으로 바뀝니다." />
+      <p className="text-caption text-foreground-subtle">아직 사건이 아닙니다. 징후가 더 잡히면 사건 후보로 알려 드립니다.</p>
     </section>
   );
 }

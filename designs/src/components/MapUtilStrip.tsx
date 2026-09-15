@@ -198,16 +198,13 @@ export function MapUtilStrip({
  * ───────────────────────────────────────────── */
 
 function MapLayerControl({ specs, disabled }: { specs: MapLayerSpec[]; disabled: boolean }) {
-  const anyHidden = specs.some((spec) => spec.items.some((item) => !item.visible));
-
   return (
     <Popover>
       <PopoverTrigger asChild>
-        {/* 하나라도 꺼져 있으면 눌린 상태로 — 팝오버를 닫아도 필터가 걸려 있음이 남는다 */}
+        {/* 눌린 상태를 두지 않는다 — 기본 꺼짐 층(대조 자료·대피 시설)이 있어 늘 켜져 보이던 것이 "무언가 걸려 있다"로 오독됐다(2026-09-15 사용자) */}
         <MapControlButton
           icon="mdi:layers-outline"
           label="레이어"
-          active={anyHidden}
           disabled={disabled}
         />
       </PopoverTrigger>

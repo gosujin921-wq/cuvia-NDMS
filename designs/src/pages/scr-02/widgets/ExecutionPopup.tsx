@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────
- * 집중 확인 팝업 — 승인·전파문 확인 / 대체조치 / 통제 전환 (IA §9 · 초안 사건작업공간_화면상세 §8)
+ * 집중 확인 팝업 — 승인·전파문 확인 / 대체조치 / 통제 전환 / 오탐 (IA §9 · 04 §7 W7)
  *
  * 대응 전체를 여기 두지 않는다 — 검토는 우측 대응 탭이 한다. 이 팝업은 되돌리기 어려운 결정을 담당자가 한 번 더
  * 읽고 확인하는 자리다. 확인 버튼은 행위 동사이고 그 버튼이 곧 엔진 tick 전진이다(호출부). 상태는 여기 없다.
@@ -31,9 +31,9 @@ interface ExecutionPopupProps {
 
 export function ExecutionPopup({ open, request, onClose, onConfirm, incidentTitle, now, approver, message, channels, recipients }: ExecutionPopupProps) {
   const wide = request.kind === "approve";
-  const title = request.kind === "approve" ? "대응안 승인 · 전파문 확인" : request.kind === "fallback" ? `${request.channel} 실패 · 대체조치` : "통제 상태로 전환할까요?";
-  const verb = request.kind === "approve" ? "승인 · 실행 요청" : request.kind === "fallback" ? "대체조치 기록" : "통제로 전환";
-  const verbIcon = request.kind === "approve" ? "mdi:check-decagram-outline" : request.kind === "fallback" ? "mdi:phone-outline" : "mdi:shield-check-outline";
+  const title = request.kind === "approve" ? (message ? "SOP 승인 · 전파문 확인" : "SOP 승인 · 추가 조치") : request.kind === "fallback" ? `${request.channel} 실패 · 대체조치` : request.kind === "dismiss" ? "오탐으로 닫을까요?" : "통제 상태로 전환할까요?";
+  const verb = request.kind === "approve" ? "승인 · 실행 요청" : request.kind === "fallback" ? "대체조치 기록" : request.kind === "dismiss" ? "오탐으로 닫기" : "통제로 전환";
+  const verbIcon = request.kind === "approve" ? "mdi:check-decagram-outline" : request.kind === "fallback" ? "mdi:phone-outline" : request.kind === "dismiss" ? "mdi:close-circle-outline" : "mdi:shield-check-outline";
 
   return (
     <Modal open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
@@ -50,11 +50,13 @@ export function ExecutionPopup({ open, request, onClose, onConfirm, incidentTitl
                 <div className="mb-1 font-semibold text-foreground-muted">승인할 조치 {request.itemLabels.length}건</div>
                 <div className="flex flex-wrap gap-1">{request.itemLabels.map((k) => <Tag key={k}>{k}</Tag>)}</div>
               </div>
+              {message && (
               <div>
                 <div className="mb-1 font-semibold text-foreground-muted">전파 채널</div>
                 <div className="flex flex-wrap gap-1">{channels.map((c) => <Tag key={c}>{c}</Tag>)}</div>
                 {recipients && <div className="mt-1 text-foreground-muted">대상 · {recipients}</div>}
               </div>
+              )}
               {message && (
                 <div className="rounded-md border border-border bg-card p-3">
                   <div className="mb-1 flex items-center gap-2 text-foreground-subtle">
@@ -79,6 +81,12 @@ export function ExecutionPopup({ open, request, onClose, onConfirm, incidentTitl
                 <div className="flex items-center gap-2"><dt className="w-[64px] shrink-0 text-foreground-subtle">대상</dt><dd className="text-foreground">신포동 통장 6명</dd></div>
               </dl>
               <p className="text-foreground-subtle">실패 기록은 남고 대체조치가 같은 줄 아래 이어집니다.</p>
+            </>
+          )}
+          {request.kind === "dismiss" && (
+            <>
+              <p className="text-foreground">실제 사건이 아닌 것으로 닫습니다. 알림·근거·판단 이력은 기록으로 남고, 이 사건은 다시 열리지 않습니다.</p>
+              <p className="text-foreground-subtle">같은 구역에서 징후가 다시 잡히면 새 후보가 만들어집니다. 오탐 기록은 규칙 검증에 쓰입니다.</p>
             </>
           )}
           {request.kind === "control" && (

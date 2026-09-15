@@ -58,6 +58,8 @@ import { RingDonut } from "../../components/RingDonut";
 import { LevelBadge } from "../../components/LevelBadge";
 import { HAZARD_COLOR } from "../../lib/hazard-colors";
 import { useScenario } from "../../state/ScenarioProvider";
+import { useTrainingEntry } from "../../state/useTrainingEntry";
+import { incidentsAt } from "../../model/selectors";
 import { eventTimelineAt, type TimelineContext, type TimelineEntry } from "../../demo/timeline";
 import { formatClock, formatDate } from "../../lib/datetime";
 import { SeaTempChart } from "../../components/SeaTempChart";
@@ -88,6 +90,7 @@ export function StatisticsPage() {
   const navigate = useNavigate();
   const {
     now,
+    demoNow,
     advanceTo,
     approvedResponseLevel,
     approvedAt,
@@ -95,6 +98,9 @@ export function StatisticsPage() {
     sopExecutedItemIds,
     phoneReportedAt,
   } = useScenario();
+  /* D8 훈련 진입점 (02 D8 · IA §13.1) — 종료된 Phase 2 사건이 있으면 [보고서 생성] 옆에 선다. 재편 전 화면이라 이 한 자리만 Phase 2 를 읽는다 */
+  const training = useTrainingEntry();
+  const closedIncident = useMemo(() => incidentsAt(demoNow).find((v) => v.workflowStatus === "종료")?.incident ?? null, [demoNow]);
   const fromDevice = findDevice(params.get("device") ?? "");
   const fromDistrict = params.get("district");
   /* URL 진입(?tab=history&event=) — 사건 이력 탭이 그 사건이 선택된 채 열린다(03 §4) */
@@ -387,6 +393,12 @@ export function StatisticsPage() {
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {closedIncident && (
+              <Button variant="secondary" size="sm" onClick={() => training.open(closedIncident)}>
+                <Icon icon="mdi:school-outline" className="size-4" aria-hidden />
+                {training.existingFor(closedIncident.incidentId) ? "디지털트윈에서 훈련 열기" : "이 사건으로 훈련 스냅샷 만들기"}
+              </Button>
+            )}
             {/* 사후검증(S8)이 끝나는 자리에서 문서로 넘긴다 — 흐름이 통계에서 멈추지 않고
                 보고서로 닫힌다(SCR-07). 사건을 들고 가므로 저쪽에서 다시 고를 필요가 없다 */}
             <Button

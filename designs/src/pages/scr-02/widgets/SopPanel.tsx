@@ -18,100 +18,75 @@
 
 import { useState } from "react";
 import { Icon } from "@iconify/react";
-import { Badge, Button, Checkbox, Notice, Tag, cn, toast } from "@ds";
-import type { HazardAssessment, WorkflowStatus } from "../../../model/incident";
-import type { Recommendation, Decision } from "../../../model/response";
+import { Badge, Button, Checkbox, Notice, cn, toast } from "@ds";
+import type { WorkflowStatus } from "../../../model/incident";
+import type { Decision } from "../../../model/response";
+import type { RiskGrade } from "../../../model/risk-matrix";
 import { SOP_PRIORITY_BADGE, SOP_PRIORITY_ORDER, sopProgress, type ChainStageView, type SopItem, type SopRecipient } from "../../../model/sop";
 import { ALTERNATIVE_LABEL, type AlternativeId } from "../../../model/forecast";
 import { SOP_STATUS_TONE } from "../../../lib/status-tone";
 import { formatClock } from "../../../lib/datetime";
-import { RiskCard } from "./RiskCard";
 import { ResponseChain } from "./ResponseChain";
 
 export type ConfirmRequest =
   | { kind: "approve"; itemLabels: string[] }
   | { kind: "fallback"; channel: string; failReason: string }
-  | { kind: "control" };
-
-/** 권고 카드 — 팝업 사건 개요 탭이 쓴다. 권고 전에는 판단 요약 + 안내 */
-export function RecommendationCard({ recommendation: rec, assessment, basisHint, selectedBasis, emergency }: { recommendation: Recommendation | null; assessment: HazardAssessment | null; basisHint: string | null; selectedBasis?: { validAt: string; alternativeId: AlternativeId } | null; emergency?: boolean }) {
-  /* 기준 줄 — 담당자가 트윈에서 고른 시각·대안이 우선(02 D6 "담당자가 고른 시각·대안이 권고 카드에"), 없으면 권고 기록의 기준 */
-  const basis = selectedBasis ?? rec?.basis ?? null;
-  return (
-    <div className="flex flex-col gap-1">
-      <h3 className="text-caption font-semibold text-foreground-muted">권고</h3>
-      {rec ? (
-        <div className="flex flex-col gap-1 rounded-lg border border-border bg-card px-2.5 py-2 text-caption">
-          <div className="flex flex-wrap items-center gap-2">
-            <Tag tone="danger">{rec.proposedLevel}</Tag>
-            {basis ? <span className="text-foreground-muted">{formatClock(basis.validAt)} 전망 · {ALTERNATIVE_LABEL[basis.alternativeId]} 기준</span> : <span className="text-warning">전망 기준 없음 · 긴급 대응</span>}
-            <span className="ml-auto text-foreground-subtle">{rec.producer}</span>
-          </div>
-          {assessment && (
-            <p className="text-foreground-muted">
-              {assessment.matrix.grade} {assessment.matrix.score.toFixed(2)} · 심각 {assessment.severity} · 긴급 {assessment.urgency} · 확실 {assessment.certainty} · {assessment.trend}
-            </p>
-          )}
-          <ul className="list-disc pl-4 text-foreground">{rec.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-          <div className="text-foreground-subtle">반대 근거</div>
-          <ul className="list-disc pl-4 text-foreground-muted">{rec.counterReasons.map((r) => <li key={r}>{r}</li>)}</ul>
-        </div>
-      ) : (
-        <>
-          <div className="rounded-md border border-border bg-surface-raised/60"><RiskCard assessment={assessment} compact /></div>
-          <Notice inline variant={emergency ? "warning" : "info"} title={emergency ? "전망 기준 없음 · 긴급 대응" : "권고 생성 전"} description={basisHint ?? (emergency ? "판단·전망 없이 열었다. 사용한 근거와 전망 부재를 구분해 기록한다. 사건 확인과 승인 경계는 그대로다." : "전망 탭에서 전망을 고르고 [이 전망으로 대응 검토]를 누르면 권고가 생성된다.")} />
-        </>
-      )}
-    </div>
-  );
-}
+  | { kind: "control" }
+  | { kind: "dismiss" };
 
 interface SopPanelProps {
   status: WorkflowStatus;
-  /** 권고 카드를 이 패널 안에 세울지 — 팝업에서는 사건 개요 탭이 들고 SOP 탭은 목록만 */
-  showRecommendation?: boolean;
-  assessment: HazardAssessment | null;
-  recommendation: Recommendation | null;
+  /** 항목을 켠 위험등급 — 머리 줄 "경계 기준 8항목" */
+  grade: RiskGrade | null;
   approval: Decision | null;
   items: SopItem[];
   chain: ChainStageView[];
-  /** 트윈에서 넘어온 전망 기준이 아직 권고에 없을 때의 안내용 */
-  basisHint: string | null;
+  /** 조치안을 채운 전망 기준 — 담당자가 전망 탭에서 고른 것이 우선, 없으면 CUVIA 기준 전망 */
+  basis: { validAt: string; alternativeId: AlternativeId } | null;
+  /** 판단·전망 없이 열렸는가 */
+  emergency: boolean;
   onRequestConfirm: (req: ConfirmRequest) => void;
 }
 
-export function SopPanel({ status, showRecommendation = true, assessment, recommendation, approval, items, chain, basisHint, onRequestConfirm }: SopPanelProps) {
-  const rec = recommendation;
+/* 권고를 따로 보이지 않는다 (2026-09-14 사용자 결정 "그게 SOP잖아"). 시스템이 채운 대상·시한·근거는 항목 아래 줄이고,
+   어떤 항목이 서는지는 위험등급이 정한다. 승인은 SOP 승인 하나다 */
+export function SopPanel({ status, grade, approval, items, chain, basis, emergency, onRequestConfirm }: SopPanelProps) {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [collapsedDone, setCollapsedDone] = useState(true);
   const { done, total, pct } = sopProgress(items);
   const allDone = total > 0 && done === total;
   /* 승인 전 수동 항목 — 체크·부분 승인의 대상. 자동은 사람이 미룰 수 있는 일이 아니다 */
-  const pendingManual = !approval ? items.filter((i) => i.execMode === "수동" && i.status === "대기") : [];
-  const interactive = status === "확인됨" || status === "대응중" || status === "통제";
+  /* 승인 뒤에도 등급이 올라 새로 선 수동 항목은 다시 승인 대상이다 (2026-09-14 대응 중 악화) */
+  const pendingManual = items.filter((i) => i.execMode === "수동" && i.status === "대기");
+  const interactive = status === "대응중";
 
   const requestApprove = (ids: string[]) => {
     if (ids.length === 0) { toast.error("승인할 조치를 하나 이상 고르세요."); return; }
-    const labels = items.filter((i) => ids.includes(i.id) || i.confirm === "cap").map((i) => i.label);
+    const labels = items.filter((i) => ids.includes(i.id) || (i.confirm === "cap" && i.status === "대기")).map((i) => i.label);
     onRequestConfirm({ kind: "approve", itemLabels: labels });
   };
 
   return (
-    <section className="flex flex-col gap-4 p-3" aria-label="대응">
-      {showRecommendation && <RecommendationCard recommendation={rec} assessment={assessment} basisHint={basisHint} />}
+    <section className="flex flex-col gap-4" aria-label="대응">
+      {emergency && <Notice inline variant="warning" title="판단·전망 없이 대응" description="위험도 판단이나 기준 전망이 아직 없습니다. 근거는 그대로 남고 승인 절차도 같습니다." />}
 
       {items.length > 0 && (
         <>
+          {/* 머리 한 줄 — 누가 무엇을 기준으로 채웠나. 이 줄이 옛 권고 카드의 전부다 */}
+          <p className="-mb-2 text-caption text-foreground-subtle">
+            {grade ? `${grade} SOP ${items.length}항목` : `SOP ${items.length}항목`}
+            {basis ? ` · ${formatClock(basis.validAt)} 전망(${ALTERNATIVE_LABEL[basis.alternativeId]}) 기준 · CUVIA 작성` : " · 전망 없이 CUVIA 작성"}
+          </p>
           <ResponseChain stages={chain} />
 
           {/* 진행률 — 전체 요약. 아래부터가 목록이라 한 단계 더 띄운다 */}
-          <div className="mb-1">
+          <div className="mb-2">
             <div className="flex items-baseline justify-between pb-1.5">
-              <span className="text-caption font-semibold text-foreground-muted">SOP 진행률</span>
+              <span className="text-caption text-foreground-muted">SOP 진행률</span>
               <span className="font-mono text-caption text-foreground-muted">{done}/{total} 완료 · {pct}%</span>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-raised" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-              <div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${pct}%` }} />
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-fill-subtle" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+              <div className="h-full rounded-full bg-primary-text transition-[width] duration-300" style={{ width: `${pct}%` }} />
             </div>
           </div>
 
@@ -122,7 +97,7 @@ export function SopPanel({ status, showRecommendation = true, assessment, recomm
             const groupAllDone = groupDone === group.length;
             const collapsed = groupAllDone && collapsedDone;
             return (
-              <div key={priority} className="flex flex-col gap-1.5">
+              <div key={priority} className="flex flex-col gap-2">
                 <button type="button" onClick={() => groupAllDone && setCollapsedDone((v) => !v)} className={cn("flex w-full items-center gap-1.5 border-none bg-transparent p-0 text-left", groupAllDone ? "cursor-pointer" : "cursor-default")} aria-expanded={!collapsed}>
                   <Badge variant={SOP_PRIORITY_BADGE[priority]} className="shrink-0">{priority}</Badge>
                   <span className="text-caption text-foreground-muted">{groupDone} / {group.length} 완료</span>
@@ -137,7 +112,8 @@ export function SopPanel({ status, showRecommendation = true, assessment, recomm
                           checkable={interactive && pendingManual.some((p) => p.id === item.id)}
                           checked={checked.has(item.id)}
                           onToggleCheck={() => setChecked((prev) => { const next = new Set(prev); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })}
-                          onApproveCap={interactive && !approval && item.confirm === "cap" ? () => requestApprove(pendingManual.map((p) => p.id)) : undefined}
+                          onApproveCap={interactive && item.status === "대기" && item.confirm === "cap" ? () => requestApprove(pendingManual.map((p) => p.id)) : undefined}
+                          added={approval !== null && item.execMode === "수동" && item.status === "대기"}
                           onFallback={item.fallbackAvailable && item.recipients ? () => { const f = item.recipients!.find((r) => r.sent === "실패" && !r.fallback)!; onRequestConfirm({ kind: "fallback", channel: f.name, failReason: f.detail ?? "실패" }); } : undefined}
                         />
                       </li>
@@ -175,8 +151,10 @@ export function SopPanel({ status, showRecommendation = true, assessment, recomm
 
 /* ── 항목 줄 — CSMS SopRow 와 같은 해부 ── */
 
-function SopRow({ item, checkable, checked, onToggleCheck, onApproveCap, onFallback }: {
+function SopRow({ item, checkable, checked, onToggleCheck, onApproveCap, onFallback, added = false }: {
   item: SopItem;
+  /** 승인 뒤 등급 상향으로 새로 선 항목 — `추가` 표식 */
+  added?: boolean;
   checkable: boolean;
   checked: boolean;
   onToggleCheck: () => void;
@@ -191,14 +169,14 @@ function SopRow({ item, checkable, checked, onToggleCheck, onApproveCap, onFallb
   const failed = item.status === "실패";
 
   return (
-    <div className={cn("rounded-md border bg-card transition-colors", failed ? "border-danger/60" : checkable ? "border-primary/50" : "border-border")}>
-      <div className="flex items-center gap-2.5 px-3 py-2">
+    <div className={cn("rounded-md border bg-row-zebra transition-colors", failed ? "border-danger-border" : checkable ? "border-primary-text/50" : "border-border")}>
+      <div className="flex items-center gap-2.5 px-3 py-2.5">
         {checkable && <Checkbox checked={checked} onCheckedChange={onToggleCheck} aria-label={`${item.label} 선택`} className="shrink-0" />}
         <span key={`icon-${item.status}`} className="shrink-0 duration-300 animate-in fade-in zoom-in-50">
           <Icon icon={item.status === "대기" ? (auto ? "mdi:cog-outline" : "mdi:account-outline") : tone.icon} className={cn("size-4", item.status === "대기" ? "text-foreground-subtle" : tone.text, tone.spin && "animate-spin")} aria-hidden />
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className={cn("truncate text-caption", done ? "text-foreground-muted" : "text-foreground")}>{item.label}</span>
+          <span className={cn("flex items-center gap-1.5 truncate text-body", done ? "text-foreground-muted" : "text-foreground")}>{item.label}{added && <Badge variant="red" className="shrink-0">추가</Badge>}</span>
           {failed && item.failReason ? (
             <span className="truncate text-caption text-danger">{item.failReason}</span>
           ) : (
@@ -231,9 +209,10 @@ function SopRow({ item, checkable, checked, onToggleCheck, onApproveCap, onFallb
         </span>
       </div>
 
-      {(item.detail || item.facility || (item.recipients && item.recipients.length > 0)) && (
-        <div className="flex flex-col gap-1 border-t border-border px-3 py-1.5 text-caption">
+      {(item.detail || item.basis || item.facility || (item.recipients && item.recipients.length > 0)) && (
+        <div className="flex flex-col gap-1 border-t border-border px-3 py-2 text-caption">
           {item.detail && !failed && <p className="truncate text-foreground-muted">{item.detail}</p>}
+          {item.basis && !failed && <p className="truncate text-foreground-subtle" title={item.basis}>근거 · {item.basis}</p>}
           {item.facility && (
             <p className="flex items-center gap-1.5"><span className="text-foreground-subtle">가동 여부</span><span className={cn("font-medium", item.facility.engaged ? "text-danger" : "text-foreground")}>{item.facility.label}</span></p>
           )}

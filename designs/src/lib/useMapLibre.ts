@@ -17,8 +17,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { CITY_BOUNDS, CITY_CENTER, CITY_MASK_COLOR, CITY_MASK_OPACITY, KOREA_BOUNDS, MAP_VIEW_DEFAULTS } from "./map-config";
-import { CITY_GU_SHAPES } from "./city-shape";
+import { CITY_BOUNDS, CITY_CENTER, CITY_MASK_COLOR, CITY_MASK_WATER_SOURCE_LAYER_ID, KOREA_BOUNDS, MAP_SURFACE_PAINT, MAP_VIEW_DEFAULTS } from "./map-config";
+import { CITY_OUTLINE_RINGS } from "./city-shape";
 import { loadPatchedStyle } from "./map-style";
 
 interface UseMapLibreOptions {
@@ -73,6 +73,8 @@ export function useMapLibre(
          **가려지지 않은 영역**을 기준으로 잡혀, 시 전체가 그 한가운데 선다. */
       if (options.padding) map.setPadding(options.padding);
       mapRef.current = map;
+      /* 개발 중에만 — 굽기 스크립트(scripts/bake-*.mjs)가 베이스맵 형상(도로·건물)을 읽어 가는 손잡이 */
+      if (import.meta.env.DEV) { const w = window as unknown as { __ndmsMaps?: maplibregl.Map[] }; (w.__ndmsMaps ??= []).push(map); }
 
       /* 스타일에 없는 스프라이트 요청은 빈 이미지로 흘려보낸다(콘솔 경고 방지) */
       map.on("styleimagemissing", (e) => {
@@ -81,17 +83,33 @@ export function useMapLibre(
       });
 
       map.on("load", () => {
-        /* 창원 밖 마스크 — 한국 범위를 덮는 면에 5개 구 경계를 구멍으로 뚫는다. 스타일 맨 위에 올려
-           타일의 도로·라벨·바다를 가라앉히고, 이 앱이 나중에 얹는 레이어(침수 자료·기상·영향 범위)는 그 위에
-           선다. 반투명이라 관할 밖 해안·인접 시가 흐리게 남아 위치가 읽힌다 (map-config CITY_MASK_OPACITY) */
+        /* 창원 밖 마스크 — 한국 범위를 덮는 면에 시 외곽(구 링 합집합 · city-shape CITY_OUTLINE_RINGS)을 구멍으로
+           뚫는다. 구 링을 따로 뚫으면 구 경계 틈이 창원 안에 마스크 조각으로 남는다. 스타일 맨 위에 올려
+           타일의 도로·건물·라벨을 덮고, 이 앱이 나중에 얹는 레이어(침수 자료·기상·영향 범위)는 그 위에
+           선다. 색은 바닥과 같아 경계 밖 땅은 "정보 없는 땅"으로만 읽힌다 (map-config CITY_MASK_COLOR) */
         const [[w, s], [e, n]] = KOREA_BOUNDS;
         const outer: [number, number][] = [[w, s], [e, s], [e, n], [w, n], [w, s]];
-        const holes = CITY_GU_SHAPES.flatMap((gu) => gu.rings.map((ring) => [...ring, ring[0]]));
+        const holes = CITY_OUTLINE_RINGS.map((ring) => [...ring, ring[0]]);
         map.addSource("city-mask", {
           type: "geojson",
           data: { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [outer, ...holes] } },
         });
-        map.addLayer({ id: "city-mask", type: "fill", source: "city-mask", paint: { "fill-color": CITY_MASK_COLOR, "fill-opacity": CITY_MASK_OPACITY } });
+        map.addLayer({ id: "city-mask", type: "fill", source: "city-mask", paint: { "fill-color": CITY_MASK_COLOR, "fill-opacity": 1 } });
+
+        /* 마스크 위에 물만 되살린다 — 관할 밖은 땅·바다 구분만 남기고 도로·시가지는 안 보인다.
+           스타일의 물 레이어를 소스·필터째 복제하므로 스타일이 바뀌어도 같은 형상을 따라간다.
+           창원 안에서는 원본 물 위에 같은 색이 한 번 더 깔릴 뿐이라 보이는 값이 안 변한다 */
+        const water = map.getStyle().layers.find((l) => l.id === CITY_MASK_WATER_SOURCE_LAYER_ID);
+        if (water && water.type === "fill" && "source-layer" in water) {
+          map.addLayer({
+            id: "city-mask-water",
+            type: "fill",
+            source: water.source,
+            "source-layer": water["source-layer"],
+            filter: water.filter,
+            paint: { "fill-color": MAP_SURFACE_PAINT.Water.color, "fill-opacity": 1 },
+          });
+        }
         setReady(true);
       });
     })();

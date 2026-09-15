@@ -87,7 +87,8 @@ function FocusTrend({ device }: { device: Device }) {
 
   return (
     <>
-      <div className="flex flex-col gap-1">
+      {/* 그래프 상자 — 목록·판정과 갈라 선다 (2026-09-14 사용자 지시). 근거 줄과 같은 카드 면 */}
+      <div className="flex flex-col gap-1 rounded-lg border border-border bg-card px-2.5 py-2">
         <div className="flex items-baseline gap-2">
           <span className="min-w-0 truncate text-caption text-foreground-muted">{device.name}</span>
           <span className="flex shrink-0 items-baseline gap-1">
@@ -113,9 +114,9 @@ function FocusTrend({ device }: { device: Device }) {
       </div>
 
       {/* 파생 판정 — 원천 관측과 갈라 적는다 */}
-      <dl className="flex flex-col gap-1.5 border-t border-border pt-2 text-caption">
+      <dl className="flex flex-col gap-1.5 text-caption">
         <div className="flex items-baseline gap-2">
-          <dt className="w-[72px] shrink-0 text-foreground-subtle">파생 판정</dt>
+          <dt className="w-[72px] shrink-0 text-foreground-subtle">판정</dt>
           <dd className="flex min-w-0 flex-1 items-baseline gap-1.5">
             {flag ? (
               <>
@@ -123,13 +124,13 @@ function FocusTrend({ device }: { device: Device }) {
                 <span className="min-w-0 truncate text-foreground">{flag.summary}</span>
               </>
             ) : (
-              <span className="text-foreground-subtle">판정 없음</span>
+              <span className="text-foreground-subtle">기준 이내</span>
             )}
           </dd>
         </div>
         {quality !== "정상" && (
           <div className="flex items-baseline gap-2">
-            <dt className="w-[72px] shrink-0 text-foreground-subtle">품질</dt>
+            <dt className="w-[72px] shrink-0 text-foreground-subtle">데이터 상태</dt>
             <dd className="text-warning">{quality} · 확실성에 반영</dd>
           </div>
         )}

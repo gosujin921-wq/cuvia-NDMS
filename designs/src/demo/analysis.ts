@@ -409,7 +409,8 @@ export interface AnalysisReview {
  *
  * AnalysisReview 와 달리 eventId 가 없고, 대신 **사용자가 세운 조건값을 그대로 담는다.**
  * 사건에 붙지 않는 결과라 자유롭게 세운 조건이 그대로 결론이 된다 — 붙일 사건이 없으니
- * 공식 전망과 탐색값을 가를 이유도 없다(state/analysis-results.ts).
+ * 공식 전망과 탐색값을 가를 이유도 없다.
+ * ★ Phase 1 잔재 — scr-05 가 IA-T01 대응 모의훈련으로 재편되며(2026-09-14) 소비처가 없다. 훈련 결과는 model/training TrainingRun 이 든다.
  */
 export interface DrillSnapshot {
   districtId: string;

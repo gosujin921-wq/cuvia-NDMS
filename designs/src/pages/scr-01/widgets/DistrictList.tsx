@@ -3,21 +3,27 @@
  *
  * 정렬은 위험 → 주의 → 정상, 동률은 최근 사건. 행은 상태 점 · 지구명 · 유형 / 두 번째 줄에 진행 사건
  * (`등급 사건 제목`) 또는 감시 사유, 그도 없으면 관측 대상. 줄을 비우면 목록 높이가 들쭉날쭉해진다.
- * 메인 사건이 도는 동안 그 줄에 위험도 색 테두리 + 후광. 펄스는 지도 이름표 몫이라 여기엔 없다.
+ * 메인 사건이 도는 동안 그 줄에 테두리 + 후광. 색은 점과 같은 지구 상태 한 색이다 — 등급 색으로 두면 노랑 점에 주황
+ * 테두리가 선다(2026-09-14). 등급은 둘째 줄 글자가 든다. 펄스는 지도 이름표 몫이라 여기엔 없다.
+ * 줄을 가리키면 지도의 그 이름표가 선다(lib/district-hover). 상태가 바뀌어 순서가 달라지면 motion layout 이
+ * 위치 변화를 재서 FLIP 이동을 건다 — 순수 CSS 로 재정렬 애니메이션이 안 되는 유일한 지점이라 여기서만 쓴다.
  * 푸터 범례는 목록이 스크롤돼도 제자리에 남는다.
  * ───────────────────────────────────────────── */
 
 import { useMemo } from "react";
 import { Icon } from "@iconify/react";
+import { motion } from "motion/react";
 import { cn } from "@ds";
 import { DISTRICTS, type District } from "../../../demo/districts";
 import { districtStatusAt, gradeOf, topIncidentByDistrictAt, watchTargetsAt } from "../../../model/selectors";
 import { DISTRICT_STATUS_ORDER, DISTRICT_STATUS_TONE, RISK_GRADE_TONE } from "../../../lib/status-tone";
 import { useScenario } from "../../../state/ScenarioProvider";
+import { useDistrictHover } from "../../../lib/district-hover";
 import { DistrictStatusLegend } from "./DistrictStatusLegend";
 
 export function DistrictList({ onOpen }: { onOpen: (district: District) => void }) {
-  const { demoNow: now, heroIncidentId } = useScenario();
+  const { demoNow: now, heroIncidentId, selectDistrict } = useScenario();
+  const { setHoveredDistrictId } = useDistrictHover();
   const status = useMemo(() => districtStatusAt(now), [now]);
   const top = useMemo(() => topIncidentByDistrictAt(now), [now]);
   const watched = useMemo(() => new Map(watchTargetsAt(now).map((w) => [w.incident.legacyDistrictId, w])), [now]);
@@ -50,15 +56,21 @@ export function DistrictList({ onOpen }: { onOpen: (district: District) => void 
             const grade = v ? gradeOf(v) : null;
             const watch = watched.get(d.id);
             const highlighted = v?.incident.incidentId === heroIncidentId;
-            const hl = grade ? RISK_GRADE_TONE[grade] : RISK_GRADE_TONE.주의;
             return (
-              <li key={d.id}>
+              <motion.li key={d.id} layout transition={{ duration: 0.3 }}>
                 <button
                   type="button"
-                  onClick={() => onOpen(d)}
+                  onClick={() => {
+                    selectDistrict(d.id);
+                    onOpen(d);
+                  }}
+                  onMouseEnter={() => setHoveredDistrictId(d.id)}
+                  onMouseLeave={() => setHoveredDistrictId(null)}
+                  onFocus={() => setHoveredDistrictId(d.id)}
+                  onBlur={() => setHoveredDistrictId(null)}
                   className={cn(
                     "flex w-full cursor-pointer items-center gap-2 rounded-md bg-transparent px-2.5 py-2 text-left transition-[background-color,border-color,box-shadow] duration-300 hover:bg-surface-raised",
-                    highlighted ? cn("border ring-2", hl.stroke, hl.halo) : "border-none",
+                    highlighted ? cn("border ring-2", tone.stroke, tone.halo) : "border-none",
                   )}
                 >
                   <span className={cn("size-2 shrink-0 rounded-full", tone.dot)} aria-hidden />
@@ -82,7 +94,7 @@ export function DistrictList({ onOpen }: { onOpen: (district: District) => void 
                   </span>
                   <Icon icon="mdi:chevron-right" className="size-4 shrink-0 text-foreground-subtle" aria-hidden />
                 </button>
-              </li>
+              </motion.li>
             );
           })}
         </ul>

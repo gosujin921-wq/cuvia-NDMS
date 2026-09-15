@@ -2,8 +2,7 @@
  * IA-01 종합상황 — 어떤 사건부터 확인할지 결정하는 진입점 (IA §6 · 02 D0)
  *
  * 구성은 CSMS 통합관제 · platform_web 관제 대시보드 계보를 따른다(초안 종합상황_화면상세 §1·§2):
- * 지도 배경, 상단 캡슐(심각 배지 · 특보 · 시각 · 위험/주의 지구 · 대응중), 좌측 데이터 장애 스트립 ·
- * 지구 현황 · 지구 목록(푸터 범례), 우측 위험 현황 · 이벤트 유형 현황 · 실시간 주요 사건, 하단 CCTV.
+ * 지도 배경, 상단 캡슐(심각 배지 · 특보 · 시각 · 데이터 장애), 좌측 지구 현황 · 지구 목록(푸터 범례), 우측 위험 현황 · 이벤트 유형 현황 · 실시간 주요 사건, 하단 CCTV.
  * 대상만 사업장 → 지구, 위험도 → 매트릭스 등급이다. 정본 IA §6 영역은 초안 §2 표대로 이 자리들에 든다.
  *
  * 값은 전부 model/selectors 에서 온다. 이 화면은 정렬도 집계도 하지 않는다.
@@ -13,21 +12,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@iconify/react";
-import maplibregl from "maplibre-gl";
 import { GlassPanel } from "@ds";
-import { CITY_NAME } from "../../lib/map-config";
+import { CITY_NAME, CITY_SHAPE_BOUNDS } from "../../lib/map-config";
 import { useMapLibre } from "../../lib/useMapLibre";
 import { useWindLayer } from "../../lib/useWindLayer";
 import { useTemperatureLayer } from "../../lib/useTemperatureLayer";
 import { SAFEMAP_LAYERS, ensureSafemapLayers, setSafemapVisible } from "../../lib/safemap";
 import { useScenario } from "../../state/ScenarioProvider";
+import { DistrictHoverProvider } from "../../lib/district-hover";
 import { DISTRICTS, type DistrictKind } from "../../demo/districts";
 import { districtStatusAt, incidentsAt, riskCountsAt, topIncidentByDistrictAt, watchTargetsAt, type FeedItem } from "../../model/selectors";
-import { DISTRICT_STATUS_TONE } from "../../lib/status-tone";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import {
   CENTER_LEFT,
   CENTER_RIGHT,
+  EDGE,
   LEFT_RAIL,
   RAIL_BASE,
   RIGHT_RAIL,
@@ -36,7 +35,6 @@ import {
 } from "../../lib/layout";
 import { PILL_SLOT_ID } from "../../agent";
 import { CctvLiveStrip } from "./widgets/CctvLiveStrip";
-import { DataFaultStrip } from "./widgets/DataFaultStrip";
 import { DistrictList } from "./widgets/DistrictList";
 import { DistrictSummaryCard } from "./widgets/DistrictSummaryCard";
 import { EventTypeSummary } from "./widgets/EventTypeSummary";
@@ -45,8 +43,8 @@ import { RiskSummary } from "./widgets/RiskSummary";
 import { SituationFeed } from "./widgets/SituationFeed";
 import { StatusStrip } from "./widgets/StatusStrip";
 
-/** 지구 이름표 반폭 (px) — 가장자리 지구가 패널에 물리지 않게 지도 여백에 더한다 */
-const LABEL_MARGIN = 70;
+/** 질의 바 + 추천 질문 칩 두 줄의 높이 (px) — 슬롯을 아직 못 잰 첫 맞춤에서만 쓰는 예비값 */
+const PILL_AREA_FALLBACK = 140;
 
 /** 하단 주요 CCTV 스트립 높이 (px) — IDC LiveStrip(176) 선례에서 이 화면 몫으로 줄인 값 */
 const CCTV_STRIP_H = 160;
@@ -69,6 +67,10 @@ export function OverviewDashboardPage() {
   const { demoNow: now, agentOpen } = useScenario();
   const mapContainer = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(mapContainer);
+  /* 지도를 덮는 세 요소 — 시 전체 맞춤이 이들의 실제 크기를 재서 비운다 */
+  const statusRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLDivElement>(null);
+  const utilRef = useRef<HTMLDivElement>(null);
 
   const { heroIncidentId } = useScenario();
   const incidents = useMemo(() => incidentsAt(now), [now]);
@@ -88,7 +90,8 @@ export function OverviewDashboardPage() {
   /* 지도에서 내려 둔 지구 유형 — 12개 이름표가 한 화면에 서므로 오늘 볼 유형만 남기는 길 (Phase 1 그대로) */
   const [hiddenKinds, setHiddenKinds] = useState<DistrictKind[]>([]);
 
-  /* 지구 12곳 이름표는 그대로 선다. 점 색 = 지구 상태, 메인 사건 지구의 점만 숨쉰다. 감시 우선구역은 "감시" 표기 */
+  /* 지구 12곳 이름표. 색은 지구 상태 하나, 메인 사건 지구만 숨쉰다. 정상 지구는 점만
+     남고 이름은 이름표가 상태·선택·호버로 정한다(IncidentMarkers). 감시 우선구역은 "감시" 표기 */
   const labels = useMemo<MapLabel[]>(() => {
     return DISTRICTS.filter((d) => !hiddenKinds.includes(d.kind)).map((d) => {
       const st = status.get(d.id) ?? "정상";
@@ -99,7 +102,7 @@ export function OverviewDashboardPage() {
         name: d.name,
         kind: watched ? `${d.kind} · 감시` : d.kind,
         center: d.center,
-        color: st === "정상" ? null : DISTRICT_STATUS_TONE[st].color,
+        status: st,
         pulse: hit?.incident.incidentId === heroIncidentId,
         ariaLabel: `${d.name} ${d.kind} · ${st}${hit ? ` · ${hit.incident.title}` : watched ? " · 감시 우선구역" : ""}`,
       };
@@ -124,21 +127,30 @@ export function OverviewDashboardPage() {
     for (const spec of SAFEMAP_LAYERS) setSafemapVisible(instance, spec.id, safemapOn[spec.id]);
   }, [map, ready, safemapOn]);
 
-  /* 12개 지구가 전부 보이는 자리로 맞춘다. 패널 폭을 여백으로 넘겨 가려지지 않은 영역에 앉힌다.
-     "원래대로"도 같은 자리로 되돌아온다 — 기울기·회전까지 여기서 함께 편다 (Phase 1 그대로) */
+  /* 창원시 형상(섬 포함)이 잘리지 않고 다 들어오는 자리로 맞춘다. 지구 중심점이 아니라 시 경계 상자를
+     쓴다 — 중심점만 맞추면 북쪽 의창·동쪽 진해 끝·남쪽 섬이 화면 밖으로 나간다.
+     패딩은 지도를 덮는 것들의 실제 크기다: 좌우 레일(CENTER_LEFT·CENTER_RIGHT), 상단 상태 스트립,
+     하단 도크 위의 질의 바·칩, 우측 유틸 스트립. 창 크기가 바뀌면 다시 잰다.
+     "원래대로"도 같은 자리로 되돌아온다 — 기울기·회전까지 여기서 함께 편다 */
   const fitCounty = useCallback(
     (duration: number) => {
       const instance = map.current;
       if (!instance) return;
-      const bounds = DISTRICTS.reduce((acc, d) => acc.extend(d.center), new maplibregl.LngLatBounds(DISTRICTS[0].center, DISTRICTS[0].center));
-      instance.fitBounds(bounds, {
-        padding: {
-          top: 96,
-          /* 질의 바 위에 추천 질문 칩이 두 줄 선다 — 그 높이까지 비운다 */
-          bottom: ABOVE_STRIP + 140,
-          left: CENTER_LEFT + LABEL_MARGIN,
-          right: CENTER_RIGHT + LABEL_MARGIN,
-        },
+      const mapRect = instance.getContainer().getBoundingClientRect();
+      const statusRect = statusRef.current?.getBoundingClientRect();
+      const pillRect = pillRef.current?.getBoundingClientRect();
+      const utilRect = utilRef.current?.getBoundingClientRect();
+
+      const top = (statusRect ? statusRect.bottom - mapRect.top : EDGE) + EDGE;
+      const pillTop = pillRect && pillRect.height > 0 ? mapRect.bottom - pillRect.top : ABOVE_STRIP + PILL_AREA_FALLBACK;
+      const bottom = pillTop + EDGE;
+      const left = CENTER_LEFT;
+      const right = (utilRect && utilRect.width > 0 ? mapRect.right - utilRect.left : CENTER_RIGHT) + EDGE;
+
+      /* 창이 패딩보다 작으면 MapLibre 가 예외를 던진다 — 그때는 레일만 비우고 나머지는 포기한다 */
+      const fits = left + right < mapRect.width && top + bottom < mapRect.height;
+      instance.fitBounds(CITY_SHAPE_BOUNDS, {
+        padding: fits ? { top, bottom, left, right } : { top: EDGE, bottom: EDGE, left: Math.min(left, mapRect.width / 3), right: Math.min(right, mapRect.width / 3) },
         pitch: 0,
         bearing: 0,
         duration,
@@ -150,7 +162,14 @@ export function OverviewDashboardPage() {
   useEffect(() => {
     if (!ready) return;
     fitCounty(0);
-  }, [ready, fitCounty]);
+    const instance = map.current;
+    if (!instance) return;
+    const onResize = () => fitCounty(0);
+    instance.on("resize", onResize);
+    return () => {
+      instance.off("resize", onResize);
+    };
+  }, [ready, map, fitCounty]);
 
   /* 지구를 열면 그 지구의 사건 작업공간 (사건이 없으면 사건 없음 안내) */
   const openDistrict = (districtId: string) => navigate(`/scr-02/${districtId}`);
@@ -170,6 +189,8 @@ export function OverviewDashboardPage() {
   };
 
   return (
+    /* DistrictHoverProvider · 지구 목록 줄 호버를 지도 이름표가 같이 받는다 (lib/district-hover) */
+    <DistrictHoverProvider>
     <div className="relative h-full w-full overflow-hidden">
       {/* 지도 — 배경. 패널보다 항상 아래.
           MapLibre 가 컨테이너에 position:relative 를 얹으므로 자리 잡기는 바깥 div 가 맡고,
@@ -195,7 +216,7 @@ export function OverviewDashboardPage() {
 
       {/* 맵 조작 — 오른쪽 가장자리에 선 것(레일 · 열린 AI 패널) 왼쪽 세로 스트립.
           지도 화면 어디서든 같은 자리 같은 버튼 */}
-      <div className={UTIL_STRIP} style={utilStripStyle(agentOpen)}>
+      <div ref={utilRef} className={UTIL_STRIP} style={utilStripStyle(agentOpen)}>
         <MapUtilStrip
           map={map}
           disabled={!ready}
@@ -265,7 +286,7 @@ export function OverviewDashboardPage() {
         className="pointer-events-none absolute top-3 z-30 flex justify-center"
         style={{ left: CENTER_LEFT, right: CENTER_RIGHT }}
       >
-        <div className="pointer-events-auto">
+        <div ref={statusRef} className="pointer-events-auto">
           <StatusStrip />
         </div>
       </div>
@@ -278,7 +299,7 @@ export function OverviewDashboardPage() {
         className="pointer-events-none absolute z-30 flex justify-center"
         style={{ left: CENTER_LEFT, right: CENTER_RIGHT, bottom: ABOVE_STRIP }}
       >
-        <div id={PILL_SLOT_ID} className="pointer-events-auto w-full max-w-[680px]" />
+        <div ref={pillRef} id={PILL_SLOT_ID} className="pointer-events-auto w-full max-w-[680px]" />
       </div>
 
       {/* 하단 중앙: 주요 CCTV 스트립 (03 §1 · 04 §2-5). 좌우 레일 사이에만 선다 —
@@ -292,11 +313,9 @@ export function OverviewDashboardPage() {
         </GlassPanel>
       </div>
 
-      {/* 좌측 — 데이터 장애 스트립 · 지구 현황 · 지구 목록(푸터 범례). 레일은 화면 바닥까지 내려간다 */}
+      {/* 좌측 — 지구 현황 · 지구 목록(푸터 범례). 레일은 화면 바닥까지 내려간다.
+          데이터 장애 줄은 상단 캡슐로 올라갔다(StatusStrip) */}
       <div className={`${RAIL_BASE} left-3`} style={{ width: LEFT_RAIL }}>
-        <GlassPanel className="pointer-events-auto shrink-0">
-          <DataFaultStrip />
-        </GlassPanel>
         <GlassPanel className="pointer-events-auto shrink-0">
           <DistrictSummaryCard />
         </GlassPanel>
@@ -319,5 +338,6 @@ export function OverviewDashboardPage() {
         </GlassPanel>
       </div>
     </div>
+    </DistrictHoverProvider>
   );
 }

@@ -3,13 +3,16 @@
  * 정본: 02 §4 · §5.3, IA §8
  *
  * 창원 GIS 원본과 시설 제원은 미확보다(02 §5.3). 좌표·식별자는 **시나리오 공간 데이터**이며 P0 매핑이
- * 오면 이 파일만 교체한다. 지구 중심은 Phase 1 demo/districts.ts 의 서항 근사값이다.
+ * 오면 이 파일만 교체한다. 2026-09-15 자리를 옮겼다 — Phase 1 근사 중심(무학산 자락 사면 · 지형 18~29 m)에서
+ * 마산항 서안 매립지 저지대(지형 1.5~5 m 그릇)로. 침수면이 지형에서 나오므로(geometry.generated.ts) 주체도 그 안에 서야 한다.
+ * 도로는 베이스맵 해안대로 형상, 그 밖의 지점은 지형이 낮은 자리에 둔 시나리오 위치다.
  * 완료보고 p.29 가 확인한 것: 서항 CCTV 1개소는 제2배수펌프장 옥상, 인접 1개소는 배수관리용 폴.
  * ───────────────────────────────────────────── */
 
 import type { SpatialRef } from "../../model/event";
 import type { Device } from "../../demo/devices";
 import type { Facility } from "../../demo/facilities";
+import { COAST_ROAD_LINE, FLOOD_GEOMETRIES, UNDERPASS_AT } from "./geometry.generated";
 
 export const DRAINAGE_BASIN_ID = "BASIN-SH-01";
 
@@ -30,19 +33,19 @@ export const SUBJECTS = {
 
 export type SubjectId = (typeof SUBJECTS)[keyof typeof SUBJECTS];
 
-export const SEOHANG_CENTER: [number, number] = [128.567, 35.197];
+export const SEOHANG_CENTER: [number, number] = [128.5715, 35.199];
 
 export const SUBJECT_LOCATION: Record<SubjectId, SpatialRef> = {
-  "RN-SH-01": { kind: "지점", displayAnchor: [128.5655, 35.1985], label: "서항 강우계" },
-  "PW-SH-03": { kind: "지점", displayAnchor: [128.5672, 35.1972], label: "서항 간선관로 수위계" },
-  "RW-SH-07": { kind: "지점", displayAnchor: [128.5661, 35.1963], label: "해안도로 저지대 도로수위계" },
-  "TD-MS-01": { kind: "지점", displayAnchor: [128.5735, 35.1948], label: "마산항 서안 조위관측소" },
-  "PS-SH-02": { kind: "시설", displayAnchor: [128.5678, 35.1958], label: "제2배수펌프장" },
-  "RT-SH-01": { kind: "시설", displayAnchor: [128.5648, 35.1979], label: "서항 우수저류시설" },
-  "CV-SH-01": { kind: "지점", displayAnchor: [128.5679, 35.1959], label: "제2배수펌프장 옥상 CCTV" },
-  "CV-SH-02": { kind: "지점", displayAnchor: [128.5669, 35.1965], label: "배수관리용 폴 CCTV" },
-  "RD-SH-COAST": { kind: "회랑", displayAnchor: [128.5663, 35.1961], affectedGeometryId: "GEO-ROAD-COAST", label: "해안도로 저지대 구간" },
-  "RD-SH-UNDER": { kind: "시설", displayAnchor: [128.5641, 35.1968], affectedGeometryId: "GEO-UNDERPASS", label: "신포 지하차도" },
+  "RN-SH-01": { kind: "지점", displayAnchor: [128.57, 35.199], label: "서항 강우계" },
+  "PW-SH-03": { kind: "지점", displayAnchor: [128.572, 35.199], label: "서항 간선관로 수위계" },
+  "RW-SH-07": { kind: "지점", displayAnchor: [128.57236, 35.19843], label: "해안도로 저지대 도로수위계" },
+  "TD-MS-01": { kind: "지점", displayAnchor: [128.5745, 35.1965], label: "마산항 서안 조위관측소" },
+  "PS-SH-02": { kind: "시설", displayAnchor: [128.5735, 35.1975], label: "제2배수펌프장" },
+  "RT-SH-01": { kind: "시설", displayAnchor: [128.5716, 35.2012], label: "서항 우수저류시설" },
+  "CV-SH-01": { kind: "지점", displayAnchor: [128.5736, 35.1976], label: "제2배수펌프장 옥상 CCTV" },
+  "CV-SH-02": { kind: "지점", displayAnchor: [128.5724, 35.1988], label: "배수관리용 폴 CCTV" },
+  "RD-SH-COAST": { kind: "회랑", displayAnchor: [128.5716, 35.1979], affectedGeometryId: "GEO-ROAD-COAST", label: "해안도로 저지대 구간" },
+  "RD-SH-UNDER": { kind: "시설", displayAnchor: UNDERPASS_AT, affectedGeometryId: "GEO-UNDERPASS", label: "신포 지하차도" },
   "KMA-AREA-CHANGWON": { kind: "전역", displayAnchor: [128.6811, 35.2281], label: "창원시" },
   "OM-GRID-SH": { kind: "구역", displayAnchor: SEOHANG_CENTER, label: "서항 예측 격자" },
 };
@@ -55,22 +58,19 @@ export const BASIN_SCOPE: SpatialRef = {
   label: "서항 검증 배수권역 (가칭)",
 };
 
-/** 영향 폴리곤 [경도, 위도] 링 — 시연 표현용 시나리오 형상이며 모형 결과가 아니다 */
-export const GEOMETRIES: Record<string, [number, number][]> = {
-  "GEO-BASIN-SH-01": [[128.5625, 35.1995], [128.57, 35.1998], [128.5712, 35.195], [128.564, 35.194]],
-  "GEO-ROAD-COAST": [[128.564, 35.1958], [128.569, 35.1966], [128.569, 35.1962], [128.564, 35.1954]],
-  "GEO-UNDERPASS": [[128.5636, 35.1972], [128.5646, 35.1972], [128.5646, 35.1964], [128.5636, 35.1964]],
-  "GEO-FLOOD-T10": [[128.5655, 35.1959], [128.567, 35.1962], [128.567, 35.1958], [128.5655, 35.1956]],
-  "GEO-FLOOD-T30": [[128.5648, 35.1957], [128.568, 35.1965], [128.5681, 35.1957], [128.5648, 35.1953]],
-  "GEO-FLOOD-T50": [[128.564, 35.1956], [128.5688, 35.1968], [128.569, 35.1955], [128.564, 35.1949]],
-  "GEO-FLOOD-T80": [[128.5636, 35.1955], [128.5692, 35.197], [128.5694, 35.1953], [128.5636, 35.1947]],
-  "GEO-FLOOD-DRAIN-T50": [[128.5648, 35.1957], [128.5678, 35.1964], [128.5679, 35.1957], [128.5648, 35.1953]],
-  "GEO-FLOOD-DRAIN-T80": [[128.565, 35.1958], [128.5674, 35.1963], [128.5674, 35.1958], [128.565, 35.1955]],
-};
+/**
+ * 영향 폴리곤 [경도, 위도] 링 — 시연 표현용 시나리오 형상이며 수리·수문 모형 결과가 아니다.
+ * 침수면·배수권역·도로 회랑·지하차도는 지형에서 굽는다(scripts/bake-flood-seohang.mjs → geometry.generated.ts).
+ */
+export const GEOMETRIES: Record<string, [number, number][]> = { ...FLOOD_GEOMETRIES };
+
+/** 해안도로 저지대 구간 중심선 — 도로 상태 선(scene.ts)이 그린다 */
+export { COAST_ROAD_LINE };
 
 /** CCTV 채널 — 스트립·영상 자리가 문다. 평시 컷은 Phase 1 실촬 자산 */
 export interface CctvChannel {
-  id: SubjectId;
+  /** 주체 ID — 서항 외 구역의 카메라도 같은 모양으로 선다 */
+  id: string;
   label: string;
   scene: string;
   calmStill: string;

@@ -9,7 +9,8 @@
 
 import type { AlternativeId } from "./forecast";
 
-export type ResponseLevel = "감시 강화" | "현장 확인" | "선제 통제 검토" | "통제" | "종료 검토";
+/** 대응 수준 — 권고·승인이 고르는 대응안의 세기. 사건 국면(통제)과 다른 축이라 이름을 겹치지 않게 둔다 (2026-09-14) */
+export type ResponseLevel = "감시 강화" | "현장 확인" | "선제 통제 검토" | "선제 통제" | "종료 검토";
 
 export interface Recommendation {
   recommendationId: string;
@@ -29,6 +30,8 @@ export interface ActionDraft {
   target: string;
   organization: string;
   summary: string;
+  /** 시스템이 이 조치를 채운 이유 — 전망·판단 한 줄. SOP 항목 아래 `근거` 줄 (2026-09-14) */
+  basis?: string;
 }
 
 export type DecisionStatus = "검토중" | "선택" | "승인" | "기각" | "취소";

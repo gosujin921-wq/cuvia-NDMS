@@ -19,7 +19,6 @@ export function RiskSummary() {
     <section className="flex flex-col gap-2.5 p-3" aria-label="위험 현황">
       <header className="flex items-baseline justify-between">
         <h2 className="text-body font-semibold text-foreground">위험 현황</h2>
-        <span className="text-caption text-foreground-muted">진행 중 사건 · 대응은 위험도와 별개</span>
       </header>
       <div className="grid grid-cols-3 gap-2">
         <Cell label="심각" value={r.severe} dotClass={RISK_GRADE_TONE.심각.dot} valueClass={r.severe > 0 ? RISK_GRADE_TONE.심각.text : "text-foreground-muted"} />
