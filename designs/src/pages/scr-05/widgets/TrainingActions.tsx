@@ -22,10 +22,6 @@ export interface ActionRow {
   preset: WhatIfPreset | null;
 }
 
-/** 그 조치의 효과가 언제 보이나 — 현상 대응은 나중, 노출 대응은 바로 */
-const effectOf = (r: WhatIfResponse | null): string =>
-  r?.kind === "현상" ? "결과는 다음 단계부터 보입니다" : "지도에 바로 섭니다";
-
 /**
  * 이 조치가 **무엇을 바꾸나** — 펴진 카드가 고를 이유를 댄다.
  * 규정이 왜 떴는지(트리거)는 머리글이 이미 말하므로 거기서 되풀이하지 않는다.
@@ -84,7 +80,9 @@ export function TrainingActions({ rows, at, note, acts, onAct, onUndo, frozen }:
                 {r.sop.id} {r.sop.label}
                 <Tag tone="success">{formatClock(at)} 실행</Tag>
               </span>
-              <span className="break-keep text-caption leading-snug text-foreground-subtle">{effectOf(r.response)}</span>
+              {/* "언제 보이나"는 유형마다 달라 한 문장으로 말할 수 없다 — 창원천 통제는 15:00 눈금에 바로 서지만
+                  폭염 쉼터 연장은 21:00 에 열리고 산불 방화선은 18:00 에 착수한다(2026-09-17 검수). 무엇을 바꾸나만 적는다 */}
+              <span className="break-keep text-caption leading-snug text-foreground-subtle">{changesOf(r.response)}</span>
               <Button size="sm" variant="secondary" disabled={frozen} onClick={() => onUndo(r.sop.id)}>되돌리기</Button>
             </div>
           );

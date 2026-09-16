@@ -8,8 +8,7 @@
  *   발동에서 조치까지 걸린 시간과 실제와의 차이만 적는다.
  * ───────────────────────────────────────────── */
 
-import { Button, cn } from "@ds";
-import { Icon } from "@iconify/react";
+import { cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
 import { formatLagMinutes, formatMarkMetric, markMetricLabel, minutesBetween } from "../../../lib/forecast-twin";
 import { arrivalAtOf } from "../../../lib/forecast-compare";
@@ -139,7 +138,7 @@ export function debriefHeadline(mine: Forecast | null, base: Forecast | null, co
   return `${what}. ${same}`;
 }
 
-export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvements, onAddImprovement, onRemoveImprovement, onSave, saved }: {
+export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvements, onAddImprovement, onRemoveImprovement, saved }: {
   wcase: WhatIfCase;
   condLabel: string;
   acts: Record<string, string>;
@@ -149,7 +148,6 @@ export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvemen
   improvements: ImprovementItem[];
   onAddImprovement: (axis: ImprovementAxis, text: string) => void;
   onRemoveImprovement: (id: string) => void;
-  onSave: () => void;
   /** 저장했으면 그 번호 */
   saved: string | null;
 }) {
@@ -245,18 +243,14 @@ export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvemen
         onRemove={onRemoveImprovement}
       />
 
-      <section className="flex flex-col gap-2 p-3" aria-label="훈련 저장">
-        {saved ? (
+      {/* 저장 버튼은 레일 바닥의 고정 자리로 갔다(TrainingView). 여기엔 저장됐다는 사실만 남는다 */}
+      {saved && (
+        <section className="flex flex-col gap-2 p-3" aria-label="훈련 저장">
           <p className="break-keep text-caption text-success">
             훈련을 저장했습니다 · {saved} · [지난 훈련]에서 다시 볼 수 있습니다
           </p>
-        ) : (
-          <Button variant="secondary" onClick={onSave}>
-            <Icon icon="mdi:content-save-outline" className="size-4" aria-hidden />
-            훈련 결과 저장
-          </Button>
-        )}
-      </section>
+        </section>
+      )}
     </>
   );
 }

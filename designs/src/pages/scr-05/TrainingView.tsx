@@ -118,6 +118,11 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
    * 조치 패널은 출발 정지점(`stop`)을 그대로 쓴다. 흐르는 동안은 어차피 조치를 받지 않는다.
    */
   const mapStop = (flow ? stops[flow.to] : stop) ?? null;
+  /**
+   * 우측 패널이 서는 정지점 — 보통은 지금 정지점(`stop`)이고, **비교가 도는 동안만 재생 눈금**을 따른다.
+   * 그러지 않으면 머리는 `16:00` 인데 합류부 수위는 재생 중인 눈금 값이 되어 한 칸 안에서 섞인다(2026-09-17 검수).
+   */
+  const panelStop = (flow?.loop ? mapStop : stop) ?? stop;
   const condStep = t?.conditions[0]?.steps.find((s) => s.id === condStepId) ?? null;
   /** 조건의 완성된 이름 — "강우 +20%" · "열대야 +2°C". 화면·기록·보고서가 이 하나를 쓴다(유형 이름을 화면이 붙이지 않는다) */
   const condLabel = t?.conditions[0] && condStep ? `${t.conditions[0].label} ${condStep.label}` : "당시 조건";
@@ -155,8 +160,8 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
    * 그 값이 화면에 서는 것이 맞다(2026-09-16 사용자). 나머지 줄은 당시 기록 그대로다.
    */
   const state = useMemo(() => {
-    if (!wcase || !stop) return null;
-    const raw = whatIfStateRowsAt(wcase, stop.at);
+    if (!wcase || !panelStop) return null;
+    const raw = whatIfStateRowsAt(wcase, panelStop.at);
     const cond = t?.conditions.find((c) => c.stateLabel);
     const f = condStep?.factor ?? 1;
     /* 유형 핵심 지표(합류부 수위)는 **관측이 아니라 계산 결과**다 — 조건과 조치를 반영한 판의 값을 쓴다.
@@ -164,7 +169,7 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
     const metricLabel = shownMark ? markMetricLabel(shownMark) : null;
     const rows = raw.rows.map((r) => {
       /* 눈금이 이 정지점보다 뒤면 아직 그 값이 아니다 — 관측 기록을 그대로 둔다 */
-      if (metricLabel && shownMark && shownMark.validAt <= stop.at && r.label === metricLabel) {
+      if (metricLabel && shownMark && shownMark.validAt <= panelStop.at && r.label === metricLabel) {
         return { ...r, value: formatMarkMetric(shownMark), computed: true } as typeof r & { computed?: boolean };
       }
       /* 조건이 바꾸는 관측 줄(강우계)은 배율로 환산한다 — 조건의 정의가 "당시 × 1.2"다 */
@@ -177,7 +182,7 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
       return r;
     });
     return { ...raw, rows };
-  }, [wcase, stop, t, condStep, shownMark]);
+  }, [wcase, panelStop, t, condStep, shownMark]);
 
   /* ── 지도 ── */
   const family = wcase?.twinFamily ?? "B";
@@ -220,7 +225,11 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
 
   /* 같은 시각에 **조치를 안 했다면** 어디까지 잠겼나 — 애니메이션의 목적 ②(03 §26.7).
      내 조치 판만 그리면 "무엇이 달라졌나"가 지도에 없다. 점선 안쪽인데 물이 안 찬 곳이 내가 막은 곳이다. */
-  const baseMark = base && mapStop && started && mine && mine.forecastId !== base.forecastId ? markOf(base, mapStop.at) : null;
+  const baseMark = base && mapStop && started && mine && mine.forecastId !== base.forecastId
+    /* 판단 국면에는 세우지 않는다 — "조치 안 했다면"은 결과를 견주는 장치라 결과 국면·돌아보기의 것이다.
+       판단 중에 서면 범례에 결과가 먼저 새어 나온다(2026-09-17 검수) */
+    && (mapStop.phase === "결과" || phase === "debrief")
+    ? markOf(base, mapStop.at) : null;
 
   /* ── 시간 흐름 (03 §26.1 "시나리오가 시간에 따라 전개된다") ──
    * 정지점을 툭툭 갈아 끼우면 스냅샷 네 장이지 전개가 아니다. 지형 수면의 수위(m)는 연속 값이라
@@ -260,9 +269,13 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
     const span = flowMsOf(from.at, to.at);
     const lastIdx = stops.length - 1;
     let raf = 0, last = 0, hold = 0;
-    const t0 = performance.now();
+    /* 비교 재생의 첫 구간은 **첫 장면에서 잠깐 선 뒤** 흐른다. 판을 바꾸면 지도가 새 판의 첫 눈금을
+       그리는 데 1초 가까이 걸려, 배지는 `내 조치` 인데 지도는 아직 반대편 끝 장면인 순간이 생긴다(2026-09-17 측정).
+       끝 장면에 머무는 것(COMPARE_HOLD_MS)과 짝이 되어 양쪽 경계가 모두 정직해진다 */
+    const startHold = flow.loop && flow.from === 0 && flow.p === 0 ? COMPARE_HOLD_MS : 0;
+    const t0 = performance.now() + startHold;
     const tick = (now: number) => {
-      const p = Math.min(1, (now - t0) / span);
+      const p = Math.min(1, Math.max(0, (now - t0) / span));
       if (p >= 1) {
         if (flow.loop) {
           if (flow.to >= lastIdx) {
@@ -366,13 +379,13 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
     }
     /* 조치 안 했다면 — 점선 외곽만. 채우지 않는다(내 수면이 주인공) */
     /* 두 장면을 바꿔 보는 중에는 점선을 끈다 — 둘 다 보이면 무엇이 무엇인지 헷갈린다 */
-    const baseRing = layers.baseline && baseMark && view === "mine" ? GEOMETRIES[baseMark.extentGeometryId] : null;
+    const baseRing = layers.baseline && baseMark && shownView === "mine" ? GEOMETRIES[baseMark.extentGeometryId] : null;
     upsertPolygonLayer(m, BASE_EXTENT_SOURCE, baseRing, { ...extentPaint(0.1, "water"), fill: cssColor("--color-warning", "#f59e0b"), line: cssColor("--color-warning", "#f59e0b"), opacity: 0 });
     setPolygonLayerVisible(m, SCOPE_SOURCE, layers.scope);
     setPolygonLayerVisible(m, EXTENT_SOURCE, layers.extent && Boolean(extentRing));
     setPolygonLayerVisible(m, BASE_EXTENT_SOURCE, Boolean(baseRing));
     raiseSceneLayers(m);
-  }, [map, ready, scopeRing, shownMark, baseMark, view, phase, surfaceEntry, finePatch, layers.scope, layers.extent, layers.baseline, drawLevel]);
+  }, [map, ready, scopeRing, shownMark, baseMark, shownView, phase, surfaceEntry, finePatch, layers.scope, layers.extent, layers.baseline, drawLevel]);
 
   const sceneLayers = useMemo(() => mergeScene(shown?.scene, shownMark?.scene), [shown, shownMark]);
   /* 열돔 지구본 — 폭염(E)의 광역 인셋이 쓴다. 다른 유형에서는 받지 않는다(무거운 격자다) */
@@ -608,8 +621,8 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
                 {state && (
                   <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="지금 상태">
                     <header className="flex items-baseline justify-between gap-2">
-                      <h2 className="text-body font-semibold text-foreground">{stop.phase === "결과" ? "지금 일어나는 일" : "지금 상태"}</h2>
-                      <span className="shrink-0 font-mono text-caption text-foreground-subtle">{formatClock(stop.at)}</span>
+                      <h2 className="text-body font-semibold text-foreground">{panelStop.phase === "결과" ? "지금 일어나는 일" : "지금 상태"}</h2>
+                      <span className="shrink-0 font-mono text-caption text-foreground-subtle">{formatClock(panelStop.at)}</span>
                     </header>
                     <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-border bg-card px-2.5 py-2 text-caption">
                       {state.rows.map((r) => {
@@ -708,7 +721,6 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
                     author: OFFICER,
                   })}
                   onRemoveImprovement={removeImprovement}
-                  onSave={save}
                   saved={savedId}
                 />
               </>
@@ -739,8 +751,16 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
                     : `다음 단계 · ${formatClock(stops[stopIndex + 1].at)}`}
             </Button>
           )}
+          {/* 돌아보기의 주 동작은 **저장**이다. 스크롤 아래에 두면 마치고도 저장을 못 찾는다(2026-09-17 검수).
+              저장하고 나면 그 자리가 "다시 훈련"으로 바뀐다 — 한 회를 닫은 뒤의 다음 일이 그것이다 */}
+          {phase === "debrief" && !savedId && (
+            <Button className="pointer-events-auto w-full" onClick={save} disabled={!base}>
+              <Icon icon="mdi:content-save-outline" className="size-4" aria-hidden />
+              훈련 결과 저장
+            </Button>
+          )}
           {phase === "debrief" && (
-            <Button className="pointer-events-auto w-full" variant="secondary" onClick={restart}>
+            <Button className="pointer-events-auto w-full" variant={savedId ? "default" : "secondary"} onClick={restart}>
               <Icon icon="mdi:refresh" className="size-4" aria-hidden />
               조건을 바꿔 다시 훈련
             </Button>
