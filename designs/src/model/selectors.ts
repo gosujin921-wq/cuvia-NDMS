@@ -1081,14 +1081,39 @@ function subjectLabelOf(subjectId: string): string {
  * 화면은 여기 함수만 부른다. 사건 fixture 를 직접 뒤지지 않는다.
  * ───────────────────────────────────────────────────────────────────── */
 
-/** 훈련할 수 있는 사건 — `training` 이 있는 종료 사건. 없는 사건도 목록에는 서고 이유를 밝힌다 */
-export function trainingCasesAt(now: Date): { c: WhatIfCase; ready: boolean; core: WhatIfResponse | null }[] {
-  return pastWhatIfCasesAt(now).map((c) => ({
-    c,
-    ready: Boolean(c.training),
-    /* 그 유형의 핵심 판단 = 현상 대응. 없으면 훈련 시나리오를 만들 수 없다(03 §26.3) */
-    core: c.responses.find((r) => r.kind === "현상") ?? null,
-  }));
+/**
+ * 훈련 목록에 서는 사건 — 끝난 사건은 훈련할 수 있고, **진행 중 사건은 근거만 볼 수 있다**.
+ *
+ * ★ 진행 중 사건을 훈련할 수는 없다. 훈련의 기준은 "실제와 같게 했을 때"인데 그 실제가 아직 없다.
+ *   대신 **지금 서 있는 전망이 무엇으로 계산됐는지**는 여기서 재 볼 수 있어야 한다(2026-09-17 사용자) —
+ *   예측을 믿고 대응을 정하는 화면(재난관제)과, 그 예측이 믿을 만한지 재는 화면(모의훈련)은 다른 자리다.
+ * ★ 대응 판단 자체는 여전히 재난관제 전망 탭이 맡는다(README §2.3). 여기서는 근거만 연다.
+ */
+export function trainingCasesAt(now: Date): { c: WhatIfCase; ready: boolean; live: boolean; core: WhatIfResponse | null }[] {
+  const live = WHATIF_CASES.filter((c) => whatIfStatusOf(c, now) === "진행 중").sort((a, b) => ms(b.occurredAt) - ms(a.occurredAt));
+  return [...live, ...pastWhatIfCasesAt(now)].map((c) => {
+    const running = whatIfStatusOf(c, now) === "진행 중";
+    return {
+      c,
+      ready: !running && Boolean(c.training),
+      live: running,
+      /* 그 유형의 핵심 판단 = 현상 대응. 없으면 훈련 시나리오를 만들 수 없다(03 §26.3) */
+      core: c.responses.find((r) => r.kind === "현상") ?? null,
+    };
+  });
+}
+
+/**
+ * 진행 중 사건의 **지금 서 있는 전망** — 근거를 재려면 먼저 어느 판인지 정해야 한다.
+ * 기준시각이 지금보다 이르면서 가장 최근인 판이고, 유효기간이 지난 판은 세지 않는다.
+ */
+export function livePrimaryForecast(c: WhatIfCase, now: Date): Forecast | null {
+  const at = now.toISOString();
+  /* 사건에 실제로 붙은 판만 본다 — 예측 갱신 이벤트가 가리킨 것들이다(고아 판을 끌어오지 않는다) */
+  const mine = forecastsOf(c.incidentId, now).filter((f) => f.alternativeId === "baseline");
+  const usable = mine.filter((f) => f.basis.baseTime <= at && (!f.validUntil || f.validUntil >= at));
+  const pick = (usable.length > 0 ? usable : mine).sort((a, b) => ms(b.basis.baseTime) - ms(a.basis.baseTime))[0];
+  return pick ?? null;
 }
 
 /** 그 정지점에서 고를 수 있는 조치 — 아직 안 했고, 그 시각 선택지가 있는 규정 */

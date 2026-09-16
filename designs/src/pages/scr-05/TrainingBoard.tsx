@@ -8,9 +8,11 @@
  *   이유는 둘이다 — "정지점과 발동 규정을 아직 정하지 않았다"와 "현상을 바꾸는 대응이 없어 만들 수 없다"(03 §26.3).
  * ───────────────────────────────────────────── */
 
+import { useState } from "react";
 import { DataTable, Tag } from "@ds";
 import { useScenario } from "../../state/ScenarioProvider";
-import { trainingCasesAt } from "../../model/selectors";
+import { livePrimaryForecast, trainingCasesAt } from "../../model/selectors";
+import { ForecastBasisDialog } from "./widgets/ForecastBasisDialog";
 import { TWIN_FAMILY_HAZARD_NAME } from "../../model/twin-family";
 import { ALTERNATIVE_LABEL } from "../../model/forecast";
 import { formatClock } from "../../lib/datetime";
@@ -26,26 +28,30 @@ function spanOf(c: WhatIfCase): string {
   return `${day} ${formatClock(a)} ~ ${sameDay ? formatClock(b) : `${p(b.getMonth() + 1)}.${p(b.getDate())} ${formatClock(b)}`}`;
 }
 
-export function TrainingBoard({ onPick }: { onPick: (incidentId: string) => void }) {
+export function TrainingBoard({ onPick, onOpenLive }: { onPick: (incidentId: string) => void; onOpenLive: (c: WhatIfCase) => void }) {
   const { demoNow } = useScenario();
   const rows = trainingCasesAt(demoNow);
   const ready = rows.filter((r) => r.ready).length;
+  const past = rows.filter((r) => !r.live).length;
+  /* 진행 중 사건은 훈련이 아니라 **예측 근거**를 연다(README §2.3 · 2026-09-17) */
+  const [basisOf, setBasisOf] = useState<WhatIfCase | null>(null);
 
   return (
     <div className="flex h-full flex-col gap-3 p-5">
       <header className="flex flex-col gap-1">
         <h1 className="text-title font-semibold text-foreground">어느 사건으로 훈련할까</h1>
         <p className="text-body text-foreground-muted">
-          실제 사건 원장에서 만든 시나리오로 훈련합니다 · 지난 사건 {rows.length} · 훈련 가능 {ready}
+          실제 사건 원장에서 만든 시나리오로 훈련합니다 · 지난 사건 {past} · 훈련 가능 {ready}
         </p>
       </header>
 
       <DataTable
         data={rows}
         rowKey={(r) => r.c.incidentId}
-        onRowClick={(r) => onPick(r.c.incidentId)}
-        /* 훈련 준비가 안 된 사건은 눌러도 열리지 않는다. 대신 비고에 이유가 적힌다 */
-        isRowClickable={(r) => r.ready}
+        onRowClick={(r) => (r.live ? setBasisOf(r.c) : onPick(r.c.incidentId))}
+        /* 훈련 준비가 안 된 사건은 눌러도 열리지 않는다. 대신 비고에 이유가 적힌다.
+           진행 중 사건은 훈련은 못 하지만 **예측 근거**는 열린다 */
+        isRowClickable={(r) => r.ready || r.live}
         hidePagination
         columns={[
           { key: "title", label: "사건", render: (r) => <span className="font-medium text-foreground">{r.c.title}</span> },
@@ -58,13 +64,15 @@ export function TrainingBoard({ onPick }: { onPick: (incidentId: string) => void
           },
           {
             key: "ready", label: "훈련", width: "110px",
-            render: (r) => (r.ready ? <Tag tone="success">가능</Tag> : <Tag>시나리오 없음</Tag>),
+            render: (r) => (r.live ? <Tag tone="warning">진행 중</Tag> : r.ready ? <Tag tone="success">가능</Tag> : <Tag>시나리오 없음</Tag>),
           },
           {
             key: "note", label: "비고",
             render: (r) => (
               <span className="break-keep text-caption text-foreground-subtle">
-                {r.ready
+                {r.live
+                  ? "끝나지 않아 훈련할 수 없습니다 · 눌러서 예측 근거를 봅니다"
+                  : r.ready
                   ? `정지점 ${r.c.training!.stops.length} · 발동 규정 ${r.c.training!.firedSopIds.length}건`
                   : r.core
                     ? "정지점과 발동 규정을 아직 정하지 않았습니다"
@@ -73,6 +81,13 @@ export function TrainingBoard({ onPick }: { onPick: (incidentId: string) => void
             ),
           },
         ]}
+      />
+
+      <ForecastBasisDialog
+        wcase={basisOf}
+        forecast={basisOf ? livePrimaryForecast(basisOf, demoNow) : null}
+        onClose={() => setBasisOf(null)}
+        onOpenLive={() => { if (basisOf) onOpenLive(basisOf); }}
       />
     </div>
   );

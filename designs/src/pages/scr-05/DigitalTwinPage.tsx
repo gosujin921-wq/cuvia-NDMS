@@ -17,7 +17,7 @@
  * ───────────────────────────────────────────── */
 
 import { useMemo } from "react";
-import { Navigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useScenario } from "../../state/ScenarioProvider";
 import { findWhatIfCase, pastWhatIfCasesAt, whatIfCaseOfDistrict, whatIfStatusOf } from "../../model/selectors";
 import { TrainingView } from "./TrainingView";
@@ -25,9 +25,11 @@ import { TrainingBoard } from "./TrainingBoard";
 import { TrainingRunBoard } from "./TrainingRunBoard";
 import { TwinSubNav, type TwinTab } from "./widgets/TwinSubNav";
 import { useFabSlot } from "../../layout/fab-slot";
+import type { WhatIfCase } from "../../model/whatif";
 
 export function DigitalTwinPage() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const { analyses, demoNow: now } = useScenario();
   /* 모의훈련은 끝난 사건만 연다(README §2.3 · 03 §26.1). 진행 중 사건은 재난관제 전망 탭이 맡는다 */
   const cases = useMemo(() => pastWhatIfCasesAt(now), [now]);
@@ -42,6 +44,8 @@ export function DigitalTwinPage() {
 
   const goTab = (next: TwinTab) => setParams(new URLSearchParams(next === "saved" ? { tab: "saved" } : {}));
   const openIncident = (id: string) => setParams(new URLSearchParams({ incident: id }));
+  /* 진행 중 사건의 **대응 판단**은 여전히 재난관제가 맡는다(README §2.3). 근거 창에서 그리로 건너간다 */
+  const goLive = (c: WhatIfCase) => navigate(`/scr-02/${c.legacyDistrictId ?? "seohang"}?panel=twin`);
   /* 진행 중 사건으로 들어온 링크는 대응 판단이 있는 자리로 넘긴다 — 같은 사건의 전망 탭이다(IA §5.2) */
   const liveCase = incidentId ? findWhatIfCase(incidentId) : undefined;
   if (liveCase && whatIfStatusOf(liveCase, now) === "진행 중") {
@@ -67,7 +71,7 @@ export function DigitalTwinPage() {
           incidentId ? (
             <TrainingView incidentId={incidentId} onBackToList={() => goTab("incidents")} />
           ) : (
-            <TrainingBoard onPick={openIncident} />
+            <TrainingBoard onPick={openIncident} onOpenLive={goLive} />
           )
         ) : (
           <TrainingRunBoard onNew={() => goTab("incidents")} />
