@@ -6,10 +6,14 @@
  *   과거 훈련 결과가 소급해서 바뀌지 않는다 — "그때 이렇게 나왔다"는 기록이라서다.
  * ───────────────────────────────────────────── */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { DataTable, EmptyState, Tag, cn } from "@ds";
 import { useScenario } from "../../state/ScenarioProvider";
-import { formatClock } from "../../lib/datetime";
+import { myActionsOf, myActionsText } from "../../lib/training-report";
+import { trainingDocOf } from "../../lib/report-doc";
+import { ReportModal } from "../../components/ReportModal";
+import { TrainingRunDialog } from "./widgets/TrainingRunDialog";
+import type { TrainingRun } from "../../model/whatif";
 
 const stamp = (iso: string): string => {
   const d = new Date(iso);
@@ -19,6 +23,9 @@ const stamp = (iso: string): string => {
 
 export function TrainingRunBoard({ onNew }: { onNew: () => void }) {
   const { trainingRuns } = useScenario();
+  /* 줄을 누르면 목록 위에 상세 창. 거기서 [훈련 보고서]를 누르면 문서 창이 겹쳐 뜬다 */
+  const [openRun, setOpenRun] = useState<TrainingRun | null>(null);
+  const [reportRun, setReportRun] = useState<TrainingRun | null>(null);
 
   /* 사건별로 묶어 회차를 대비한다. 조건이 나빠질수록 어디서 무너지는지가 보여야 한다 */
   const groups = useMemo(() => {
@@ -89,7 +96,7 @@ export function TrainingRunBoard({ onNew }: { onNew: () => void }) {
                 <span className={cn("font-mono text-caption font-semibold", r.held ? "text-success" : "text-warning")}>
                   {r.held ? "기준 넘지 않음" : `기준 초과 ${r.cross}`}
                 </span>
-                <span className="font-mono text-caption text-foreground-subtle">최고 {r.peak} · 조치 {r.actions.length}건</span>
+                <span className="font-mono text-caption text-foreground-subtle">최고 {r.peak} · 조치 {myActionsOf(r).length}건</span>
               </div>
             ))}
           </div>
@@ -101,15 +108,16 @@ export function TrainingRunBoard({ onNew }: { onNew: () => void }) {
         data={trainingRuns}
         rowKey={(r) => r.runId}
         hidePagination
+        onRowClick={(r) => setOpenRun(r)}
         columns={[
           { key: "runId", label: "회차", width: "90px", cellClassName: "font-mono", render: (r) => r.runId },
           { key: "title", label: "사건", width: "190px", render: (r) => <span className="font-medium text-foreground">{r.incidentTitle}</span> },
           { key: "cond", label: "조건", width: "130px", render: (r) => <Tag tone={r.conditionLabel.includes("당시") ? undefined : "warning"}>{r.conditionLabel}</Tag> },
           {
             key: "acts", label: "내 조치", width: "230px",
-            render: (r) => (r.actions.length === 0
+            render: (r) => (myActionsOf(r).length === 0
               ? <span className="text-foreground-subtle">없음 · 실제와 같게</span>
-              : <span className="break-keep text-caption">{r.actions.map((a) => `${a.sopId} ${formatClock(a.at)}`).join(" · ")}</span>),
+              : <span className="break-keep text-caption">{myActionsText(r)}</span>),
           },
           {
             key: "result", label: "결과",
@@ -122,6 +130,18 @@ export function TrainingRunBoard({ onNew }: { onNew: () => void }) {
           },
           { key: "at", label: "마친 시각", width: "110px", cellClassName: "font-mono whitespace-nowrap", render: (r) => stamp(r.finishedAt) },
         ]}
+      />
+
+      <TrainingRunDialog
+        run={openRun}
+        onClose={() => setOpenRun(null)}
+        onReport={(r) => setReportRun(r)}
+      />
+      <ReportModal
+        open={reportRun !== null}
+        onOpenChange={(next) => { if (!next) setReportRun(null); }}
+        doc={reportRun ? trainingDocOf(reportRun) : null}
+        kindLabel="모의훈련 보고서"
       />
     </div>
   );

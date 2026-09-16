@@ -27,7 +27,8 @@ import { depthLevel, extentPaint, scopePaint, setPolygonLayerVisible, upsertPoly
 import { ensureFloodSurface, setFloodSurface } from "../../lib/flood-surface";
 import { loadTerrainFine, type TerrainGrid, type TerrainPatch } from "../../lib/terrain-grid";
 import { floodSurfaceOf } from "../../lib/flood-surfaces";
-import { formatMarkMetric, markMetricLabel, markOf } from "../../lib/forecast-twin";
+import { captureMap } from "../../lib/map-capture";
+import { formatMarkMetric, markMetricLabel, markOf, minutesBetween } from "../../lib/forecast-twin";
 import { formatClock } from "../../lib/datetime";
 import { CITY_CENTER } from "../../lib/map-config";
 import { GEOMETRIES, SCOPE_ZOOM } from "../../fixtures";
@@ -353,15 +354,22 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
       incidentTitle: wcase.title,
       conditionStepIds: condStep ? [condStep.id] : [],
       conditionLabel: condStep ? `강우 ${condStep.label}` : "당시 조건",
-      actions: (wcase.sop ?? []).filter((s) => acts[s.id]).map((s) => ({
-        sopId: s.id, label: s.label, at: acts[s.id],
-        lagMin: Math.max(0, Math.round((new Date(acts[s.id]).getTime() - new Date(s.firedAt).getTime()) / 60_000)),
+      stops: t.stops.map((s) => ({ at: s.at, phase: s.phase, note: s.note })),
+      /* 안 한 규정도 담는다 — 보고서에서 "안 함 · 실제와 같게"가 한 줄로 서야 한다 */
+      sopRows: (wcase.sop ?? []).map((s) => ({
+        id: s.id, label: s.label, firedAt: s.firedAt,
+        mineAt: acts[s.id] ?? null,
+        mineLagMin: acts[s.id] ? minutesBetween(s.firedAt, acts[s.id]) : null,
+        realLagMin: s.actedAt ? minutesBetween(s.firedAt, s.actedAt) : null,
       })),
       resultForecastId: (mine ?? base).forecastId,
       baselineForecastId: base.forecastId,
       rows: debriefRowsOf(mine, base),
       headline: debriefHeadline(mine, base, condStep?.label ?? "당시", Object.keys(acts).length === 0),
+      stateRows: (state?.rows ?? []).map((r) => ({ label: r.label, value: r.value })),
       improvements: improvements.filter((x) => x.incidentId === wcase.incidentId).map(({ axis, text }) => ({ axis, text })),
+      /* 저장 시점 지도 한 장 — 강평에서 누르므로 마지막 정지점의 화면이 담긴다 */
+      mapImage: captureMap(map.current),
       author: OFFICER,
       startedAt: startedAt.current,
     });

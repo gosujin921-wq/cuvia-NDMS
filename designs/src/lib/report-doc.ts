@@ -7,10 +7,11 @@
 
 import type { ReportDocumentProps } from "../components/ReportDocument";
 import type { Report } from "../demo/report";
-import type { AnalysisResult } from "../model/whatif";
+import type { AnalysisResult, TrainingRun } from "../model/whatif";
 import type { ReportRecord } from "../model/records";
 import { findEvent } from "../model/selectors";
 import { analysisReportOf } from "./analysis-report";
+import { trainingReportOf } from "./training-report";
 
 /** 표 안의 시각 — HH:MM */
 const clock = (d: Date): string => {
@@ -39,6 +40,26 @@ export function analysisDocOf(a: AnalysisResult): ReportDocumentProps {
        대안 예측판이 사전 작성본이라는 사실은 사건별 whatif fixture 의 머리 주석이 든다 */
     notice: [
       "대안은 실제로 일어난 일이 아니라 대응의 시점·수준·범위를 바꿨을 때의 전망입니다.",
+    ],
+  };
+}
+
+/** 모의훈련 보고서 — 저장된 훈련 한 회에서 (03 §26.9) */
+export function trainingDocOf(run: TrainingRun): ReportDocumentProps {
+  const report = trainingReportOf(run);
+  return {
+    report,
+    meta: [
+      { label: "구분", value: "모의훈련 보고서" },
+      { label: "번호", value: run.runId },
+      { label: "생성일시", value: stamp(report.issuedAt) },
+    ],
+    footLabel: `CUVIA 모의훈련 보고서 · ${run.runId}`,
+    /* 읽는 사람이 오해하지 않으려면 이 둘이 필요하다 — 훈련은 일어난 일이 아니고,
+       표의 값은 저장 시점의 것이다. 제작 구분·면책 문구는 올리지 않는다(CLAUDE.md) */
+    notice: [
+      "훈련은 실제로 일어난 일이 아니라 지난 사건의 조건과 대응을 바꿔 돌려 본 결과입니다.",
+      "표의 값은 훈련을 마친 시점에 기록한 것으로, 이후 시나리오가 바뀌어도 이 문서는 달라지지 않습니다.",
     ],
   };
 }

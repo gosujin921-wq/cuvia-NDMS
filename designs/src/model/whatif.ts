@@ -195,15 +195,34 @@ export interface TrainingRun {
   /** 고른 조건 단계 id. 당시 조건이면 비어 있다 */
   conditionStepIds: string[];
   conditionLabel: string;
-  /** 내가 실행한 조치. 안 한 것은 담지 않는다(실제와 같은 시각에 한 것으로 본다) */
-  actions: { sopId: string; label: string; at: string; lagMin: number }[];
+  /** 훈련 구조 — 그 회가 지나온 정지점. 시나리오를 고쳐도 지난 보고서가 안 바뀐다 */
+  stops: { at: string; phase: string; note: string }[];
+  /**
+   * 발동한 규정 전부. **안 한 것도 담는다** — "안 함"도 훈련의 결과다.
+   * 내가 실행한 것만 보려면 `mineAt` 이 있는 줄을 고른다(목록·보고서가 같은 줄을 읽는다).
+   */
+  sopRows: {
+    id: string;
+    label: string;
+    firedAt: string;
+    /** 내가 실행한 시각. 안 했으면 null(실제와 같은 시각에 한 것으로 본다) */
+    mineAt: string | null;
+    /** 발동에서 내 조치까지(분). 안 했으면 null */
+    mineLagMin: number | null;
+    /** 발동에서 실제 조치까지(분). 원장에 없으면 null */
+    realLagMin: number | null;
+  }[];
   /** 내 조치가 만든 판 · 같은 조건에서 실제와 같게 했을 때의 판 */
   resultForecastId: string;
   baselineForecastId: string;
   /** 보고서가 그대로 쓰는 저장 시점의 값 */
   rows: { label: string; base: string; mine: string }[];
   headline: string;
+  /** 마지막 정지점의 상태 — 훈련이 끝났을 때 무엇이 어떠했나 */
+  stateRows: { label: string; value: string }[];
   improvements?: { axis: ImprovementAxis; text: string }[];
+  /** 저장 시점의 지도 한 장(dataURL). 숫자만으로는 "그때 어땠는지"가 안 남는다 */
+  mapImage?: string;
   author: string;
   startedAt: string;
   finishedAt: string;
