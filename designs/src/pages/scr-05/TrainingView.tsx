@@ -67,6 +67,14 @@ const OFFICER = "김상황";
  * 위아래를 묶는 것은 시연 호흡이다. 너무 짧으면 점프로 보이고 너무 길면 기다리게 된다.
  */
 const FLOW_MS_PER_MIN = 100;
+/**
+ * 한 판을 다 흐른 뒤 **마지막 장면에 머무는 시간**(ms).
+ *
+ * 곧바로 반대 판으로 넘기면 배지·탭은 즉시 바뀌는데 지도는 1초 가까이 늦게 따라와,
+ * `내 조치` 라고 쓰인 화면에 아직 `조치 안 했다면` 의 물이 남는다(2026-09-17 측정).
+ * 끝 장면을 잠깐 보여 주고 넘어가면 그 어긋남이 사라지고, 무엇이 달라졌는지도 눈에 남는다.
+ */
+const COMPARE_HOLD_MS = 1100;
 const FLOW_MS_MIN = 1400;
 const FLOW_MS_MAX = 4200;
 const flowMsOf = (from: string, to: string): number => {
@@ -93,8 +101,10 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
    * 정지점 사이를 흐르는 중 — 진행도 p 는 아래 rAF 가 민다.
    * ★ 출발점 `from` 을 **흐름이 직접 든다.** 움직이는 `stopIndex` 로 출발 시각을 셈하면
    *   흐름이 끝나며 stopIndex 가 바뀌는 찰나에 시계가 앞뒤로 튄다(14:55 에서 눌렀는데 14:54).
+   * ★ `as` 는 **어느 판으로 흐르나**다. 마지막 결과에 닿으면 `조치 안 했다면` 한 바퀴 →
+   *   `내 조치` 한 바퀴를 번갈아 돌린다(`loop`). 그래야 무엇이 달라졌는지가 같은 화면에서 보인다.
    */
-  const [flow, setFlow] = useState<{ from: number; to: number; p: number } | null>(null);
+  const [flow, setFlow] = useState<{ from: number; to: number; p: number; as?: "base" | "mine"; loop?: boolean } | null>(null);
   const flowing = flow !== null;
   const index = phase === "debrief" ? replayAt ?? stops.length - 1 : stopIndex;
   const stop = stops[index] ?? null;
@@ -124,7 +134,12 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
    */
   const [view, setView] = useState<"mine" | "base">("mine");
   const changed = Boolean(mine && base && mine.forecastId !== base.forecastId);
-  const shown: Forecast | null = (changed && view === "base" ? base : mine) ?? base;
+  /* tick 클로저가 최신 값을 읽도록 — deps 에 넣으면 흐르는 중에 효과가 다시 서서 애니메이션이 끊긴다 */
+  const changedRef = useRef(false);
+  useEffect(() => { changedRef.current = changed; }, [changed]);
+  /** 지금 보고 있는 쪽 — **비교가 도는 동안은 흐름이 정한다.** 상단 탭도 이 값을 따라간다 */
+  const shownView: "mine" | "base" = flow?.as ?? view;
+  const shown: Forecast | null = (changed && shownView === "base" ? base : mine) ?? base;
   /* 준비 화면에서는 눈금을 잡지 않는다 — 조건을 바꿀 때 지도가 결과를 미리 말하면 훈련이 아니다.
      조건이 무엇을 바꾸는지는 슬라이더 아래 한 줄("최대 35 → 53 mm/h")이 말한다 */
   const shownMark = shown && mapStop && started ? markOf(shown, mapStop.at) : null;
@@ -231,23 +246,51 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
     }
     return floodSurfaceOf(m.extentGeometryId)?.spec.level ?? null;
   }, [shown, stops, wcase]);
+  /**
+   * 흐름 한 구간을 민다. 끝나면 셋 중 하나다.
+   *   보통     그 정지점에 선다
+   *   마지막   **비교를 돌리기 시작한다** — 조치 안 했다면 한 바퀴, 내 조치 한 바퀴, 되풀이
+   *   비교 중  다음 구간으로, 끝까지 갔으면 판을 바꿔 처음부터
+   * 되풀이는 [훈련 마치기]를 누를 때까지 멈추지 않는다(2026-09-17 사용자).
+   */
   useEffect(() => {
     if (!flow) return;
     const from = stops[flow.from], to = stops[flow.to];
     if (!from || !to) return;
     const span = flowMsOf(from.at, to.at);
-    let raf = 0, last = 0;
+    const lastIdx = stops.length - 1;
+    let raf = 0, last = 0, hold = 0;
     const t0 = performance.now();
     const tick = (now: number) => {
       const p = Math.min(1, (now - t0) / span);
-      if (p >= 1) { setStopIndex(flow.to); setFlow(null); return; }
+      if (p >= 1) {
+        if (flow.loop) {
+          if (flow.to >= lastIdx) {
+            /* 끝 장면에 머문 뒤 반대 판으로 — 지도가 따라올 틈을 준다 */
+            setFlow((f) => (f ? { ...f, p: 1 } : f));
+            hold = window.setTimeout(
+              () => setFlow({ from: 0, to: 1, p: 0, as: flow.as === "base" ? "mine" : "base", loop: true }),
+              COMPARE_HOLD_MS,
+            );
+            return;
+          }
+          setFlow({ from: flow.to, to: flow.to + 1, p: 0, as: flow.as, loop: true });
+          return;
+        }
+        setStopIndex(flow.to);
+        /* 마지막 결과에 닿았고 조치로 판이 달라졌으면, 곧바로 비교를 돌린다 */
+        setFlow(flow.to >= lastIdx && changedRef.current
+          ? { from: 0, to: 1, p: 0, as: "base", loop: true }
+          : null);
+        return;
+      }
       if (now - last > 120) { last = now; setFlow((f) => (f ? { ...f, p } : f)); }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(hold); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flow?.from, flow?.to]);
+  }, [flow?.from, flow?.to, flow?.as, flow?.loop]);
   /**
    * 흐르는 동안 보이는 시각 — 두 정지점 사이를 분 단위로.
    * ★ **분으로 반올림한다.** 그냥 자르면 흐름 첫 프레임이 출발 시각보다 1분 앞서 찍혀
@@ -394,8 +437,9 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
   };
 
   const next = () => {
-    if (flowing) return;
-    if (stopIndex >= stops.length - 1) { setReplayAt(stops.length - 1); return; }
+    /* 비교가 도는 중에는 누를 수 있다 — 되풀이를 멈추고 마치는 길이다. 한 구간을 흐르는 중에만 막는다 */
+    if (flowing && !flow?.loop) return;
+    if (stopIndex >= stops.length - 1) { setFlow(null); setReplayAt(stops.length - 1); return; }
     setFlow({ from: stopIndex, to: stopIndex + 1, p: 0 });
   };
 
@@ -429,7 +473,9 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
         </div>
       )}
 
-      {/* 조치 전 / 조치 후 — 같은 시각을 바꿔 본다. 수면이 줄고 느는 것이 곧 내 조치의 효과다 */}
+      {/* 조치 전 / 조치 후 — 같은 시각을 바꿔 본다. 수면이 줄고 느는 것이 곧 내 조치의 효과다.
+          ★ 비교가 도는 동안 **탭이 지금 보이는 쪽을 따라간다**(`shownView`). 손으로 누르면
+             되풀이를 멈추고 그 판에 선다 — 보고 싶은 데서 멈춰 볼 수 있어야 한다 */}
       {changed && (phase === "debrief" || stop?.phase === "결과") && (
         <div className="pointer-events-none absolute top-3 z-30 flex justify-center" style={{ left: CENTER_LEFT, right: CENTER_RIGHT }}>
           <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg border border-border bg-surface/95 p-0.5 backdrop-blur" role="group" aria-label="지도 보기">
@@ -437,14 +483,17 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
               <button
                 key={v}
                 type="button"
-                onClick={() => setView(v)}
-                aria-pressed={view === v}
+                onClick={() => { setFlow(null); setView(v); }}
+                aria-pressed={shownView === v}
                 className={cn("cursor-pointer rounded-md px-3 py-1.5 text-caption font-medium transition-colors",
-                  view === v ? (v === "base" ? "bg-warning text-surface" : "bg-primary text-primary-foreground") : "text-foreground-muted hover:text-foreground")}
+                  shownView === v ? (v === "base" ? "bg-warning text-surface" : "bg-primary text-primary-foreground") : "text-foreground-muted hover:text-foreground")}
               >
                 {v === "base" ? "조치 안 했다면" : "내 조치"}
               </button>
             ))}
+            {flow?.loop && (
+              <span className="px-2 text-caption text-foreground-subtle" aria-live="polite">번갈아 보는 중</span>
+            )}
           </div>
         </div>
       )}
@@ -468,6 +517,7 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
           <TrainingClock stops={stops} index={index} replay={phase === "debrief"} onPick={(i) => setReplayAt(i)}
             flow={flow && flowClock ? { to: flow.to, p: flow.p, at: flowClock } : null}
             rising={mapStop?.phase === "결과"}
+            compare={flow?.loop ? (flow.as ?? "mine") : null}
             waiting={!flowing && stop?.phase === "판단"} />
         </div>
       )}
@@ -678,13 +728,15 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
               className="pointer-events-auto w-full"
               variant={stopIndex >= stops.length - 1 ? "default" : "secondary"}
               onClick={next}
-              disabled={flowing}
+              disabled={flowing && !flow?.loop}
             >
-              {flowing
-                ? "시간이 흐르는 중…"
-                : stopIndex >= stops.length - 1
-                  ? "훈련 종료 · 강평"
-                  : `다음 단계 · ${formatClock(stops[stopIndex + 1].at)}`}
+              {flow?.loop
+                ? "훈련 마치기"
+                : flowing
+                  ? "시간이 흐르는 중…"
+                  : stopIndex >= stops.length - 1
+                    ? "훈련 마치기"
+                    : `다음 단계 · ${formatClock(stops[stopIndex + 1].at)}`}
             </Button>
           )}
           {phase === "debrief" && (

@@ -14,7 +14,7 @@ import { cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
 import type { TrainingScenario } from "../../../model/whatif";
 
-export function TrainingClock({ stops, index, replay, onPick, flow, rising, waiting }: {
+export function TrainingClock({ stops, index, replay, onPick, flow, rising, compare, waiting }: {
   stops: TrainingScenario["stops"];
   index: number;
   /** 강평인가 — 그때만 누를 수 있다 */
@@ -24,6 +24,8 @@ export function TrainingClock({ stops, index, replay, onPick, flow, rising, wait
   flow?: { to: number; p: number; at: string } | null;
   /** 물이 실제로 오는 구간인가 — 판단 → 판단은 지도가 거의 그대로다(와이어프레임 §정지점 설계) */
   rising?: boolean;
+  /** 비교를 되풀이하는 중인가 — 어느 판을 보고 있는지 시계가 말한다 */
+  compare?: "base" | "mine" | null;
   /** 판단 국면 — 조치를 정하는 동안 시간은 가지 않는다 */
   waiting?: boolean;
 }) {
@@ -41,7 +43,7 @@ export function TrainingClock({ stops, index, replay, onPick, flow, rising, wait
         <span className="font-mono text-[20px] font-bold leading-none tracking-tight text-foreground tabular-nums">{formatClock(clock)}</span>
         <span className={cn("shrink-0 rounded border px-1.5 py-0.5 text-caption",
           flow ? "border-primary-text text-primary-text" : replay ? "border-primary-text text-primary-text" : st.phase === "결과" ? "border-success text-success" : "border-warning text-warning")}>
-          {flow ? "시간 흐름" : replay ? "복기" : `${st.phase} 국면`}
+          {compare ? (compare === "base" ? "조치 안 했다면" : "내 조치") : flow ? "시간 흐름" : replay ? "돌아보기" : `${st.phase} 국면`}
         </span>
 
         <span className="relative mx-1 h-1 flex-1 rounded-full bg-border">
@@ -77,7 +79,9 @@ export function TrainingClock({ stops, index, replay, onPick, flow, rising, wait
           /* 판단 → 판단 구간은 같은 예측 눈금이라 지도가 거의 그대로다. 그때 "물이 차오른다"고
              하면 화면이 지키지 못할 약속을 한다 — 물이 오는 것은 결과 국면의 약속이다 */
           <span className="text-primary-text">
-            {rising ? "물이 차오르는 것을 보세요" : "물은 아직 오지 않았습니다"}
+            {compare
+              ? "두 경우를 번갈아 보여 줍니다"
+              : rising ? "물이 차오르는 것을 보세요" : "물은 아직 오지 않았습니다"}
           </span>
         ) : waiting ? (
           <span className="text-warning">조치를 정하는 동안 시간은 가지 않습니다</span>

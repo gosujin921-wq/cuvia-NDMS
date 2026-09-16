@@ -63,7 +63,7 @@ export function TrainingRunBoard({ onNew }: { onNew: () => void }) {
         <EmptyState
           icon="mdi:clipboard-text-clock-outline"
           message="아직 저장한 훈련이 없습니다"
-          description="훈련을 마치고 강평에서 [훈련 결과 저장]을 누르면 여기 쌓입니다. 같은 사건을 조건만 바꿔 여러 번 해 보면 어디까지 버티는지 보입니다."
+          description="훈련을 마치고 [훈련 결과 저장]을 누르면 여기 쌓입니다. 같은 사건을 조건만 바꿔 여러 번 해 보면 어디까지 버티는지 보입니다."
           action={<button type="button" onClick={onNew} className="cursor-pointer text-caption text-primary-text">훈련하러 가기 ›</button>}
         />
       </div>
