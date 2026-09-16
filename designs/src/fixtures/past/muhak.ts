@@ -108,17 +108,37 @@ const basis = (assumptions: string[], modelName = "대안 계산 (재현과 같�
 type Four<T> = [T, T, T, T];
 const km = (v: number): MarkMetric => ({ label: "화선 확산 거리", value: v, unit: "km", digits: 1 });
 const FAC_TONE: Record<FacState, MarkImpact["tone"]> = { 정상: "muted", "영향 예상": "muted", "영향 임박": "warning", 영향권: "danger", "대피 완료": "safe", 통제됨: "safe" };
-/** 그 시각의 핵심 영향 — 요양시설 상태와 산자락 주택(화선이 닿은 동 수) */
-const impactsOf = (care: FacState, homes: FacState, homeCount: number): MarkImpact[] => [
+/**
+ * 그 시각의 핵심 영향 — 요양시설 상태 · **연기 노출 시간** · 산자락 주택.
+ *
+ * ★ 노출 시간이 없으면 **이송이 결과를 못 가른다.** 눈금이 네 개뿐이라 17:40 에 시작한 이송과
+ *   18:10(실제)에 시작한 이송이 18:00 눈금에서는 둘 다 `영향권`, 19:00 눈금에서는 둘 다 `대피 완료`다
+ *   (2026-09-17 측정 · 이송을 30분 앞당겨도 표가 그대로였다).
+ *   달라지는 것은 **연기 속에 얼마나 오래 있었나**이고 그것이 이송을 앞당긴 보람이다.
+ *   시간 차라 산수가 아니다 — 곱해서 만든 수가 아니다(README §2.3 기준 ③).
+ */
+const impactsOf = (care: FacState, homes: FacState, homeCount: number, smokeMin?: number): MarkImpact[] => [
   { label: "산자락 요양시설", value: care, tone: FAC_TONE[care] },
+  ...(smokeMin === undefined ? [] : [{
+    label: "요양시설 연기 노출",
+    value: smokeMin > 0 ? `${smokeMin}분` : "없음",
+    tone: (smokeMin >= 40 ? "danger" : smokeMin > 0 ? "warning" : "muted") as MarkImpact["tone"],
+  }]),
   { label: "산자락 주택", value: homeCount > 0 ? "화선 도달" : homes, tone: homeCount > 0 ? "danger" : FAC_TONE[homes] },
 ];
-const marksOf = (d: Four<number>, g: Four<string>, n: Four<string>, s: Omit<Parameters<typeof sceneAt>[1], "plume" | "care" | "homes"> & { plume: Four<number>; care: Four<FacState>; homes: Four<FacState>; homeCounts: Four<number> }): ForecastMark[] =>
+const marksOf = (d: Four<number>, g: Four<string>, n: Four<string>, s: Omit<Parameters<typeof sceneAt>[1], "plume" | "care" | "homes"> & { plume: Four<number>; care: Four<FacState>; homes: Four<FacState>; homeCounts: Four<number>; smokeAt?: string }): ForecastMark[] =>
   AT.map((validAt, i) => ({
     validAt, maxDepthM: 0, metric: km(d[i]), extentGeometryId: g[i], impactSummary: n[i],
     scene: sceneAt(i, { plume: s.plume[i], breakFrom: s.breakFrom, evacFrom: s.evacFrom, care: s.care[i], homes: s.homes[i] }),
-    impacts: impactsOf(s.care[i], s.homes[i], s.homeCounts[i]),
+    /* 그 눈금까지 쌓인 연기 노출 — 이송이 끝나면 더 늘지 않는다 */
+    impacts: impactsOf(s.care[i], s.homes[i], s.homeCounts[i], smokeUntil(validAt, s.evacFrom, s.smokeAt ?? SMOKE_AT_CARE)),
   }));
+
+/** 그 시각까지의 연기 노출(분) — 연기 도달부터 이송 완료까지, 아직 안 끝났으면 그 시각까지 */
+const smokeUntil = (validAt: string, evacAt: string, smokeAt: string): number => {
+  const end = Math.min(new Date(plus(evacAt, EVAC_MINUTES)).getTime(), new Date(validAt).getTime());
+  return Math.max(0, Math.round((end - new Date(smokeAt).getTime()) / 60_000));
+};
 
 /* ── 노출 규칙 — 연기가 요양시설에 닿은 뒤(18:00) 이송이 끝나기까지 걸린 시간. 이송은 입소자 60명 · 차량 3대로 40분 걸린다 ──
    몇 명이 연기를 마셨는지는 쓰지 않는다 — 인과가 약한 후행 피해다. 노출된 시간은 같은 기록에 이송 시각만 바꿔 규칙으로 나온다 */
@@ -321,7 +341,76 @@ WINDS.forEach((w, wi) => {
   }
 });
 
-export const MUHAK_FORECASTS: Forecast[] = [MH_ACTUAL, MH_BREAK_10, MH_BREAK_20, MH_EVAC_30, MH_EVAC_50, ...WIND_BOARDS, ...COMBO_FORECASTS];
+/* ═══ 훈련 조합 판 (03 §26.10 · 2026-09-17) ═══════════════════════════════
+ *
+ * 훈련이 묻는 것은 **방화선을 언제 착수할까**다(현상 대응 · §26.3). 불이 가는 방향은 바람이 정하고,
+ * 우리가 정하는 것은 그 앞을 언제 끊느냐다. 이송(노출 대응)은 요양시설 연기 노출 시간을 바꾼다.
+ *
+ * ★ **결정 시각과 착수 시각이 다르다.** 자원을 모아 임도까지 올라가야 하므로 일찍 정할수록 일찍 끊는다 —
+ *   17:30 에 정하면 18:00(20분 일찍), 18:00 에 정하면 18:10(10분 일찍), 안 정하면 실제 18:20.
+ * ★ **이송은 17:30 에만 고를 수 있다.** 18:00 에 정하면 착수가 실제(18:10)와 같아져 훈련이 되지 않는다 —
+ *   연기가 요양시설에 닿는 것이 18:00 이라, 그때는 이미 늦다. 그 사실 자체가 훈련이 보게 하려는 것이다.
+ * ★ 조합 판은 이미 있는 규칙으로 만든다: `withBreak`(강풍 판에 방화선 얹기) · `careOf`(이송 시각별 시설 상태).
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+const TR_BREAK_BY_STOP: Record<string, BreakSpec> = { [AT[0]]: BREAKS[1], [AT[1]]: BREAKS[0] };
+const TR_EVAC_BY_STOP: Record<string, (typeof EVACS)[number]> = { [AT[0]]: EVACS[0] };
+/** 훈련 조건 — 당시 서풍 8 m/s · 강풍 12 m/s. 강풍은 훈련 시작 전(17:20)부터 분다 */
+const TR_WIND: { id: string; spec: WindSpec | null }[] = [
+  { id: "now", spec: null },
+  { id: "wind-up", spec: WINDS[0] },
+];
+
+const mhTrainBoard = (windId: string, breakStop: string | null, evacStop: string | null): Forecast => {
+  const w = TR_WIND.find((x) => x.id === windId)?.spec ?? null;
+  const b = breakStop ? TR_BREAK_BY_STOP[breakStop] : null;
+  /* 화선 — 강풍이면 강풍 판에 방화선을 얹고, 아니면 방화선 판(없으면 실제 재현) */
+  const fire: FireSpec = w
+    ? (b ? withBreak(w, b) : w)
+    : (b
+        ? { d: b.d, g: b.g, n: b.n, s: { plume: [0, 1, 2, 1], care: ACTUAL_S.care, homes: b.homes, homeCounts: [0, 0, 0, b.homeCount] }, homesAt: b.homesAt, smokeAt: SMOKE_AT_CARE }
+        : ACTUAL_FIRE);
+  const breakAt = b ? b.at : ACTUAL_BREAK;
+  const evacAt = evacStop ? TR_EVAC_BY_STOP[evacStop].at : ACTUAL_EVAC;
+  const reached = Math.max(...fire.s.homeCounts) > 0;
+  const tag = (x: string | null) => (x ? x.slice(11, 13) : "x");
+  const changed = [
+    ...(w ? [`서풍 12 m/s · 강풍`] : []),
+    ...(b ? [`방화선 착수 ${breakAt.slice(11, 16)}`] : []),
+    ...(evacStop ? [`요양시설 이송 ${evacAt.slice(11, 16)}`] : []),
+  ];
+  return {
+    ...common,
+    ...(w ? { scene: staticOf(12) } : {}),
+    forecastId: `FC-MH-TR-${windId}-${tag(breakStop)}-${tag(evacStop)}`,
+    alternativeId: b ? "containment" : evacStop ? "evacuation" : "baseline",
+    changedConditions: changed,
+    ...(changed.length > 0 ? { hypothesis: changed.join(" · ") } : {}),
+    marks: marksOf(fire.d, fire.g, fire.n, { ...fire.s, care: careOf(fire.s.care, evacAt, fire.smokeAt), breakFrom: breakAt, evacFrom: evacAt, smokeAt: fire.smokeAt }),
+    arrivalAt: reached ? fire.homesAt ?? VALID_UNTIL : VALID_UNTIL,
+    targets: targets(Math.max(...fire.s.homeCounts), reached ? fire.homesAt : null, evacAt, fire.smokeAt),
+    basis: basis([
+      w ? windLine(DECISIONS[0]) : "관측 풍향·풍속 입력 (기준 재현과 같음)",
+      `방화선 착수 ${breakAt.slice(11, 16)} · 요양시설 이송 ${evacAt.slice(11, 16)}`,
+      MH_EXPOSURE_RULE,
+    ], "규칙 계산 (같은 기록에 풍속·방화선·이송 시각만 변경)"),
+    conditions: conditions(breakAt, evacAt, w ? WIND_COND : undefined),
+    ...(b ? { actionAt: { label: "방화선 착수", at: breakAt } } : {}),
+  };
+};
+
+const MH_TR_BREAKS: (string | null)[] = [AT[0], AT[1], null];
+const MH_TR_EVACS: (string | null)[] = [AT[0], null];
+const MH_TRAIN_BOARDS: Forecast[] = TR_WIND.flatMap((w) =>
+  MH_TR_BREAKS.flatMap((b) => MH_TR_EVACS.map((e) => mhTrainBoard(w.id, b, e))));
+const MH_TRAINING_COMBOS = TR_WIND.flatMap((w) =>
+  MH_TR_BREAKS.flatMap((b) => MH_TR_EVACS.map((e) => ({
+    conditionStepId: w.id,
+    acts: { ...(b ? { D1: b } : {}), ...(e ? { D2: e } : {}) } as Record<string, string>,
+    forecastId: mhTrainBoard(w.id, b, e).forecastId,
+  }))));
+
+export const MUHAK_FORECASTS: Forecast[] = [MH_ACTUAL, MH_BREAK_10, MH_BREAK_20, MH_EVAC_30, MH_EVAC_50, ...WIND_BOARDS, ...COMBO_FORECASTS, ...MH_TRAIN_BOARDS];
 
 const SITUATIONS: WhatIfSituation[] = [
   {
@@ -386,5 +475,32 @@ export const MUHAK_WHATIF: WhatIfCase = {
   ],
   responses: RESPONSES,
   situations: SITUATIONS,
+  /* 발동한 규정 — 17:20 확산 예측이 둘 다 띄웠다. 실제로는 이송 18:10 · 방화선 18:20 에 움직였다 */
+  sop: [
+    { id: "D1", label: "임도 기준 방화선 착수", trigger: "확산 예측 · 북동쪽 19:40 주택 도달", firedAt: t("17:20"), actedAt: ACTUAL_BREAK, responseId: "containment" },
+    { id: "D2", label: "요양시설 이송", trigger: "플룸이 요양시설 방향 · 18:00 연기 도달 예상", firedAt: t("17:20"), actedAt: ACTUAL_EVAC, responseId: "evacuation" },
+  ],
+  training: {
+    incidentId: MH_INCIDENT_ID,
+    stops: [
+      { at: AT[0], phase: "판단", note: "확산 예측이 나왔다 · 지금 정하면 방화선 18:00 · 이송 17:40" },
+      { at: AT[1], phase: "판단", note: "연기가 요양시설에 닿았다 · 방화선은 18:10 까지 · 이송은 이미 늦다" },
+      { at: AT[2], phase: "결과", note: "화선이 방화선에 닿는다" },
+      { at: AT[3], phase: "결과", note: "산자락 주택 도달 여부" },
+    ],
+    conditions: [
+      {
+        id: "wind", label: "바람", stateLabel: "풍속",
+        steps: [
+          { id: "now", label: "당시", detail: "서풍 8 m/s", situationId: null },
+          { id: "wind-up", label: "강풍", detail: "서풍 8 → 12 m/s", situationId: "wind-up" },
+        ],
+      },
+    ],
+    firedSopIds: ["D1", "D2"],
+    /* 둘 다 결과를 가른다 — 방화선은 화선을, 이송은 연기 노출 시간을 */
+    resultSopIds: ["D1", "D2"],
+    combos: MH_TRAINING_COMBOS,
+  },
   combos: COMBOS,
 };
