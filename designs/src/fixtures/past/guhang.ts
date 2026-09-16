@@ -19,6 +19,7 @@ import type { LngLat, SceneLayer, ScenePoint } from "../../model/scene";
 import type { WhatIfCase, WhatIfCombo, WhatIfResponse, WhatIfSituation } from "../../model/whatif";
 
 export const GH_INCIDENT_ID = "INC-2024-0820-GH01";
+const ms = (iso: string) => new Date(iso).getTime();
 const t = (hhmm: string) => `2024-08-20T${hhmm}:00+09:00`;
 /** 재현·대안 판의 기준시각 — 관측 입력이 끝난 사건 종료 시각. 판은 모두 사건이 끝난 뒤 계산했다 */
 const BASE = t("20:10");
@@ -78,13 +79,22 @@ const basis = (assumptions: string[], modelName = "대안 계산 (재현과 같�
 /** 첫 줄 지표 — 월류 시작·구간(03 §27). 값은 월류 깊이라 지도 진하기에 쓰고, 문장이 첫 줄에 선다 */
 type Four<T> = [T, T, T, T];
 /** 그 시각의 핵심 영향 — 해안도로 상태(잠김 · 통제)와 그 시각 물이 든 상가 수 */
-const impactsOf = (w: Four<[boolean, boolean]>, blockAt: string, shops: Four<number>): Four<MarkImpact[]> =>
+/**
+ * 그 시각의 핵심 영향 — 해안도로 상태 · **막히기 전 노출 시간** · 저지대 상가.
+ *
+ * ★ 상태만 있으면 통제 시각이 결과를 못 가른다. 도로는 잠기면 `침수 · 통행 불가`, 막으면 `통제됨` 둘뿐이라
+ *   17:55 에 막은 것과 18:15(실제)에 막은 것이 눈금 위에서 같은 글자가 된다(2026-09-17 측정).
+ *   달라지는 것은 **잠긴 채로 열려 있던 시간**이고 그것이 일찍 막은 보람이다. 시간 차라 산수가 아니다.
+ */
+const impactsOf = (w: Four<[boolean, boolean]>, blockAt: string, shops: Four<number>, roadOnset: string | null = null): Four<MarkImpact[]> =>
   AT.map((at, i) => {
     const blocked = at >= blockAt;
     const road = w[i][1] ? (blocked ? "통제됨" : "침수 · 통행 불가") : blocked ? "통제됨" : "통행 가능";
+    const open = roadOnset === null ? 0 : Math.max(0, Math.round((Math.min(ms(blockAt), ms(at)) - ms(roadOnset)) / 60_000));
     return [
       { label: "해안도로", value: road, tone: road === "통제됨" ? "safe" : road === "통행 가능" ? "muted" : "danger" },
-      { label: "저지대 상가", value: shops[i] > 0 ? "유입" : "유입 없음", tone: shops[i] > 0 ? "danger" : "muted" },
+      { label: "막히기 전 노출", value: open > 0 ? `${open}분` : "없음", tone: open >= 20 ? "danger" : open > 0 ? "warning" : "muted" },
+      { label: "저지대 상가", value: shops[i] > 0 ? `유입 ${shops[i]}동` : "유입 없음", tone: shops[i] > 0 ? "danger" : "muted" },
     ] satisfies MarkImpact[];
   }) as Four<MarkImpact[]>;
 const marksOf = (d: Four<number>, g: Four<string>, n: Four<string>, overText: Four<string>, scenes: Four<SceneLayer[]>, impacts: Four<MarkImpact[]>): ForecastMark[] =>
@@ -96,11 +106,13 @@ const marksOf = (d: Four<number>, g: Four<string>, n: Four<string>, overText: Fo
 
 /* 영향 대상 — 물양장이 첫째다(도달 = 월파 시작).
    수는 적지 않는다. 대상과 상태만 둔다 — 통제로 줄어드는 차량·인원 수는 산수라 결과로 쓰지 않는다(README §2.3 기준 ③ · 2026-09-16) */
-const targets = (shops: number, roadOnset: string | null, blockAt: string, wharfAt = t("17:45")): ImpactTarget[] => {
+const targets = (shops: number, roadOnset: string | null, blockAt: string): ImpactTarget[] => {
   /* 갓길이 잠긴 뒤에 통제가 끝나면 그 사이는 노출이다. 얼마나인지는 세지 않는다 */
   const exposed = roadOnset !== null && blockAt > roadOnset;
   return [
-    { kind: "중요시설", id: "FAC-GH-WHARF", label: "물양장·방파제 등대", arrivalAt: wharfAt, exposure: "부분 중단" },
+    /* 월파가 시작되는 시각은 조위가 정한다 — 수문·통제로 바뀌지 않으므로 도달로 세우지 않는다.
+       세우면 강평에 `17:45 → 17:45` 가 서서 "달라진 게 없다"로 읽힌다(2026-09-17) */
+    { kind: "중요시설", id: "FAC-GH-WHARF", label: "물양장·방파제 등대", exposure: "부분 중단" },
     { kind: "도로", id: "RD-GH-COAST", label: "해안도로 구항 구간", exposure: "통제됨" },
     { kind: "건물", id: "BLD-GH-LOW", label: "저지대 상가", exposure: shops > 0 ? "노출" : "영향 없음" },
     { kind: "대상자", id: "POP-GH-ROAD", label: "해안도로·상가 이용자", exposure: exposed ? "노출" : "통제됨" },
@@ -132,7 +144,7 @@ const ACTUAL_W: Four<[boolean, boolean]> = [[true, false], [true, true], [true, 
 const ACTUAL_SHOPS: Four<number> = [0, 0, 5, 3];
 export const GH_ACTUAL: Forecast = {
   ...common, forecastId: "FC-GH-ACTUAL", alternativeId: "baseline", changedConditions: [],
-  marks: marksOf(ACTUAL_D, ACTUAL_G, ACTUAL_N, ACTUAL_O, scenes(ACTUAL_GATE, ACTUAL_BLOCK, ACTUAL_W), impactsOf(ACTUAL_W, ACTUAL_BLOCK, ACTUAL_SHOPS)),
+  marks: marksOf(ACTUAL_D, ACTUAL_G, ACTUAL_N, ACTUAL_O, scenes(ACTUAL_GATE, ACTUAL_BLOCK, ACTUAL_W), impactsOf(ACTUAL_W, ACTUAL_BLOCK, ACTUAL_SHOPS, ROAD_ONSET)),
   arrivalAt: t("17:45"),
   targets: targets(5, ROAD_ONSET, ACTUAL_BLOCK),
   basis: basis(["관측 조위·파고를 넣어 다시 계산", "만조 18:24", "실제 대응: 수문 폐쇄 18:05 · 해안도로 통제 18:15"], "재현 계산 (관측 조위·파고 입력)", "보통"),
@@ -155,7 +167,7 @@ const gateEarly = (id: string, at: string, early: string, { d, g, n, o, w, shops
   ...common, forecastId: id, alternativeId: "gate",
   changedConditions: [`역류방지 수문 폐쇄 · 물양장 차수판 · ${at.slice(11, 16)} (실제보다 ${early})`],
   hypothesis: `역류방지 수문을 실제보다 ${early}(${at.slice(11, 16)}) 닫은 경우`,
-  marks: marksOf(d, g, n, o, scenes(at, ACTUAL_BLOCK, w), impactsOf(w, ACTUAL_BLOCK, shops)),
+  marks: marksOf(d, g, n, o, scenes(at, ACTUAL_BLOCK, w), impactsOf(w, ACTUAL_BLOCK, shops, roadOnset)),
   arrivalAt: t("17:45"),
   targets: targets(Math.max(...shops), roadOnset, ACTUAL_BLOCK),
   basis: basis(["관측 조위·파고 · 만조 18:24", `수문 폐쇄 ${at.slice(11, 16)} 가정 · 해안도로 통제는 실제(18:15) 그대로`]),
@@ -172,9 +184,9 @@ const blockOn = (id: string, at: string, early: string, spec: WaterSpec, wharfAt
   ...common, forecastId: id, alternativeId: "coast-control",
   changedConditions: [...extraChanged, `해안도로 통제 · 상가 대피 안내 · ${at.slice(11, 16)} (실제보다 ${early})`],
   hypothesis: `해안도로를 실제보다 ${early}(${at.slice(11, 16)}) 막은 경우`,
-  marks: marksOf(spec.d, spec.g, spec.n, spec.o, scenes(ACTUAL_GATE, at, spec.w), impactsOf(spec.w, at, spec.shops)),
+  marks: marksOf(spec.d, spec.g, spec.n, spec.o, scenes(ACTUAL_GATE, at, spec.w), impactsOf(spec.w, at, spec.shops, spec.roadOnset)),
   arrivalAt: wharfAt,
-  targets: targets(Math.max(...spec.shops), spec.roadOnset, at, wharfAt),
+  targets: targets(Math.max(...spec.shops), spec.roadOnset, at),
   basis: basis([...lines, `해안도로 통제 ${at.slice(11, 16)} 가정`], "규칙 계산 (같은 기록에 통제 시각만 변경)"),
   conditions: cond,
   actionAt: { label: "통제 시점", at },
@@ -196,9 +208,9 @@ const surgeFrom = ({ from, d, g, n, o, w, shops, wharfAt, roadOnset }: SurgeSpec
   ...common, forecastId: `FC-GH-SURGE-${from.slice(11, 13)}${from.slice(14, 16)}`, alternativeId: "situation",
   changedConditions: [`조위 편차 +50 cm · ${from.slice(11, 16)} 이후 (실제 +30 cm)`],
   hypothesis: `${from.slice(11, 16)} 이후 조위 편차가 실제보다 20 cm 컸던 경우`,
-  marks: marksOf(d, g, n, o, scenes(ACTUAL_GATE, ACTUAL_BLOCK, w), impactsOf(w, ACTUAL_BLOCK, shops)),
+  marks: marksOf(d, g, n, o, scenes(ACTUAL_GATE, ACTUAL_BLOCK, w), impactsOf(w, ACTUAL_BLOCK, shops, roadOnset)),
   arrivalAt: wharfAt,
-  targets: targets(Math.max(...shops), roadOnset, ACTUAL_BLOCK, wharfAt),
+  targets: targets(Math.max(...shops), roadOnset, ACTUAL_BLOCK),
   basis: basis([surgeLine(from), "실제 대응 그대로: 수문 18:05 · 해안도로 통제 18:15"], "대안 계산 (재현과 같은 방식 · 상황 입력만 변경)"),
   conditions: SURGE_COND,
 });
@@ -233,7 +245,6 @@ export const [GH_SURGE_1720, GH_SURGE_1750, GH_SURGE_1815] = SURGE_BOARDS;
  *   해안도로 통제      해일 판 그대로에 통제 시각만 바꿔 같은 노출 규칙 — 해일이 크면 도로가 일찍 잠겨 20분 일찍 막아도 늦을 수 있다
  * 분석 기준보다 이른 선택지는 화면이 먼저 닫으므로 그 조합은 만들지 않는다. 실개발은 조합마다 ModelRun 으로 교체한다.
  * ─────────────────────────────────────────────────────────────────── */
-const ms = (iso: string) => new Date(iso).getTime();
 const kst = (m: number): string => {
   const d = new Date(Math.round(m / 60_000) * 60_000 + 9 * 3600_000);
   return t(`${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`);
@@ -273,9 +284,9 @@ SURGES.forEach((sit, si) => {
       ...common, forecastId: `${sitF.forecastId}-${gt.key}`, alternativeId: "gate",
       changedConditions: [...sitF.changedConditions, `역류방지 수문 폐쇄 · ${gt.at.slice(11, 16)} (실제보다 ${gt.early})`],
       hypothesis: `${sitF.hypothesis}에 수문을 ${gt.early}(${gt.at.slice(11, 16)}) 닫았다면`,
-      marks: marksOf(c.d, c.g, c.n, c.o, scenes(gt.at, ACTUAL_BLOCK, c.w), impactsOf(c.w, ACTUAL_BLOCK, c.shops)),
+      marks: marksOf(c.d, c.g, c.n, c.o, scenes(gt.at, ACTUAL_BLOCK, c.w), impactsOf(c.w, ACTUAL_BLOCK, c.shops, c.roadOnset)),
       arrivalAt: sit.wharfAt,
-      targets: targets(Math.max(...c.shops), c.roadOnset, ACTUAL_BLOCK, sit.wharfAt),
+      targets: targets(Math.max(...c.shops), c.roadOnset, ACTUAL_BLOCK),
       basis: basis([surgeLine(sit.from), `수문 폐쇄 ${gt.at.slice(11, 16)} 가정 · 해안도로 통제는 실제(18:15) 그대로`, "조합 판 = 해일 판 + (수문 판 − 기준 재현)"], "대안 계산 (재현과 같은 방식 · 상황과 대응 변경)"),
       conditions: conditions(`폐쇄 ${gt.at.slice(11, 16)}`, "+50 cm · 해일 악화", "18:24 · 196 cm"),
       actionAt: { label: "수문 폐쇄", at: gt.at },
@@ -291,7 +302,65 @@ SURGES.forEach((sit, si) => {
   }
 });
 
-export const GUHANG_FORECASTS: Forecast[] = [GH_ACTUAL, GH_GATE_10, GH_GATE_20, GH_BLOCK_10, GH_BLOCK_20, ...SURGE_BOARDS, ...COMBO_FORECASTS];
+/* ═══ 훈련 조합 판 (03 §26.10 · 2026-09-17) ═══════════════════════════════
+ *
+ * 훈련이 묻는 것은 **수문을 언제 닫을까**다(현상 대응). 바다가 경계를 넘는 시각은 조위가 정하고,
+ * 우리가 정하는 것은 그 전에 배수구를 막느냐다. 해안도로 통제(노출 대응)는 도로에 들어간 차와 사람을 바꾼다.
+ *
+ * ★ **판단 국면이 하나다.** 만조가 18:24 이고 월파가 17:45 에 시작하므로 결정 창이 17:50 하나뿐이다 —
+ *   다음 눈금(18:10)에는 실제 대응 시각(수문 18:05 · 통제 18:15)이 이미 지나 고를 것이 남지 않는다.
+ *   창원천·무학산은 판단이 둘인데 여기는 하나인 것이 **이 유형의 성질**이고, 그 촉박함이 훈련이 보게 하려는 것이다.
+ * ★ 조합 판은 `withGate`(해일 판에 수문 얹기) 규칙으로 만든다. 통제는 물을 바꾸지 않고 노출만 바꾼다.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/** 훈련 조건 — 당시 +30 cm · 해일 악화 +50 cm. 악화는 훈련 시작 시각(17:50)부터 */
+const GH_TR_SURGE: { id: string; spec: SurgeSpec | null }[] = [
+  { id: "now", spec: null },
+  { id: "surge", spec: SURGES[1] },
+];
+
+const ghTrainBoard = (surgeId: string, gateStop: string | null, blockStop: string | null): Forecast => {
+  const sit = GH_TR_SURGE.find((x) => x.id === surgeId)?.spec ?? null;
+  const gate = gateStop ? GATE_10 : null;
+  /* 물 — 해일이면 해일 판에 수문을 얹고, 아니면 수문 판(없으면 실제 재현) */
+  const spec: WaterSpec = sit ? (gate ? withGate(sit, gate) : sit) : (gate ?? ACTUAL_SPEC);
+  const gateAt = gate ? GATES[0].at : ACTUAL_GATE;
+  const blockAt = blockStop ? BLOCKS[1].at : ACTUAL_BLOCK;
+  const wharfAt = sit ? sit.wharfAt : t("17:45");
+  const changed = [
+    ...(sit ? ["조위 편차 +50 cm · 해일 악화"] : []),
+    ...(gate ? [`역류방지 수문 폐쇄 ${gateAt.slice(11, 16)}`] : []),
+    ...(blockStop ? [`해안도로 통제 ${blockAt.slice(11, 16)}`] : []),
+  ];
+  return {
+    ...common,
+    forecastId: `FC-GH-TR-${surgeId}-${gateStop ? "g" : "x"}-${blockStop ? "b" : "x"}`,
+    alternativeId: gate ? "gate" : blockStop ? "coast-control" : "baseline",
+    changedConditions: changed,
+    ...(changed.length > 0 ? { hypothesis: changed.join(" · ") } : {}),
+    marks: marksOf(spec.d, spec.g, spec.n, spec.o, scenes(gateAt, blockAt, spec.w), impactsOf(spec.w, blockAt, spec.shops, spec.roadOnset)),
+    arrivalAt: wharfAt,
+    targets: targets(Math.max(...spec.shops), spec.roadOnset, blockAt),
+    basis: basis([
+      sit ? surgeLine(sit.from) : "관측 조위·파고 · 만조 18:24",
+      `수문 폐쇄 ${gateAt.slice(11, 16)} · 해안도로 통제 ${blockAt.slice(11, 16)}`,
+    ], "규칙 계산 (같은 기록에 조위·수문·통제 시각만 변경)"),
+    conditions: sit ? SURGE_COND : conditions(`폐쇄 ${gateAt.slice(11, 16)}`),
+    ...(gate ? { actionAt: { label: "수문 폐쇄", at: gateAt } } : {}),
+  };
+};
+
+const GH_TR_CHOICES: (string | null)[] = [AT[0], null];
+const GH_TRAIN_BOARDS: Forecast[] = GH_TR_SURGE.flatMap((s) =>
+  GH_TR_CHOICES.flatMap((g) => GH_TR_CHOICES.map((bk) => ghTrainBoard(s.id, g, bk))));
+const GH_TRAINING_COMBOS = GH_TR_SURGE.flatMap((s) =>
+  GH_TR_CHOICES.flatMap((g) => GH_TR_CHOICES.map((bk) => ({
+    conditionStepId: s.id,
+    acts: { ...(g ? { C1: g } : {}), ...(bk ? { C2: bk } : {}) } as Record<string, string>,
+    forecastId: ghTrainBoard(s.id, g, bk).forecastId,
+  }))));
+
+export const GUHANG_FORECASTS: Forecast[] = [GH_ACTUAL, GH_GATE_10, GH_GATE_20, GH_BLOCK_10, GH_BLOCK_20, ...SURGE_BOARDS, ...COMBO_FORECASTS, ...GH_TRAIN_BOARDS];
 
 const SITUATIONS: WhatIfSituation[] = [
   {
@@ -356,6 +425,33 @@ export const GUHANG_WHATIF: WhatIfCase = {
     { label: "상가 침수 (현장 조사)", value: "6동" },
   ],
   responses: RESPONSES,
+  /* 발동한 규정 — 17:20 월류 예측이 둘 다 띄웠다. 실제로는 수문 18:05 · 통제 18:15 에 움직였다 */
+  sop: [
+    { id: "C1", label: "역류방지 수문 폐쇄", trigger: "월류 예측 · 물양장 17:45 월파", firedAt: t("17:20"), actedAt: ACTUAL_GATE, responseId: "gate" },
+    { id: "C2", label: "해안도로 통제", trigger: "배수구 역류 · 해안도로 갓길 침수 예상", firedAt: t("17:20"), actedAt: ACTUAL_BLOCK, responseId: "coast-control" },
+  ],
+  training: {
+    incidentId: GH_INCIDENT_ID,
+    stops: [
+      { at: AT[0], phase: "판단", note: "물양장 월파가 시작됐다 · 만조 18:24 · 여기서 정하지 않으면 실제와 같아진다" },
+      { at: AT[1], phase: "결과", note: "배수구 역류 · 조치 창이 닫혔다" },
+      { at: AT[2], phase: "결과", note: "만조 정점" },
+      { at: AT[3], phase: "결과", note: "조위 하강" },
+    ],
+    conditions: [
+      {
+        id: "surge", label: "조위", stateLabel: "조위 편차",
+        steps: [
+          { id: "now", label: "당시", detail: "조위 편차 +30 cm · 만조 176 cm", situationId: null },
+          { id: "surge", label: "+20 cm", detail: "조위 편차 +50 cm · 만조 196 cm", situationId: "surge-up" },
+        ],
+      },
+    ],
+    firedSopIds: ["C1", "C2"],
+    /* 수문은 물을, 통제는 도로 노출을 가른다 */
+    resultSopIds: ["C1", "C2"],
+    combos: GH_TRAINING_COMBOS,
+  },
   situations: SITUATIONS,
   combos: COMBOS,
 };
