@@ -328,6 +328,15 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
   }, [map, ready, scopeRing, shownMark, baseMark, view, phase, surfaceEntry, finePatch, layers.scope, layers.extent, layers.baseline, drawLevel]);
 
   const sceneLayers = useMemo(() => mergeScene(shown?.scene, shownMark?.scene), [shown, shownMark]);
+  /**
+   * 그 장면이 아는 바람 — 광역 인셋이 이 값으로 흐른다.
+   * 인셋의 기본 자료는 태풍 솔릭 한 사건의 광역 격자라, 다른 사건에 깔면 메인 지도의 풍향 화살표와
+   * **반대로 흐른다**(2026-09-17 무학산에서 화살표 80° ↔ 입자 309°). 장면이 바람을 들고 있으면 그것이 이긴다.
+   */
+  const sceneWind = useMemo(() => {
+    const v = (sceneLayers ?? []).find((l) => l.kind === "vector" && l.role === "풍향");
+    return v && v.kind === "vector" ? { bearing: v.bearing, speed: v.magnitude } : null;
+  }, [sceneLayers]);
 
 
 
@@ -410,7 +419,7 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
       {/* 좌상단 광역 인셋 — 지금 구현에 있는 것을 그대로 쓴다 */}
       {insetKindOf(family) && (
         <div className="pointer-events-none absolute left-3 top-3 z-30" style={{ width: LEFT_RAIL }}>
-          <ContextInset family={family} anchor={wcase.scope.displayAnchor} hour={new Date(stop?.at ?? wcase.occurredAt).getHours()} meta={stop ? formatClock(stop.at) : undefined} />
+          <ContextInset family={family} anchor={wcase.scope.displayAnchor} hour={new Date(stop?.at ?? wcase.occurredAt).getHours()} meta={stop ? formatClock(stop.at) : undefined} wind={sceneWind} />
         </div>
       )}
 

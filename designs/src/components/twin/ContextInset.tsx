@@ -44,9 +44,15 @@ interface ContextInsetProps {
   dome?: HeatDomeData;
   /** 시각 라벨 — 머리 오른쪽 */
   meta?: string;
+  /**
+   * 그 사건이 아는 바람 — 풍향 인셋(C·D)이 이 값으로 흐른다.
+   * 없으면 광역 격자를 쓰는데, 그 격자는 태풍 솔릭 한 사건의 자료라 **다른 사건에서는 방향이 거짓**이다.
+   * 메인 지도의 풍향 화살표와 인셋 입자가 어긋나면 화면을 믿을 수 없게 된다(2026-09-17).
+   */
+  wind?: { bearing: number; speed: number } | null;
 }
 
-export function ContextInset({ family, anchor, hour, dome, meta }: ContextInsetProps) {
+export function ContextInset({ family, anchor, hour, dome, meta, wind }: ContextInsetProps) {
   const kind = insetKindOf(family);
   /* 기본은 작은 상태 — 인셋은 원인 맥락이고 판단은 메인 지도에서 한다(03 §23). 누르면 커진다 */
   const [big, setBig] = useState(false);
@@ -68,7 +74,7 @@ export function ContextInset({ family, anchor, hour, dome, meta }: ContextInsetP
         {kind === "globe" ? (
           dome && <HeatDomeGlobe lower={dome.lower} upper={dome.upper} index={dome.index} variant="panel" showGrid={big} className="absolute inset-0" style={{ height: "100%" }} />
         ) : (
-          <InsetMap kind={kind} anchor={anchor} hour={hour} big={big} />
+          <InsetMap kind={kind} anchor={anchor} hour={hour} big={big} wind={wind} />
         )}
       </div>
     </GlassPanel>
@@ -76,10 +82,10 @@ export function ContextInset({ family, anchor, hour, dome, meta }: ContextInsetP
 }
 
 /** 시 전체를 담은 작은 지도 + 선택 지역 표식. 조작은 막는다 — 인셋은 읽는 것이다 */
-function InsetMap({ kind, anchor, hour, big }: { kind: "rain" | "wind"; anchor: LngLat; hour: number; big: boolean }) {
+function InsetMap({ kind, anchor, hour, big, wind }: { kind: "rain" | "wind"; anchor: LngLat; hour: number; big: boolean; wind?: { bearing: number; speed: number } | null }) {
   const container = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(container, { zoom: 9, pitch: 0 });
-  useWindLayer(map, ready, kind === "wind");
+  useWindLayer(map, ready, kind === "wind", kind === "wind" ? wind : null);
   usePrecipitationLayer(map, ready, kind === "rain", hour);
 
   useEffect(() => {

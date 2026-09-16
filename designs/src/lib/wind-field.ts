@@ -76,3 +76,28 @@ export function sampleWind(
   const v = (v00 * (1 - tx) + v10 * tx) * (1 - ty) + (v01 * (1 - tx) + v11 * tx) * ty;
   return { u, v, speed: Math.hypot(u, v) };
 }
+
+/**
+ * 사건이 든 바람으로 만든 **균일 격자** (2026-09-17).
+ *
+ * `wind-field.json` 은 태풍 솔릭(2018-08-23) 한 사건의 광역 재분석이다. 그것을 다른 사건의 화면에
+ * 깔면 **지도가 거짓말을 한다** — 무학산 산불(2024-04-02)의 화선은 동북동으로 번지는데 광역 인셋의
+ * 입자는 북서로 흘렀다(2026-09-17 실측 · 화살표 80° ↔ 입자 309°).
+ *
+ * 그 사건의 광역 자료가 없을 때는 사건이 아는 값(풍향·풍속) 하나로 균일장을 만들어 쓴다.
+ * 분포는 잃지만 **방향이 맞는다.** 실개발에서 그 시각의 실제 격자가 붙으면 이 함수를 지운다.
+ *
+ * @param bearing 바람이 **가는** 방향(도). `SceneVector.bearing` 과 같은 규약이다
+ */
+export function uniformWindField(bearing: number, speed: number): WindField {
+  /* 기상 관례의 `dir` 은 불어오는 방위라 반대로 돌린다 */
+  const dir = (bearing + 180) % 360;
+  const nx = 2, ny = 2;
+  const cells = new Array(nx * ny);
+  return {
+    source: "사건 관측값(균일)", event: "사건 바람", date: "",
+    bbox: [124, 32, 132, 39], step: 8, nx, ny, hours: [0], defaultHour: 0,
+    speed: [cells.fill(speed).slice()],
+    dir: [new Array(nx * ny).fill(dir)],
+  };
+}

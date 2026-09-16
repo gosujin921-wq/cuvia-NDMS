@@ -1,14 +1,14 @@
 /* ─────────────────────────────────────────────
  * D 이동 전선·확산 — 무학산 산불 · 종료 사건의 대응 What-if (03 §9 · §22 D · 부록 B · §26)
  *
- * 산불의 질문은 "불과 연기가 어느 방향으로 얼마나 가는가"다. 17:05 서쪽 사면에서 난 불이 남서풍 8 m/s 를 타고
+ * 산불의 질문은 "불과 연기가 어느 방향으로 얼마나 가는가"다. 17:05 서쪽 사면에서 난 불이 서풍 8 m/s 를 타고
  * 북동쪽(풍하측)으로 번지고, 연기는 화선보다 앞·넓게 산자락 요양시설과 주택 쪽으로 간다.
  *
  * 종료 사건이라 기준은 **실제로 한 대응**이다 — 17:40 등산로·임도 통제 · 18:10 요양시설 이송 · 18:20 임도 기준 방화선 착수.
  * 방화선이 늦어 화선이 19:40 산자락 주택에 닿았고, 이송은 연기가 시설에 닿은 뒤에 끝났다.
  *   차단선·진압   대응 · 현상 감소 — 화선 확산 거리와 영향권이 줄고 주택 도달이 늦어지거나 사라진다
  *   대피 개시     대응 · 노출 감소 — 불과 연기는 그대로이고 연기에 노출된 입소자·주민이 준다. 선택지는 연기 도달(18:00) 앞뒤로 걸친다
- *   강풍          상황 — 남서풍이 12 m/s 였다면 같은 대응으로 버텼나. 분석 기준(판단 시점)마다 사전 계산한 판이 있다
+ *   강풍          상황 — 서풍이 12 m/s 였다면 같은 대응으로 버텼나. 분석 기준(판단 시점)마다 사전 계산한 판이 있다
  *
  * 화선·플룸 폴리곤과 풍향 벡터는 03 §22 D 의 표현(발화점 · 위성 관측점 · 풍향 화살표 · 플룸 · 방화선 · 대피경로)을 옮긴 시나리오 편집값이다.
  * 산불 확산 모델 결과가 아니고 정확도를 주장하지 않는다.
@@ -26,7 +26,11 @@ const BASE = t("22:40");
 const VALID_UNTIL = t("21:00");
 const AT = [t("17:30"), t("18:00"), t("19:00"), t("20:00")] as const;
 
-/* 화선 — 발화점 서쪽 사면에서 남서풍을 타고 북동쪽(풍하측)으로 번진다. 풍향은 불어오는 방향이다 */
+/* 화선 — 발화점 서쪽 사면에서 서풍을 타고 동북동(풍하측)으로 번진다.
+   ★ 화선 폴리곤이 정본이고 풍향 화살표가 그것을 따른다. 발화점에서 화선 중심으로 잰 방위가 77~81° 라
+      화살표도 80° 다(2026-09-17 좌표 실측 · 예전에는 45° 로 적어 불과 화살표가 35° 어긋나 있었다).
+   ★ `SceneVector.bearing` 은 **이동 방향**이다(model/scene.ts · 03 부록 B). 불어오는 방위가 아니다 —
+      서풍(불어오는 방위 260°)의 이동 방향이 80° 다. */
 type Ring = [number, number][];
 const FIRE_3: Ring = [[128.539, 35.212], [128.553, 35.2185], [128.556, 35.2085], [128.542, 35.205]];
 const FIRE_3C: Ring = [[128.539, 35.212], [128.55, 35.2165], [128.552, 35.2088], [128.542, 35.206]];
@@ -48,11 +52,12 @@ export const MUHAK_GEOMETRIES: Record<string, [number, number][]> = {
   "GEO-D-FIRE-4": FIRE_4,
 };
 
-/* ── 장면 층 (03 §22 D · 부록 B) — 남서풍 8 m/s → 이동 방향 북동(45°). 플룸은 화선보다 앞·넓게 ── */
+/* ── 장면 층 (03 §22 D · 부록 B) — 서풍 8 m/s → 이동 방향 동북동(80°). 플룸은 화선보다 앞·넓게 ── */
 const IGNITION: LngLat = [128.5435, 35.2105];
-const WIND_BEARING = 45;
+/** 이동 방향(도) — 화선이 번지는 방위와 같다. 둘이 어긋나면 화면이 거짓말을 한다 */
+const WIND_BEARING = 80;
 const windOf = (speed: number): SceneLayer[] => ([[128.537, 35.205], [128.545, 35.207], [128.553, 35.209], [128.539, 35.213], [128.547, 35.215], [128.555, 35.217], [128.543, 35.221], [128.551, 35.223]] as LngLat[])
-  .map((at, i) => ({ kind: "vector" as const, id: `d-wind-${i}`, role: "풍향" as const, at, bearing: WIND_BEARING, magnitude: speed, unit: "m/s", ...(i === 0 ? { label: `남서풍 ${speed} m/s` } : {}) }));
+  .map((at, i) => ({ kind: "vector" as const, id: `d-wind-${i}`, role: "풍향" as const, at, bearing: WIND_BEARING, magnitude: speed, unit: "m/s", ...(i === 0 ? { label: `서풍 ${speed} m/s` } : {}) }));
 const staticOf = (speed: number): SceneLayer[] => [
   { kind: "point", id: "d-ignition", at: IGNITION, icon: "mdi:fire", label: "발화점", state: "17:05 발화", tone: "danger" },
   ...([[128.5418, 35.2088], [128.5452, 35.2092], [128.5458, 35.2118], [128.5424, 35.2124]] as LngLat[]).map<ScenePoint>((at, i) => ({ kind: "point", id: `d-hotspot-${i}`, at, icon: "mdi:circle", label: "위성 관측점", tone: "warning", small: true })),
@@ -132,7 +137,7 @@ const targets = (homes: number, homesAt: string | null, evacAt: string, smokeAt 
     { kind: "도로", id: "RD-MH-TRAIL", label: "무학산 임도·등산로", exposure: "통제됨" },
   ];
 };
-const conditions = (breakAt: string, evacAt: string, wind = "남서풍 8 m/s"): Forecast["conditions"] => [
+const conditions = (breakAt: string, evacAt: string, wind = "서풍 8 m/s"): Forecast["conditions"] => [
   { label: "풍향·풍속", value: wind, tone: "warning" },
   { label: "습도", value: "21 % · 건조경보" },
   { label: "방화선", value: `임도 기준 · ${breakAt.slice(11, 16)} 착수` },
@@ -147,7 +152,7 @@ const ACTUAL_BREAK = t("18:20");
 /* ── 실제 — 방화선이 늦어 19:00 화선 1.6 km · 19:40 산자락 주택 도달 ── */
 const ACTUAL_D: Four<number> = [0.4, 0.9, 1.6, 2.1];
 const ACTUAL_G: Four<string> = ["GEO-D-FIRE-1", "GEO-D-FIRE-2", "GEO-D-FIRE-3M", "GEO-D-FIRE-4M"];
-const ACTUAL_N: Four<string> = ["발화점 서쪽 사면 · 화선 0.4 km · 남서풍 8 m/s", "풍하측(북동) 확산 · 임도 차단 · 연기 능선 넘음", "방화선 앞까지 확산 · 요양시설 연기 노출", "방화선 끝 돌아 산자락 주택 도달"];
+const ACTUAL_N: Four<string> = ["발화점 서쪽 사면 · 화선 0.4 km · 서풍 8 m/s", "풍하측(동북동) 확산 · 임도 차단 · 연기 능선 넘음", "방화선 앞까지 확산 · 요양시설 연기 노출", "방화선 끝 돌아 산자락 주택 도달"];
 const ACTUAL_S = { plume: [0, 1, 2, 2] as Four<number>, care: ["정상", "영향 예상", "대피 완료", "대피 완료"] as Four<FacState>, homes: ["정상", "정상", "영향 임박", "영향권"] as Four<FacState>, homeCounts: [0, 0, 0, 6] as Four<number> };
 export const MH_ACTUAL: Forecast = {
   ...common, forecastId: "FC-MH-ACTUAL", alternativeId: "baseline", changedConditions: [],
@@ -215,17 +220,17 @@ const evacOn = (id: string, e: (typeof EVACS)[number], f: FireSpec, lines: strin
 export const MH_EVAC_30 = evacOn("FC-MH-EVAC-30", EVACS[0], ACTUAL_FIRE, ["화선·플룸은 기준 재현과 동일"]);
 export const MH_EVAC_50 = evacOn("FC-MH-EVAC-50", EVACS[1], ACTUAL_FIRE, ["화선·플룸은 기준 재현과 동일"]);
 
-/* ── 상황 조건 · 강풍 — 남서풍이 8 이 아니라 12 m/s 였다면. 대응은 실제(이송 18:10 · 방화선 18:20) 그대로 ──
+/* ── 상황 조건 · 강풍 — 서풍이 8 이 아니라 12 m/s 였다면. 대응은 실제(이송 18:10 · 방화선 18:20) 그대로 ──
    분석 기준(▲)까지는 실제와 같고 거기서부터 풍속만 바꾼다. 늦게 바뀔수록 확산이 덜 붙는다.
    연기가 요양시설에 닿는 시각도 풍속이 정한다 — 연기 노출은 같은 규칙(이송 완료 − 연기 도달)이다 */
 const DECISIONS = [t("17:20"), t("17:50"), t("18:20")] as const;
 interface WindSpec extends FireSpec { from: string; homesAt: string }
-const WIND_COND = "남서풍 12 m/s · 강풍";
-const windLine = (from: string) => `남서풍 8 → 12 m/s (${from.slice(11, 16)} 이후)`;
+const WIND_COND = "서풍 12 m/s · 강풍";
+const windLine = (from: string) => `서풍 8 → 12 m/s (${from.slice(11, 16)} 이후)`;
 const windFrom = (w: WindSpec): Forecast => ({
   ...common, scene: staticOf(12), forecastId: `FC-MH-WIND-${w.from.slice(11, 13)}${w.from.slice(14, 16)}`, alternativeId: "situation",
-  changedConditions: [`남서풍 12 m/s · ${w.from.slice(11, 16)} 이후 (실제 8 m/s)`],
-  hypothesis: `${w.from.slice(11, 16)} 이후 남서풍이 실제보다 4 m/s 강했던 경우`,
+  changedConditions: [`서풍 12 m/s · ${w.from.slice(11, 16)} 이후 (실제 8 m/s)`],
+  hypothesis: `${w.from.slice(11, 16)} 이후 서풍이 실제보다 4 m/s 강했던 경우`,
   marks: marksOf(w.d, w.g, w.n, { ...w.s, breakFrom: ACTUAL_BREAK, evacFrom: ACTUAL_EVAC }),
   arrivalAt: w.homesAt,
   targets: targets(Math.max(...w.s.homeCounts), w.homesAt, ACTUAL_EVAC, w.smokeAt),
@@ -236,7 +241,7 @@ const WINDS: WindSpec[] = [
   /* 17:20 부터 — 연기가 17:45 에 요양시설에 닿고, 방화선을 넘은 화선이 18:45 산자락 주택에 닿아 20:00 11동 */
   {
     from: DECISIONS[0], d: [0.5, 1.2, 2.1, 2.7], g: ["GEO-D-FIRE-1", "GEO-D-FIRE-2", "GEO-D-FIRE-3", "GEO-D-FIRE-4"],
-    n: ["발화점 서쪽 사면 · 화선 0.5 km · 남서풍 12 m/s", "풍하측 급확산 · 연기 요양시설 도달", "방화선 넘어 확산 · 산자락 주택 도달", "능선 너머까지 확산 · 산자락 주택 11동"],
+    n: ["발화점 서쪽 사면 · 화선 0.5 km · 서풍 12 m/s", "풍하측 급확산 · 연기 요양시설 도달", "방화선 넘어 확산 · 산자락 주택 도달", "능선 너머까지 확산 · 산자락 주택 11동"],
     s: { plume: [1, 2, 2, 2], care: ["영향 예상", "영향권", "대피 완료", "대피 완료"], homes: ["정상", "영향 임박", "영향권", "영향권"], homeCounts: [0, 0, 4, 11] }, homesAt: t("18:45"), smokeAt: t("17:45"), scene: staticOf(12), wind: WIND_COND,
   },
   /* 17:50 부터 — 17:30 까지는 실제와 같다. 연기 17:52 · 주택 18:55 도달 · 9동 */
@@ -320,7 +325,7 @@ export const MUHAK_FORECASTS: Forecast[] = [MH_ACTUAL, MH_BREAK_10, MH_BREAK_20,
 
 const SITUATIONS: WhatIfSituation[] = [
   {
-    situationId: "wind-up", label: "강풍", detail: "남서풍 8 → 12 m/s",
+    situationId: "wind-up", label: "강풍", detail: "서풍 8 → 12 m/s",
     byBasis: WIND_BOARDS.map((f, i) => ({ at: DECISIONS[i], forecastId: f.forecastId })),
     method: "사전 계산 · 기준 재현과 같은 방식에 풍속 입력만 변경",
   },
