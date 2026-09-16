@@ -127,7 +127,7 @@ export function SopPanel({ status, grade, approval, items, chain, basis, emergen
           {/* SOP 바닥 — [SOP 중단] … [부분 승인 n] [전체 승인·실행]. 전부 완료면 이 줄이 없다 */}
           {interactive && !allDone && (
             <div className="flex items-center gap-2 pt-1">
-              <Button variant="outline" size="sm" disabled title="필수 조치를 못 채운 채 닫는 탈출구 — 대표 데모 범위 밖 (I3)">
+              <Button variant="outline" size="sm" disabled title="필수 조치를 못 채운 채 닫는 탈출구 · 대표 데모 범위 밖 (I3)">
                 <Icon icon="mdi:pause-circle-outline" className="size-4" aria-hidden />
                 SOP 중단
               </Button>

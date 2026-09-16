@@ -312,6 +312,9 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
     ensureFloodSurface(m);
     if (surfaceEntry && finePatch) {
       /* 흐르는 중에는 보간한 수위로 채운다 — 물이 차오르는 것이 보인다 */
+      /* 흐르는 중에는 보간한 수위로 채운다 — 물이 차오르는 것이 보인다.
+         ※ 흐름 중 격자를 성기게 그려 보았으나(면 8020 → 2014장) 프레임 간격이 그대로라 걷었다.
+            병목은 면의 장 수가 아니라 3D 압출 렌더링 자체다(2026-09-17 측정). 화질만 잃는다 */
       setFloodSurface(m, finePatch, drawLevel !== null ? { ...surfaceEntry.spec, level: drawLevel } : surfaceEntry.spec, layers.extent);
       upsertPolygonLayer(m, EXTENT_SOURCE, extentRing, { ...paint, opacity: 0 });
     } else {

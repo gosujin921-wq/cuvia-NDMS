@@ -134,7 +134,7 @@ export function debriefHeadline(mine: Forecast | null, base: Forecast | null, co
   const same = `같은 조건(${condLabel})에서 실제와 같게 했을 때와 견준 것이라, 차이는 조치에서만 왔습니다.`;
 
   /* 넘는다는 개념이 있는 유형에서만 "막았다"를 말한다 */
-  if (cross && cross.mine === "없음" && cross.base !== "없음") return `${what}. 기준을 넘지 않았습니다 — ${same}`;
+  if (cross && cross.mine === "없음" && cross.base !== "없음") return `${what}. 기준을 넘지 않았습니다. ${same}`;
   if (cross) return `${what}. 나아졌지만 여전히 기준을 넘었습니다. 이 조건에서는 그 조치만으로 막지 못합니다.`;
   return `${what}. ${same}`;
 }

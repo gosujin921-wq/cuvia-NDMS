@@ -68,22 +68,25 @@ export function TrainingClock({ stops, index, replay, onPick, flow, rising, wait
         </span>
       </div>
 
-      {/* 정지점 라벨(위 눈금 아래에 붙는다)과 겹치지 않게 한 칸 띄운다 */}
-      <p className="mt-5 flex whitespace-nowrap text-caption text-foreground-subtle">
+      {/* 정지점 라벨(위 눈금 아래에 붙는다)과 겹치지 않게 한 칸 띄운다.
+          ★ 좁은 창에서는 글줄을 **자른다**. 좌우 레일 사이가 바의 폭이라 1100px 에서는 100px 남짓이 되는데,
+             그때 줄바꿈이나 넘침을 두면 옆 버튼 위로 글자가 겹쳐 뭉개진다(2026-09-17 측정).
+          ★ 그래서 문구가 **짧다**. `[다음 단계]를 누르세요` 같은 안내는 뺐다 — 그 버튼이 바로 옆에 크게 서 있다 */}
+      <p className="mt-5 flex overflow-hidden whitespace-nowrap text-caption text-foreground-subtle">
         {flow ? (
           /* 판단 → 판단 구간은 같은 예측 눈금이라 지도가 거의 그대로다. 그때 "물이 차오른다"고
              하면 화면이 지키지 못할 약속을 한다 — 물이 오는 것은 결과 국면의 약속이다 */
           <span className="text-primary-text">
-            {rising ? "시간이 흐릅니다 · 물이 차오르는 것을 보세요" : "시간이 흐릅니다 · 물은 아직 오지 않았습니다"}
+            {rising ? "물이 차오르는 것을 보세요" : "물은 아직 오지 않았습니다"}
           </span>
         ) : waiting ? (
-          <span className="text-warning">조치를 정하는 동안 시간은 가지 않습니다 · 다 정하면 [다음 단계]를 누르세요</span>
+          <span className="text-warning">조치를 정하는 동안 시간은 가지 않습니다</span>
         ) : replay ? (
-          <span>눌러서 그 시각으로 돌아가 봅니다 · 조치는 바꿀 수 없습니다</span>
+          <span>눌러서 그 시각으로 돌아가 봅니다</span>
         ) : (
           /* 결과 국면 — 조치 창은 닫혔다. 국면 범례 세 조각을 늘어놓던 자리인데,
              레일 사이 폭에서 조각마다 줄바꿈이 나 읽히지 않았다(2026-09-16). 지금 국면 한 줄만 든다 */
-          <span className="text-success">판단 끝 · 결과를 봅니다 · 시간은 [다음 단계]로만 갑니다</span>
+          <span className="text-success">판단 끝 · 결과를 봅니다</span>
         )}
       </p>
     </div>

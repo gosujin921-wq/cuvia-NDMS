@@ -108,7 +108,7 @@ export const UPPER_200_FIELD: UpperFieldSpec = {
   rampRange: { min: 12150, max: 12560 },
   probePoints: [{ label: "창원", lonLat: CHANGWON }],
   opacity: 0.5,
-  caption: "아래 500hPa 와 함께 높다 — 두 층이 겹쳐 뚜껑이 두꺼웠다",
+  caption: "아래 500hPa 와 함께 높다. 두 층이 겹쳐 뚜껑이 두꺼웠다",
   sourceLabel: "Open-Meteo",
   contour: 12500,
   contourNote: "이 층에는 통용되는 기준선이 없다. 자료를 읽기 좋게 그은 보조선이다",

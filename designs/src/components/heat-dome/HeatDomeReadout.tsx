@@ -48,7 +48,7 @@ export function HeatDomeReadout({ readings, deep }: HeatDomeReadoutProps) {
         className="mt-2 border-t border-border pt-1.5 text-caption font-semibold"
         style={{ color: deep ? "var(--color-risk-lv5)" : "var(--color-risk-lv3)" }}
       >
-        {deep ? "두 층 모두 안쪽 — 깊은 돔" : "한 층만 안쪽 — 얕다"}
+        {deep ? "두 층 모두 안쪽 · 깊은 돔" : "한 층만 안쪽 · 얕다"}
       </p>
     </>
   );

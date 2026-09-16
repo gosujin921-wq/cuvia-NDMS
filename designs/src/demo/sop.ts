@@ -77,7 +77,7 @@ export interface SopResult {
   itemId: string;
   label: string;
   ok: boolean;
-  /** 결과 표기 — "412명 발송" · "실패 — 연계 끊김 (09:02~)" */
+  /** 결과 표기 — "412명 발송" · "실패 · 연계 끊김 (09:02~)" */
   outcome: string;
   /** 실행 시각 오프셋(분) — 승인 시각 + offset */
   offsetMin: number;
@@ -87,7 +87,7 @@ export const HERO_SOP_RESULTS: SopResult[] = [
   { itemId: "sms", label: "주민 긴급 재난문자", ok: true, outcome: "412명 발송", offsetMin: 0 },
   { itemId: "broadcast", label: "마을방송 · 전광판", ok: true, outcome: "마을방송 1 · 전광판 2 송출", offsetMin: 0 },
   { itemId: "road", label: "해안도로 차단 · 대피소 개방 요청", ok: true, outcome: "마산합포구청 접수", offsetMin: 1 },
-  { itemId: "report", label: "경상남도 재난안전상황실 보고", ok: false, outcome: "실패 — 연계 끊김 (09:02~)", offsetMin: 1 },
+  { itemId: "report", label: "경상남도 재난안전상황실 보고", ok: false, outcome: "실패 · 연계 끊김 (09:02~)", offsetMin: 1 },
 ];
 
 /**
@@ -103,7 +103,7 @@ export const HERO_SOP_RESULTS: SopResult[] = [
 export const BONGAM_SOP_RESULTS: SopResult[] = [
   { itemId: "record", label: "이벤트 기록", ok: true, outcome: "내수침수 경보 격상 08:52 저장", offsetMin: 0 },
   { itemId: "notify", label: "담당 부서 알림", ok: true, outcome: "마산회원구 안전총괄과 5명", offsetMin: 0 },
-  { itemId: "cctv", label: "CCTV 집중 감시 전환", ok: false, outcome: "실패 — 2/3대 · 수로 합류부 CCTV 통신끊김 (08:58~) · 원인 확인 중", offsetMin: 1 },
+  { itemId: "cctv", label: "CCTV 집중 감시 전환", ok: false, outcome: "실패 · 2/3대 · 수로 합류부 CCTV 통신끊김 (08:58~) · 원인 확인 중", offsetMin: 1 },
   { itemId: "pump", label: "배수펌프장 가동 상태 확인", ok: true, outcome: "3대 전량 가동 중 (07:52~) · 배수문 폐쇄 08:47", offsetMin: 1 },
   { itemId: "sms", label: "주민 긴급 재난문자", ok: true, outcome: "328명 발송", offsetMin: 1 },
   { itemId: "broadcast", label: "마을방송 · 전광판", ok: true, outcome: "마을방송 3 · 전광판 2 송출", offsetMin: 2 },
