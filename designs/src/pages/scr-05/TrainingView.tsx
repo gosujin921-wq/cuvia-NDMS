@@ -41,6 +41,7 @@ import { usePrecipitationLayer } from "../../lib/usePrecipitationLayer";
 import { cssColor } from "../../lib/map-polygon";
 import { MapLegend } from "../../components/twin/MapLegend";
 import { ContextInset, insetKindOf } from "../../components/twin/ContextInset";
+import { useHeatDomeData } from "../../components/heat-dome";
 import { SceneLayers, raiseSceneLayers } from "../../components/twin/SceneLayers";
 import { mergeScene } from "../../model/scene";
 import { TrainingClock } from "./widgets/TrainingClock";
@@ -328,6 +329,8 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
   }, [map, ready, scopeRing, shownMark, baseMark, view, phase, surfaceEntry, finePatch, layers.scope, layers.extent, layers.baseline, drawLevel]);
 
   const sceneLayers = useMemo(() => mergeScene(shown?.scene, shownMark?.scene), [shown, shownMark]);
+  /* 열돔 지구본 — 폭염(E)의 광역 인셋이 쓴다. 다른 유형에서는 받지 않는다(무거운 격자다) */
+  const dome = useHeatDomeData(undefined, insetKindOf(family) === "globe");
   /**
    * 그 장면이 아는 바람 — 광역 인셋이 이 값으로 흐른다.
    * 인셋의 기본 자료는 태풍 솔릭 한 사건의 광역 격자라, 다른 사건에 깔면 메인 지도의 풍향 화살표와
@@ -419,7 +422,7 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
       {/* 좌상단 광역 인셋 — 지금 구현에 있는 것을 그대로 쓴다 */}
       {insetKindOf(family) && (
         <div className="pointer-events-none absolute left-3 top-3 z-30" style={{ width: LEFT_RAIL }}>
-          <ContextInset family={family} anchor={wcase.scope.displayAnchor} hour={new Date(stop?.at ?? wcase.occurredAt).getHours()} meta={stop ? formatClock(stop.at) : undefined} wind={sceneWind} />
+          <ContextInset family={family} anchor={wcase.scope.displayAnchor} hour={new Date(stop?.at ?? wcase.occurredAt).getHours()} meta={stop ? formatClock(stop.at) : undefined} wind={sceneWind} dome={dome} />
         </div>
       )}
 
@@ -443,10 +446,12 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
         </div>
       )}
 
-      {/* 좌하단 범례 — 조치를 실행하면 `조치` 줄이 함께 선다(지도에 표식이 서면 범례에 선다) */}
+      {/* 좌하단 범례 — 조치를 실행하면 `조치` 줄이 함께 선다(지도에 표식이 서면 범례에 선다).
+          ★ **깊이 범례는 물이 차는 유형에만.** 판이 깊이를 들고 있을 때만 세운다 —
+             산불·폭염·기반시설은 `maxDepthM` 이 0 인데 `범람심 0.1/0.3/0.5 m` 가 떠 있었다(2026-09-17) */}
       <div className="pointer-events-none absolute bottom-3 left-3 z-20" style={{ width: LEFT_RAIL }}>
         <MapLegend
-          depth={phase !== "prepare" && shownMark && layers.extent ? { label: "범람심" } : null}
+          depth={phase !== "prepare" && shownMark && layers.extent && shownMark.maxDepthM > 0 ? { label: "범람심" } : null}
           scope={layers.scope}
           rain={layers.rain}
           extent={layers.baseline && baseMark ? { label: "조치 안 했다면", tone: "ground" } : null}

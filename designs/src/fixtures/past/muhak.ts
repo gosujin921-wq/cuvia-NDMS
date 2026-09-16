@@ -464,10 +464,10 @@ export const MUHAK_WHATIF: WhatIfCase = {
   ],
   reconstructionForecastId: MH_ACTUAL.forecastId,
   stateByTime: [
-    { at: t("17:20"), rows: [{ label: "풍향·풍속", value: "남서 7 m/s" }, { label: "화선", value: "0.2 km" }, { label: "습도", value: "23 %" }, { label: "진화 헬기", value: "대기" }] },
-    { at: t("17:50"), rows: [{ label: "풍향·풍속", value: "남서 8 m/s" }, { label: "화선", value: "0.7 km" }, { label: "습도", value: "21 %" }, { label: "진화 헬기", value: "출동 요청" }] },
-    { at: t("18:20"), rows: [{ label: "풍향·풍속", value: "남서 8 m/s" }, { label: "화선", value: "1.1 km" }, { label: "습도", value: "20 %" }, { label: "진화 헬기", value: "18:30 도착 예정" }] },
-    { at: t("19:40"), rows: [{ label: "풍향·풍속", value: "남서 6 m/s" }, { label: "화선", value: "2.0 km" }, { label: "습도", value: "24 %" }, { label: "진화 헬기", value: "2대 진화 중" }] },
+    { at: t("17:20"), rows: [{ label: "풍향·풍속", value: "서 7 m/s" }, { label: "화선", value: "0.2 km" }, { label: "습도", value: "23 %" }, { label: "진화 헬기", value: "대기" }] },
+    { at: t("17:50"), rows: [{ label: "풍향·풍속", value: "서 8 m/s" }, { label: "화선", value: "0.7 km" }, { label: "습도", value: "21 %" }, { label: "진화 헬기", value: "출동 요청" }] },
+    { at: t("18:20"), rows: [{ label: "풍향·풍속", value: "서 8 m/s" }, { label: "화선", value: "1.1 km" }, { label: "습도", value: "20 %" }, { label: "진화 헬기", value: "18:30 도착 예정" }] },
+    { at: t("19:40"), rows: [{ label: "풍향·풍속", value: "서 6 m/s" }, { label: "화선", value: "2.0 km" }, { label: "습도", value: "24 %" }, { label: "진화 헬기", value: "2대 진화 중" }] },
   ],
   observed: [
     { label: "피해 면적 (산림청 조사)", value: "38 ha" },
