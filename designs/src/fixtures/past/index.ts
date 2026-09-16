@@ -9,9 +9,13 @@
  *   F 급경사지     교방동 급경사지 변위    gyobang.ts
  *   G 기반시설     서항 펌프장 정전 파급   pump-outage.ts
  *
- * E 폭염(heatwave.ts)은 목록에서 뺐다(2026-09-16 사용자 "대응조건이 필요없는 시뮬레이션이면 굳이 없어도 된다").
- * 폭염은 대응으로 현상이 바뀌지 않고, 쉼터 연장·순회는 일찍 할수록 그만큼 줄어드는 산수라 트윈이 계산할 것이 없다.
- * 파일은 유형 표현(격자 · 쉼터 접근권) 참고로만 남겨 두고 트윈 사건으로 싣지 않는다.
+ *   E 폭염         창원 도심 폭염          heatwave.ts
+ *
+ * **E 폭염을 다시 실었다(2026-09-17 사용자 "열돔도 필요해 주요내용이잖아").** 2026-09-16 에 뺐던 근거는
+ * "쉼터 연장·순회는 일찍 할수록 그만큼 줄어드는 산수"였는데, 그건 **인원 수**를 결과로 볼 때 맞는 말이고
+ * 그 자리에는 **공백 격자**(강도 0.45 이상 · 쉼터 접근권 밖)가 선다 — 공간 판정이라 기준 ③의 `범위`다.
+ * 그래서 인원·인시간을 결과에서 걷고 격자를 첫 지표로 올렸다(heatwave.ts).
+ * 폭염 훈련이 묻는 것은 "언제 조치할까"가 아니라 **"우리 쉼터 체계로 어디까지 버티나"** 다.
  *
  * 날짜·시각·수치는 전부 시나리오 편집값이다. 실제 사건 기록이 아니다.
  * ───────────────────────────────────────────── */
@@ -22,7 +26,8 @@ import { GUHANG_FORECASTS, GUHANG_GEOMETRIES, GUHANG_WHATIF } from "./guhang";
 import { MUHAK_FORECASTS, MUHAK_GEOMETRIES, MUHAK_WHATIF } from "./muhak";
 import { GYOBANG_FORECASTS, GYOBANG_GEOMETRIES, GYOBANG_WHATIF } from "./gyobang";
 import { PUMP_OUTAGE_FORECASTS, PUMP_OUTAGE_GEOMETRIES, PUMP_OUTAGE_WHATIF } from "./pump-outage";
+import { HEATWAVE_FORECASTS, HEATWAVE_GEOMETRIES, HEATWAVE_WHATIF } from "./heatwave";
 
-export const PAST_WHATIF_CASES: WhatIfCase[] = [GUHANG_WHATIF, MUHAK_WHATIF, GYOBANG_WHATIF, PUMP_OUTAGE_WHATIF];
-export const PAST_FORECASTS: Forecast[] = [...GUHANG_FORECASTS, ...MUHAK_FORECASTS, ...GYOBANG_FORECASTS, ...PUMP_OUTAGE_FORECASTS];
-export const PAST_GEOMETRIES: Record<string, [number, number][]> = { ...GUHANG_GEOMETRIES, ...MUHAK_GEOMETRIES, ...GYOBANG_GEOMETRIES, ...PUMP_OUTAGE_GEOMETRIES };
+export const PAST_WHATIF_CASES: WhatIfCase[] = [GUHANG_WHATIF, MUHAK_WHATIF, GYOBANG_WHATIF, PUMP_OUTAGE_WHATIF, HEATWAVE_WHATIF];
+export const PAST_FORECASTS: Forecast[] = [...GUHANG_FORECASTS, ...MUHAK_FORECASTS, ...GYOBANG_FORECASTS, ...PUMP_OUTAGE_FORECASTS, ...HEATWAVE_FORECASTS];
+export const PAST_GEOMETRIES: Record<string, [number, number][]> = { ...GUHANG_GEOMETRIES, ...MUHAK_GEOMETRIES, ...GYOBANG_GEOMETRIES, ...PUMP_OUTAGE_GEOMETRIES, ...HEATWAVE_GEOMETRIES };

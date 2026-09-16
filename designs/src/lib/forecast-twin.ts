@@ -20,6 +20,19 @@ export function minutesBetween(from: string | Date, to: string | Date): number {
   return Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60_000);
 }
 
+/**
+ * "40분" · "9시간" · "1시간 30분" — **걸린 시간** 표기(부호 없음).
+ *
+ * 분만 쓰면 느린 재난에서 안 읽힌다 — 폭염의 실제 야간 연장은 발동 14:00, 조치 23:00 이라
+ * `540분`이 되어 아홉 시간임을 아무도 읽지 못한다(2026-09-17). 두 시간이 넘으면 시간으로 적는다.
+ */
+export function formatLagMinutes(minutes: number): string {
+  const abs = Math.abs(Math.round(minutes));
+  if (abs < 120) return `${abs}분`;
+  const h = Math.floor(abs / 60), m = abs % 60;
+  return m === 0 ? `${h}시간` : `${h}시간 ${m}분`;
+}
+
 /** "+40분" · "+1시간 10분" · "0분" — 기준시각에서의 경과 표기 */
 export function formatOffsetMinutes(minutes: number): string {
   const sign = minutes < 0 ? "-" : "+";

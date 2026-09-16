@@ -33,9 +33,10 @@ const effectOf = (r: WhatIfResponse | null): string =>
  * 지명·지표 이름을 박지 않는다 — 사건이 늘면 그 자리가 먼저 틀린다.
  */
 const changesOf = (r: WhatIfResponse | null): string =>
-  r?.kind === "현상"
-    ? "이 판단이 수위와 도달 시각을 바꿉니다"
-    : "도달까지 얼마나 여유를 두는지가 달라집니다";
+  r?.effect
+    ?? (r?.kind === "현상"
+      ? "이 판단이 수위와 도달 시각을 바꿉니다"
+      : "도달까지 얼마나 여유를 두는지가 달라집니다");
 
 export function TrainingActions({ rows, at, note, acts, onAct, onUndo, frozen }: {
   rows: ActionRow[];

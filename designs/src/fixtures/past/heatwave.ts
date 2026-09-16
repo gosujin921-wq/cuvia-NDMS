@@ -121,16 +121,23 @@ const basis = (assumptions: string[], modelName = "규칙 계산 (같은 기록�
 
 type Four<T> = [T, T, T, T];
 const HOURS: Four<number> = [5, 8, 12, 28];
-const marksOf = (scenes: Four<SceneLayer[]>, n: Four<string>): ForecastMark[] =>
+const marksOf = (scenes: Four<SceneLayer[]>, n: Four<string>, gapHours?: Four<number>): ForecastMark[] =>
   AT.map((validAt, i) => ({
     validAt, maxDepthM: 0, extentGeometryId: "GEO-E-SCOPE",
     impactSummary: `${n[i]} · 공백 ${gapCount(scenes[i])}격자`,
     metric: { label: "위험 지속시간", value: HOURS[i], unit: "시간", digits: 0, text: `경보 ${HOURS[i]}시간째` },
     scene: scenes[i],
-    /* 그 시각의 핵심 영향 — 쉼터 접근권 밖 고강도 격자와 그 안의 취약대상(아래 규칙) */
+    /**
+     * 그 시각의 핵심 영향 — **쉼터 접근권 밖 고강도 격자**다(공간 판정).
+     * ★ 인원 수는 결과로 쓰지 않는다(README §2.3 기준 ③) — 칸당 60명·12명은 편집값이라
+     *   "일찍 할수록 그만큼 줄어드는 산수"가 된다. 사람은 노출·통제됨 상태로만 선다(`targets`).
+     */
     impacts: [
       { label: "서비스 공백 격자", value: gapCount(scenes[i]) > 0 ? `${gapCount(scenes[i])}칸` : "없음", tone: gapCount(scenes[i]) > 0 ? "danger" : "muted" },
-      { label: "공백 격자 취약대상", value: `${gapPeopleOf(scenes[i])}명`, tone: gapPeopleOf(scenes[i]) > 0 ? "warning" : "muted" },
+      ...(gapHours ? [{
+        label: "공백 지속", value: gapHours[i] > 0 ? `${gapHours[i]}시간` : "없음",
+        tone: (gapHours[i] >= 4 ? "danger" : gapHours[i] > 0 ? "warning" : "muted") as "danger" | "warning" | "muted",
+      }] : []),
     ],
   }));
 
@@ -168,19 +175,36 @@ const nightScene = (at: number, extendAt: string, patrolAt: string, night: Night
   const k = nightAt(night, at);
   return scene(k.mult, k.hold, open, at >= new Date(extendAt).getTime() ? EXTEND_IDS : [], at >= new Date(patrolAt).getTime() ? PATROL_CELLS : []);
 };
-const personHoursOf = (extendAt: string, patrolAt: string, night: Night = NIGHT_ACTUAL): number => {
-  let sum = 0;
-  for (let at = new Date(t("18:00")).getTime(); at < new Date(t("06:00", "07")).getTime(); at += 30 * 60_000) sum += gapPeopleOf(nightScene(at, extendAt, patrolAt, night)) * 0.5;
-  return Math.round(sum);
+
+/**
+ * **공백 지속** — 주간 쉼터가 닫힌 18:00 부터 그 시각까지, 갈 곳 없는 격자가 **있었던 시간**(30분 단위).
+ *
+ * 폭염 훈련의 답이 여기서 갈린다. 공백 격자 수만 보면 21시에 연 것과 22시에 연 것이 22:00 눈금에서 같다 —
+ * 쉼터 위치가 같으니 덮는 칸도 같기 때문이다. 달라지는 것은 **얼마나 오래 비어 있었나**이고,
+ * 그것이 일찍 정한 보람이다. 인원을 곱하지 않으므로 산수가 아니라 노출의 **지속**이다(기준 ③).
+ */
+const gapHoursOf = (until: string, extendAt: string, patrolAt: string, night: Night = NIGHT_ACTUAL): number => {
+  const from = new Date(t("18:00")).getTime();
+  const end = Math.min(new Date(until).getTime(), new Date(t("06:00", "07")).getTime());
+  let h = 0;
+  for (let at = from; at < end; at += 30 * 60_000) if (gapCount(nightScene(at, extendAt, patrolAt, night)) > 0) h += 0.5;
+  return h;
 };
 
-/* 영향 대상 — 공백 취약대상이 첫째다(도달 = 18:00 주간 쉼터가 닫혀 공백이 생기는 시각). 수는 모두 위 규칙에서 나온다 */
+/**
+ * 영향 대상 — **상태로만 선다.**
+ *
+ * 예전에는 `22시 공백 격자 취약대상 N명`·`보호 공백 N인·시간`처럼 수를 라벨에 실었다. 그 수는
+ * 칸당 60명·12명이라는 편집값에서 나온 것이라, 조치를 일찍 할수록 그만큼 줄어드는 산수다
+ * (README §2.3 기준 ③ — 데이터가 붙어도 결과가 아니다). 그래서 노출·통제됨만 남긴다.
+ * ★ **`arrivalAt` 을 두지 않는다.** 공백이 생기는 18:00 은 주간 쉼터 운영 시간이 정하는 값이라
+ *   조치를 바꿔도 그대로다. 비교축이 아닌 값을 도달로 세우면 강평에 `18:00 → 18:00` 이 선다.
+ *   폭염에서 달라지는 것은 "언제"가 아니라 **"어디가 비나"** 다.
+ */
 const targets = (extendAt: string, patrolAt: string, night: Night = NIGHT_ACTUAL): ImpactTarget[] => {
   const at22 = gapPeopleOf(nightScene(new Date(AT[2]).getTime(), extendAt, patrolAt, night));
-  const hours = personHoursOf(extendAt, patrolAt, night);
   return [
-    { kind: "대상자", id: "POP-HW-GAP", label: `22시 공백 격자 취약대상 ${at22}명`, arrivalAt: t("18:00"), exposure: at22 > 0 ? "노출" : "통제됨" },
-    { kind: "대상자", id: "POP-HW-HOURS", label: `보호 공백 ${hours}인·시간`, exposure: hours > 0 ? "노출" : "통제됨" },
+    { kind: "대상자", id: "POP-HW-GAP", label: "공백 격자 취약대상", exposure: at22 > 0 ? "노출" : "통제됨" },
     { kind: "대상자", id: "POP-HW-ELDER", label: "65세 이상 독거 노인", exposure: "노출" },
     { kind: "대상자", id: "POP-HW-WORK", label: "야외 작업자·배달", exposure: "노출" },
   ];
@@ -259,7 +283,78 @@ const nightFrom = (id: string, from: string): Forecast => {
 export const HW_NIGHT_EARLY = nightFrom("FC-HW-NIGHT-EARLY", DECISIONS[0]);
 export const HW_NIGHT_2300 = nightFrom("FC-HW-NIGHT-2300", DECISIONS[2]);
 
-export const HEATWAVE_FORECASTS: Forecast[] = [HW_ACTUAL, HW_EXTEND_1H, HW_EXTEND_2H, HW_PATROL_1H, HW_PATROL_2H, HW_NIGHT_EARLY, HW_NIGHT_2300];
+/* ═══ 훈련 조합 판 (03 §26.10 · 2026-09-17) ═══════════════════════════════
+ *
+ * 훈련이 묻는 것은 **"우리 쉼터 체계로 어디까지 버티나"** 다. 창원천이 "언제 방류할까"를 묻는 것과 다르다 —
+ * 폭염은 기온을 낮추는 대응이 없다(현상 대응 없음 · §26.3). 대신 열대야가 심해질수록 **공백 격자가 어디까지
+ * 벌어지는지**를 보고, 우리 쉼터·순회로 그것을 얼마나 덮을 수 있는지를 훈련한다. 이것이 폭염 관제의 실제 질문이다.
+ *
+ * ★ **결정 시각과 실행 시각이 다르다.** 창원천은 방류를 14:35 에 정하면 14:35 에 방류한다. 폭염은 느린 재난이라
+ *   준비 시간이 있다 — 15:00 에 정하면 21:00 에 열고, 18:00 에 정하면 22:00 에 연다. 늦게 정할수록 늦게 열린다.
+ *   원장의 실제는 23:00 개방(순회 23:30)이라 "안 함"이 곧 실제다.
+ * ★ 조건 3(당시 27 · +2 29 · +4 31°C) × 연장 3 × 순회 3 = 27벌. 빌드 때 규칙으로 만든다.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/** 정지점 — 예측판 눈금 그대로다(그 시각의 지도가 있어야 훈련이 성립한다 · D-1) */
+const TR_STOPS = { d1: AT[0], d2: AT[1] } as const;
+/** 결정 시각 → 실행 시각. 늦게 정하면 늦게 연다 */
+const EXTEND_BY_STOP: Record<string, string> = { [TR_STOPS.d1]: t("21:00"), [TR_STOPS.d2]: t("22:00") };
+const PATROL_BY_STOP: Record<string, string> = { [TR_STOPS.d1]: t("21:30"), [TR_STOPS.d2]: t("22:30") };
+
+/** 훈련 조건 — 열대야 강도 세 단계. 훈련 시작 전(14:00)부터 적용한다 */
+const TR_NIGHT: { id: string; night: Night; low: string }[] = [
+  { id: "now", night: NIGHT_ACTUAL, low: "27°C" },
+  { id: "hot-2", night: hotNight(DECISIONS[0]), low: "29°C (+2)" },
+  /* +4°C — 야간 강도 0.95 · 취약 가산 0.32 · 이틀째 1.28. 29°C 판과 같은 간격으로 올린 편집값이다 */
+  { id: "hot-4", night: { mult: 0.95, hold: 0.32, day2: 1.28, from: DECISIONS[0] }, low: "31°C (+4)" },
+];
+
+const trainBoard = (stepId: string, extendStop: string | null, patrolStop: string | null): Forecast => {
+  const step = TR_NIGHT.find((x) => x.id === stepId) ?? TR_NIGHT[0];
+  const extendAt = extendStop ? EXTEND_BY_STOP[extendStop] : ACTUAL_EXTEND;
+  const patrolAt = patrolStop ? PATROL_BY_STOP[patrolStop] : ACTUAL_PATROL;
+  const tag = (s: string | null) => (s ? s.slice(11, 13) : "x");
+  const changed = [
+    ...(step.id === "now" ? [] : [`야간 최저 ${step.low}`]),
+    ...(extendStop ? [`야간 연장 ${extendAt.slice(11, 16)} 개방`] : []),
+    ...(patrolStop ? [`순회 ${patrolAt.slice(11, 16)} 배치`] : []),
+  ];
+  return {
+    ...common,
+    forecastId: `FC-HW-TR-${stepId}-${tag(extendStop)}-${tag(patrolStop)}`,
+    /* 조합 판의 이름은 주 대응을 따른다 — 아무것도 안 고른 판은 실제 재현이다 */
+    alternativeId: extendStop ? "shelter-extend" : patrolStop ? "patrol" : "baseline",
+    changedConditions: changed,
+    ...(changed.length > 0 ? { hypothesis: changed.join(" · ") } : {}),
+    marks: marksOf(scenesOf(extendAt, patrolAt, step.night), NOTES,
+      AT.map((at) => gapHoursOf(at, extendAt, patrolAt, step.night)) as [number, number, number, number]),
+    /* 공백이 생기는 시각은 주간 쉼터 운영 시간이 정한다 — 조치로 바뀌지 않으므로 비교축이 아니다.
+       `targets` 에도 도달을 두지 않아 강평에서 `18:00 → 18:00` 행이 서지 않는다 */
+    arrivalAt: t("18:00"),
+    targets: targets(extendAt, patrolAt, step.night),
+    basis: basis([
+      step.id === "now" ? "야간 강도는 관측 그대로" : `야간 최저 27 → ${step.low} · 격자 강도만 변경`,
+      `야간 연장 ${extendAt.slice(11, 16)} · 순회 ${patrolAt.slice(11, 16)}`,
+      "공백 판정은 모든 판에서 같은 규칙",
+    ], "규칙 계산 (같은 공백 판정에 야간 강도·쉼터 시각만 변경)"),
+    conditions: conditions(extendAt, patrolAt, step.low),
+    ...(extendStop ? { actionAt: { label: "연장 개방", at: extendAt } } : {}),
+  };
+};
+
+const TR_CHOICES: (string | null)[] = [TR_STOPS.d1, TR_STOPS.d2, null];
+const HW_TRAIN_BOARDS: Forecast[] = TR_NIGHT.flatMap((s) =>
+  TR_CHOICES.flatMap((e) => TR_CHOICES.map((pt) => trainBoard(s.id, e, pt))));
+
+/** 훈련 조합 — `acts` 는 **정지점 시각**이다(실행 시각이 아니라 그 자리에서 정했다는 뜻) */
+const HW_TRAINING_COMBOS = TR_NIGHT.flatMap((s) =>
+  TR_CHOICES.flatMap((e) => TR_CHOICES.map((pt) => ({
+    conditionStepId: s.id,
+    acts: { ...(e ? { E1: e } : {}), ...(pt ? { E2: pt } : {}) } as Record<string, string>,
+    forecastId: trainBoard(s.id, e, pt).forecastId,
+  }))));
+
+export const HEATWAVE_FORECASTS: Forecast[] = [HW_ACTUAL, HW_EXTEND_1H, HW_EXTEND_2H, HW_PATROL_1H, HW_PATROL_2H, HW_NIGHT_EARLY, HW_NIGHT_2300, ...HW_TRAIN_BOARDS];
 
 const SITUATIONS: WhatIfSituation[] = [
   {
@@ -275,7 +370,9 @@ const SITUATIONS: WhatIfSituation[] = [
 
 const RESPONSES: WhatIfResponse[] = [
   {
-    responseId: "shelter-extend", kind: "노출", target: "중앙 경로당 · 종합복지관 · 시립도서관", level: "익일 06:00 까지 야간 운영", adjust: "when", method: `규칙 · ${HW_EXPOSURE_RULE}`,
+    responseId: "shelter-extend", kind: "노출", target: "중앙 경로당 · 종합복지관 · 시립도서관", level: "익일 06:00 까지 야간 운영", adjust: "when",
+    effect: "일찍 열수록 갈 곳 없는 시간이 줄어듭니다",
+    method: `규칙 · ${HW_EXPOSURE_RULE}`,
     anchor: { label: "실제 야간 연장", at: ACTUAL_EXTEND },
     presets: [
       { id: "actual", label: "실제", at: ACTUAL_EXTEND, forecastId: null },
@@ -284,7 +381,9 @@ const RESPONSES: WhatIfResponse[] = [
     ],
   },
   {
-    responseId: "patrol", kind: "노출", target: "취약 밀집 격자 2곳", level: "순회 지원차 2대 · 안부 확인·냉방용품", adjust: "when", method: `규칙 · ${HW_EXPOSURE_RULE}`,
+    responseId: "patrol", kind: "노출", target: "취약 밀집 격자 2곳", level: "순회 지원차 2대 · 안부 확인·냉방용품", adjust: "when",
+    effect: "쉼터가 닿지 않는 격자를 순회가 덮습니다",
+    method: `규칙 · ${HW_EXPOSURE_RULE}`,
     anchor: { label: "실제 순회 배치", at: ACTUAL_PATROL },
     presets: [
       { id: "actual", label: "실제", at: ACTUAL_PATROL, forecastId: null },
@@ -326,4 +425,33 @@ export const HEATWAVE_WHATIF: WhatIfCase = {
   ],
   responses: RESPONSES,
   situations: SITUATIONS,
+  /* 발동한 규정 — 14:00 노출 전망에서 둘 다 떴고, 실제로는 23:00·23:30 에야 실행됐다.
+     그 사이 다섯 시간이 이 훈련이 보게 하려는 것이다(원장 18:00 "주간 쉼터 운영 종료 · 공백 발생") */
+  sop: [
+    { id: "E1", label: "무더위쉼터 야간 연장", trigger: "야간 공백 격자 예상 · 주간 쉼터 18:00 종료", firedAt: t("14:00"), actedAt: ACTUAL_EXTEND, responseId: "shelter-extend" },
+    { id: "E2", label: "순회 지원차 배치", trigger: "취약 밀집 격자가 접근권 밖", firedAt: t("14:00"), actedAt: ACTUAL_PATROL, responseId: "patrol" },
+  ],
+  training: {
+    incidentId: HW_INCIDENT_ID,
+    stops: [
+      { at: AT[0], phase: "판단", note: "폭염경보 2일째 · 지금 정하면 21:00 에 열 수 있다" },
+      { at: AT[1], phase: "판단", note: "주간 쉼터가 닫혔다 · 지금 정하면 22:00, 더 늦으면 실제와 같은 23:00" },
+      { at: AT[2], phase: "결과", note: "야간 공백이 드러난다" },
+      { at: AT[3], phase: "결과", note: "이틀째 누적 노출" },
+    ],
+    conditions: [
+      {
+        id: "night", label: "열대야", stateLabel: "기온",
+        steps: [
+          { id: "now", label: "당시", detail: "야간 최저 27°C", situationId: null },
+          { id: "hot-2", label: "+2°C", detail: "야간 최저 27 → 29°C", situationId: "hot-night" },
+          { id: "hot-4", label: "+4°C", detail: "야간 최저 27 → 31°C", situationId: null },
+        ],
+      },
+    ],
+    firedSopIds: ["E1", "E2"],
+    /* 둘 다 결과를 가른다 — 연 쉼터와 순회 칸이 공백 격자를 덮는다 */
+    resultSopIds: ["E1", "E2"],
+    combos: HW_TRAINING_COMBOS,
+  },
 };

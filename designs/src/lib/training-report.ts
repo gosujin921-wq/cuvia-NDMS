@@ -21,6 +21,7 @@
 import type { Report, ReportSection } from "../demo/report";
 import type { TrainingRun } from "../model/whatif";
 import { formatClock } from "./datetime";
+import { formatLagMinutes } from "./forecast-twin";
 
 /** 그 회에서 내가 실제로 실행한 규정만 — 목록·보고서가 같은 규칙을 읽는다(두 벌이 되면 수가 갈린다) */
 export const myActionsOf = (run: TrainingRun) => run.sopRows.filter((s) => s.mineAt);
@@ -31,8 +32,8 @@ export const myActionsText = (run: TrainingRun): string =>
 
 /** 발동에서 조치까지 한 줄 — 실제와 견준다. 양호·지연으로 판정하지 않는다 */
 const lagText = (s: TrainingRun["sopRows"][number]): string => {
-  const real = s.realLagMin === null ? "원장 없음" : `실제 ${s.realLagMin}분`;
-  return s.mineLagMin === null ? `안 함 · 실제와 같게(${real})` : `${s.mineLagMin}분 · ${real}`;
+  const real = s.realLagMin === null ? "원장 없음" : `실제 ${formatLagMinutes(s.realLagMin)}`;
+  return s.mineLagMin === null ? `안 함 · 실제와 같게(${real})` : `${formatLagMinutes(s.mineLagMin)} · ${real}`;
 };
 
 export function trainingReportOf(run: TrainingRun): Report {

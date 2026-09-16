@@ -13,6 +13,7 @@ import { Icon } from "@iconify/react";
 import { Tag, cn } from "@ds";
 import { FormDialog } from "../../../components/FormDialog";
 import { formatClock } from "../../../lib/datetime";
+import { formatLagMinutes } from "../../../lib/forecast-twin";
 import { myActionsOf } from "../../../lib/training-report";
 import type { TrainingRun } from "../../../model/whatif";
 
@@ -103,8 +104,8 @@ export function TrainingRunDialog({ run, onClose, onReport }: {
               <span className="min-w-0 break-keep text-foreground">{s.id} {s.label}</span>
               <span className="shrink-0 text-right font-mono text-foreground-subtle">
                 {s.mineAt
-                  ? <><span className="font-semibold text-foreground">{formatClock(s.mineAt)}</span> · {s.mineLagMin}분{s.realLagMin !== null && ` · 실제 ${s.realLagMin}분`}</>
-                  : <>안 함 · 실제와 같게{s.realLagMin !== null && `(${s.realLagMin}분)`}</>}
+                  ? <><span className="font-semibold text-foreground">{formatClock(s.mineAt)}</span> · {formatLagMinutes(s.mineLagMin ?? 0)}{s.realLagMin !== null && ` · 실제 ${formatLagMinutes(s.realLagMin)}`}</>
+                  : <>안 함 · 실제와 같게{s.realLagMin !== null && `(${formatLagMinutes(s.realLagMin)})`}</>}
               </span>
             </li>
           ))}

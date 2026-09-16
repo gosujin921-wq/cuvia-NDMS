@@ -11,7 +11,7 @@
 import { Button, cn } from "@ds";
 import { Icon } from "@iconify/react";
 import { formatClock } from "../../../lib/datetime";
-import { formatMarkMetric, markMetricLabel, minutesBetween } from "../../../lib/forecast-twin";
+import { formatLagMinutes, formatMarkMetric, markMetricLabel, minutesBetween } from "../../../lib/forecast-twin";
 import { arrivalAtOf } from "../../../lib/forecast-compare";
 import type { Forecast } from "../../../model/forecast";
 import type { ImprovementAxis, ImprovementItem, WhatIfCase } from "../../../model/whatif";
@@ -23,8 +23,32 @@ const peakOf = (f: Forecast) => f.marks.reduce((a, x) => ((x.metric?.value ?? x.
 const crossOf = (f: Forecast) => { const at = arrivalAtOf(f); return at ? formatClock(at) : "없음"; };
 /** 사람 대상 — 라벨을 박지 않는다. 유형마다 다른 사람이 선다(천변도로 이용자 · 공백 격자 취약대상) */
 const personOf = (f: Forecast) => f.targets.find((x) => x.kind === "대상자") ?? null;
-/** 마지막 눈금 — 훈련이 끝난 시점의 영향 */
-const lastMarkOf = (f: Forecast) => f.marks[f.marks.length - 1] ?? f.marks[0];
+/** 영향의 심각도 — 낮을수록 낫다. 유형별 영향을 견줄 유일한 공통 축이다 */
+const TONE_RANK: Record<string, number> = { danger: 3, warning: 2, safe: 1, muted: 0 };
+
+/** 값 안의 첫 수 — "5칸" · "3.5시간". 없으면 0 */
+const numOf = (v: string): number => { const m = v.match(/[\d.]+/); return m ? Number(m[0]) : 0; };
+
+/**
+ * 훈련 **전체에서 가장 나빴던** 영향 — 라벨마다 한 줄.
+ *
+ * 마지막 눈금만 보면 안 된다. 창원천은 마지막이 최고 수위라 맞았지만, 폭염은 22:00 이 최악이고
+ * 이튿날 낮에는 주간 쉼터가 다시 열려 격자가 같아진다 — 그 눈금만 읽으면 조치가 무의미해 보인다.
+ * 강평이 물어야 하는 것은 "훈련하는 동안 가장 나빴을 때 어땠나"다.
+ */
+const worstImpactsOf = (f: Forecast) => {
+  const best = new Map<string, { label: string; value: string; tone?: string }>();
+  for (const m of f.marks) {
+    for (const i of m.impacts ?? []) {
+      const cur = best.get(i.label);
+      if (!cur) { best.set(i.label, i); continue; }
+      const ir = TONE_RANK[i.tone ?? "muted"] ?? 0, cr = TONE_RANK[cur.tone ?? "muted"] ?? 0;
+      /* 심각도가 먼저, 같으면 수가 큰 쪽("1칸"과 "5칸"은 둘 다 danger 다) */
+      if (ir > cr || (ir === cr && numOf(i.value) > numOf(cur.value))) best.set(i.label, i);
+    }
+  }
+  return [...best.values()];
+};
 
 /**
  * 강평 표의 행 — 저장 기록도 이 값을 그대로 담는다(판을 고쳐도 과거 훈련이 안 바뀐다).
@@ -40,9 +64,6 @@ export interface DebriefRow {
   /** 내 조치 쪽이 나아졌나 — 색만 정한다. 판정할 수 없으면 비운다 */
   better?: boolean;
 }
-
-/** 영향의 심각도 — 낮을수록 낫다. 유형별 영향을 견줄 유일한 공통 축이다 */
-const TONE_RANK: Record<string, number> = { danger: 3, warning: 2, safe: 1, muted: 0 };
 
 export function debriefRowsOf(mine: Forecast | null, base: Forecast | null): DebriefRow[] {
   if (!base) return [];
@@ -63,12 +84,13 @@ export function debriefRowsOf(mine: Forecast | null, base: Forecast | null): Deb
   }
 
   /* 유형별 영향 — 창원천은 도로·건물, 폭염은 공백 격자. 같은 라벨끼리만 맞춘다 */
-  const bi = lastMarkOf(base)?.impacts ?? [], mi = lastMarkOf(my)?.impacts ?? [];
+  const bi = worstImpactsOf(base), mi = worstImpactsOf(my);
   for (const b of bi) {
     const m = mi.find((x) => x.label === b.label);
     if (!m) continue;
     const br = TONE_RANK[b.tone ?? "muted"] ?? 0, mr = TONE_RANK[m.tone ?? "muted"] ?? 0;
-    rows.push({ label: b.label, base: b.value, mine: m.value, better: mr < br });
+    /* 심각도가 같아도 수가 줄었으면 나아진 것이다 — `5칸 → 3칸` 은 둘 다 danger 지만 분명히 낫다 */
+    rows.push({ label: b.label, base: b.value, mine: m.value, better: mr < br || (mr === br && numOf(m.value) < numOf(b.value)) });
   }
 
   /* 사람 — 라벨은 그 유형이 든 것 그대로 */
@@ -139,7 +161,7 @@ export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvemen
   /* 개선 항목에 자동으로 붙는 맥락 — 사람이 다시 적지 않는다 */
   const context = [wcase.title, condLabel,
     Object.keys(acts).length > 0
-      ? (wcase.sop ?? []).filter((s) => acts[s.id]).map((s) => `${s.id} ${minutesBetween(s.firedAt, acts[s.id])}분`).join(" · ")
+      ? (wcase.sop ?? []).filter((s) => acts[s.id]).map((s) => `${s.id} ${formatLagMinutes(minutesBetween(s.firedAt, acts[s.id]))}`).join(" · ")
       : "조치 없음",
   ].join(" · ");
 
@@ -194,8 +216,8 @@ export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvemen
                 <span className="min-w-0 break-keep text-foreground">{s.id} {s.label}</span>
                 <span className="shrink-0 text-right font-mono text-foreground-subtle">
                   {mineLag !== null
-                    ? <><span className="font-semibold text-foreground">{mineLag}분</span> · 실제 {realLag}분</>
-                    : <>안 함 · 실제와 같게({realLag}분)</>}
+                    ? <><span className="font-semibold text-foreground">{formatLagMinutes(mineLag)}</span> · 실제 {realLag === null ? "원장 없음" : formatLagMinutes(realLag)}</>
+                    : <>안 함 · 실제와 같게({realLag === null ? "원장 없음" : formatLagMinutes(realLag)})</>}
                 </span>
               </li>
             );

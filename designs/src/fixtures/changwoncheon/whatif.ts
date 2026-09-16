@@ -450,6 +450,7 @@ const SITUATIONS: WhatIfSituation[] = [
 const RESPONSES: WhatIfResponse[] = [
   {
     responseId: "discharge", kind: "현상", target: "상류 저류지", level: "사전 방류로 저류 여유 확보", adjust: "when",
+    effect: "이 판단이 합류부 수위와 도달 시각을 바꿉니다",
     anchor: { label: "실제 방류", at: t("15:05") },
     /* 선택지는 알린 직후 · 문턱 · 실제 셋이다(README §2.3 규칙 3). 임의 눈금("10분 일찍")은 쓰지 않는다.
        문턱 14:55 = 합류부 저지대 범람(L32)을 막는 가장 늦은 방류 시각. 20분 일찍 판은 조합용으로 남는다 */
@@ -462,6 +463,7 @@ const RESPONSES: WhatIfResponse[] = [
   },
   {
     responseId: "road-control", kind: "노출", target: "하구 천변도로", level: "양방향 통제", adjust: "when",
+    effect: "물이 오는 시각은 그대로이고, 도달까지의 여유가 달라집니다",
     anchor: { label: "실제 통제", at: ACTUAL_CONTROL },
     presets: [
       { id: "fired", label: "알린 직후", at: t("14:35"), forecastId: CW_ROAD_FIRED.forecastId },
