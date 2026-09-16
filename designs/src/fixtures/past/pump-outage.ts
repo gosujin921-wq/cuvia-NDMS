@@ -112,7 +112,9 @@ const targets = (backupAt: string, patrolAt: string, restoredAt = RESTORED): Imp
   /* 순회가 세대 정전보다 먼저 시작됐는가. 몇 가구를 돌았는지는 세지 않는다 */
   const patrolAhead = patrolAt <= HOMES_OUT;
   return [
-    { kind: "중요시설", id: "FAC-SP-PUMP", label: `제2배수펌프장 정지 ${pumpMin}분`, arrivalAt: FAULT, exposure: "부분 중단" },
+    /* 장애가 난 시각(17:15)은 계통이 정한다 — 비상전원으로 바뀌지 않으므로 도달로 세우지 않는다.
+       세우면 강평에 `17:15 → 17:15` 이 서서 "달라진 게 없다"로 읽힌다(2026-09-17 · 구항과 같은 이유) */
+    { kind: "중요시설", id: "FAC-SP-PUMP", label: `제2배수펌프장 정지 ${pumpMin}분`, exposure: "부분 중단" },
     { kind: "중요시설", id: "FAC-SP-CELL", label: `통신 기지국·마을방송 불통 ${cellMin}분`, exposure: cellMin > 0 ? "부분 중단" : "영향 없음" },
     { kind: "건물", id: "BLD-SP-OUT", label: `저지대 320세대 정전 ${outMin}분`, exposure: "노출" },
     { kind: "대상자", id: "POP-SP-UNCHECKED", label: "취약가구 순회 확인", exposure: patrolAhead ? "통제됨" : "노출" },
@@ -219,6 +221,26 @@ const COMBO_FORECASTS: Forecast[] = BACKUPS.map((b) => {
 });
 const COMBOS: WhatIfCombo[] = BACKUPS.map((b, i) => ({ situationForecastId: SP_DELAY.forecastId, responseId: "backup-power", presetId: b.presetId, forecastId: COMBO_FORECASTS[i].forecastId }));
 
+/* ═══ 훈련 조합 (03 §26.10 · 2026-09-17) ═══════════════════════════════════
+ *
+ * 훈련이 묻는 것은 **비상전원을 언제 넣을까**다. 계통은 한 번 끊기면 아래로 차례차례 내려간다 —
+ * 펌프가 서고, 기지국 비상전원이 17:30 에 바닥나면 마을방송이 끊기고, 18:00 에 저지대 세대가 정전된다.
+ *
+ * ★ **17:30 이 경계다.** 장애 발생(17:15) 때 정하면 17:20 에 붙어 기지국이 안 꺼지고,
+ *   17:30 에 정하면 17:30 에 붙어 아슬아슬하게 걸리며, 안 정하면 실제 17:40 이라 통신이 끊긴 뒤다.
+ *   파급이 어디서 멈추는지가 결정 시각 하나로 갈리는 것이 이 유형의 성질이다.
+ * ★ **새 판을 만들지 않는다.** 복구 지연 × 비상전원 조합이 위에서 이미 생성됐다. 훈련은 그 판을 가리킬 뿐이다.
+ * ★ 취약가구 순회는 대응에서 뺀 채로 둔다 — "일찍 할수록 그만큼 더 확인한다"는 산수다(파일 머리말).
+ * ═══════════════════════════════════════════════════════════════════════ */
+const SP_TRAINING_COMBOS: { conditionStepId: string; acts: Record<string, string>; forecastId: string }[] = [
+  { conditionStepId: "now", acts: {}, forecastId: SP_ACTUAL.forecastId },
+  { conditionStepId: "now", acts: { G1: AT[0] }, forecastId: SP_BACKUP_20.forecastId },
+  { conditionStepId: "now", acts: { G1: AT[1] }, forecastId: SP_BACKUP_10.forecastId },
+  { conditionStepId: "restore-delay", acts: {}, forecastId: SP_DELAY.forecastId },
+  { conditionStepId: "restore-delay", acts: { G1: AT[0] }, forecastId: COMBO_FORECASTS[1].forecastId },
+  { conditionStepId: "restore-delay", acts: { G1: AT[1] }, forecastId: COMBO_FORECASTS[0].forecastId },
+];
+
 export const PUMP_OUTAGE_FORECASTS: Forecast[] = [SP_ACTUAL, SP_BACKUP_10, SP_BACKUP_20, SP_DELAY, ...COMBO_FORECASTS];
 
 const SITUATIONS: WhatIfSituation[] = [
@@ -271,6 +293,31 @@ export const PUMP_OUTAGE_WHATIF: WhatIfCase = {
     { label: "승강기 갇힘 신고 (119)", value: "3건 · 전원 구조" },
   ],
   responses: RESPONSES,
+  /* 발동한 규정 — 17:15 변전 계통 장애가 띄웠다. 실제로는 17:40 에 투입했고 그 사이 기지국이 꺼졌다 */
+  sop: [
+    { id: "G1", label: "비상전원 투입", trigger: "변전 계통 장애 · 기지국 비상전원 17:30 소진 예상", firedAt: t("17:15"), actedAt: ACTUAL_BACKUP, responseId: "backup-power" },
+  ],
+  training: {
+    incidentId: SP_INCIDENT_ID,
+    stops: [
+      { at: AT[0], phase: "판단", note: "변전 계통이 끊겼다 · 지금 정하면 17:20 에 붙는다" },
+      { at: AT[1], phase: "판단", note: "기지국 비상전원이 바닥난다 · 지금이 마지막 · 더 늦으면 실제와 같은 17:40" },
+      { at: AT[2], phase: "결과", note: "저지대 세대 정전" },
+      { at: AT[3], phase: "결과", note: "복구반 도착 · 복전" },
+    ],
+    conditions: [
+      {
+        id: "restore", label: "복구", stateLabel: "복구반",
+        steps: [
+          { id: "now", label: "당시", detail: "18:30 도착 · 19:10 복전", situationId: null },
+          { id: "restore-delay", label: "1시간 지연", detail: "19:30 도착 · 20:10 복전", situationId: "restore-delay" },
+        ],
+      },
+    ],
+    firedSopIds: ["G1"],
+    resultSopIds: ["G1"],
+    combos: SP_TRAINING_COMBOS,
+  },
   situations: SITUATIONS,
   combos: COMBOS,
 };
