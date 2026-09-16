@@ -515,7 +515,7 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
       {phase !== "prepare" && stop && (
         <div className="pointer-events-none absolute bottom-3 z-30" style={{ left: CENTER_LEFT + LEFT_RAIL + 12, right: CENTER_RIGHT }}>
           <TrainingClock stops={stops} index={index} replay={phase === "debrief"} onPick={(i) => setReplayAt(i)}
-            flow={flow && flowClock ? { to: flow.to, p: flow.p, at: flowClock } : null}
+            flow={flow && flowClock ? { from: flow.from, to: flow.to, p: flow.p, at: flowClock } : null}
             rising={mapStop?.phase === "결과"}
             compare={flow?.loop ? (flow.as ?? "mine") : null}
             waiting={!flowing && stop?.phase === "판단"} />
