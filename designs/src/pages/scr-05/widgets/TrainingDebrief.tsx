@@ -21,34 +21,92 @@ import { ImprovementCard } from "./ImprovementCard";
 const peakOf = (f: Forecast) => f.marks.reduce((a, x) => ((x.metric?.value ?? x.maxDepthM) > (a.metric?.value ?? a.maxDepthM) ? x : a), f.marks[0]);
 /** 기준 초과 시각 — 없으면 "없음" */
 const crossOf = (f: Forecast) => { const at = arrivalAtOf(f); return at ? formatClock(at) : "없음"; };
-/** 사람 대상의 상태 */
-const exposureOf = (f: Forecast) => f.targets.find((x) => x.kind === "대상자")?.exposure ?? "-";
+/** 사람 대상 — 라벨을 박지 않는다. 유형마다 다른 사람이 선다(천변도로 이용자 · 공백 격자 취약대상) */
+const personOf = (f: Forecast) => f.targets.find((x) => x.kind === "대상자") ?? null;
+/** 마지막 눈금 — 훈련이 끝난 시점의 영향 */
+const lastMarkOf = (f: Forecast) => f.marks[f.marks.length - 1] ?? f.marks[0];
 
-/** 강평 표의 행 — 저장 기록도 이 값을 그대로 담는다(판을 고쳐도 과거 훈련이 안 바뀐다) */
-export function debriefRowsOf(mine: Forecast | null, base: Forecast | null): { label: string; base: string; mine: string }[] {
+/**
+ * 강평 표의 행 — 저장 기록도 이 값을 그대로 담는다(판을 고쳐도 과거 훈련이 안 바뀐다).
+ *
+ * ★ **유형을 박지 않는다.** 창원천만 있을 때는 `합류부 수위 · 기준 초과 · 천변도로 이용자`를
+ *   그대로 적어 두었지만, 유형마다 답이 다르다 — 폭염은 "기준을 넘는다"는 개념이 없고 공백 격자가 답이다.
+ *   그래서 판이 스스로 든 것만 읽는다: 유형 핵심 지표(`metric`) · 도달(있는 유형만) · 영향(`impacts`) · 사람.
+ */
+export interface DebriefRow {
+  label: string;
+  base: string;
+  mine: string;
+  /** 내 조치 쪽이 나아졌나 — 색만 정한다. 판정할 수 없으면 비운다 */
+  better?: boolean;
+}
+
+/** 영향의 심각도 — 낮을수록 낫다. 유형별 영향을 견줄 유일한 공통 축이다 */
+const TONE_RANK: Record<string, number> = { danger: 3, warning: 2, safe: 1, muted: 0 };
+
+export function debriefRowsOf(mine: Forecast | null, base: Forecast | null): DebriefRow[] {
   if (!base) return [];
   const my = mine ?? base;
   const bp = peakOf(base), mp = peakOf(my);
-  return [
-    { label: `${markMetricLabel(bp)} · 최고`, base: formatMarkMetric(bp), mine: formatMarkMetric(mp) },
-    { label: "기준 초과 시각", base: crossOf(base), mine: crossOf(my) },
-    { label: "천변도로 이용자", base: exposureOf(base), mine: exposureOf(my) },
-  ];
+  const bv = bp.metric?.value ?? bp.maxDepthM, mv = mp.metric?.value ?? mp.maxDepthM;
+  /* 유형 핵심 지표는 전부 "낮을수록 낫다"이다 — 수위·침수심·화선 거리·위험 지속시간 */
+  const rows: DebriefRow[] = [{ label: `${markMetricLabel(bp)} · 최고`, base: formatMarkMetric(bp), mine: formatMarkMetric(mp), better: mv < bv }];
+
+  /* 도달·초과는 그 개념이 있는 유형만 — 판의 대상에 도달 시각이 붙어 있을 때다 */
+  const bc = arrivalAtOf(base), mc = arrivalAtOf(my);
+  if (bc || mc) {
+    rows.push({
+      label: "기준 초과 시각", base: crossOf(base), mine: crossOf(my),
+      /* 안 넘었거나 늦어졌으면 나아진 것이다 */
+      better: mc === null || (bc !== null && mc > bc),
+    });
+  }
+
+  /* 유형별 영향 — 창원천은 도로·건물, 폭염은 공백 격자. 같은 라벨끼리만 맞춘다 */
+  const bi = lastMarkOf(base)?.impacts ?? [], mi = lastMarkOf(my)?.impacts ?? [];
+  for (const b of bi) {
+    const m = mi.find((x) => x.label === b.label);
+    if (!m) continue;
+    const br = TONE_RANK[b.tone ?? "muted"] ?? 0, mr = TONE_RANK[m.tone ?? "muted"] ?? 0;
+    rows.push({ label: b.label, base: b.value, mine: m.value, better: mr < br });
+  }
+
+  /* 사람 — 라벨은 그 유형이 든 것 그대로 */
+  const bTarget = personOf(base), mTarget = personOf(my);
+  if (bTarget && mTarget) {
+    rows.push({
+      label: bTarget.label, base: bTarget.exposure ?? "-", mine: mTarget.exposure ?? "-",
+      better: mTarget.exposure !== bTarget.exposure && mTarget.exposure !== "노출",
+    });
+  }
+  return rows;
 }
 
-/** 결론 한 줄 — "나아졌다"와 "막았다"를 구분한다 */
+/**
+ * 결론 한 줄 — **"나아졌다"와 "막았다"를 구분한다.**
+ *
+ * ★ 유형을 박지 않는다. 예전에는 `최고 수위가 n m 낮아지고`라고 적어 두었는데, 폭염은 강도가
+ *   조치로 바뀌지 않고 **공백 격자**가 준다 — 그 문장으로는 "나아지지 않았다"가 되어 거짓이 된다.
+ *   그래서 **비교표에서 실제로 달라진 행을 읽어** 문장을 만든다.
+ * ★ `condLabel` 은 완성된 조건 이름이다("강우 +20%" · "열대야 +2°C"). 여기서 유형 이름을 붙이지 않는다.
+ */
 export function debriefHeadline(mine: Forecast | null, base: Forecast | null, condLabel: string, noAct: boolean): string {
   if (!base) return "";
-  const my = mine ?? base;
-  const bp = peakOf(base), mp = peakOf(my);
-  const bv = bp.metric?.value ?? bp.maxDepthM, mv = mp.metric?.value ?? mp.maxDepthM;
-  const held = crossOf(my) === "없음";
-  const bc = arrivalAtOf(base), mc = arrivalAtOf(my);
-  const delay = bc && mc ? minutesBetween(bc, mc) : null;
   if (noAct) return "실제와 같은 시각에 조치했으므로 결과가 달라지지 않았습니다.";
-  if (held) return `조치를 앞당긴 결과 기준 수위를 넘지 않았습니다. 같은 조건(강우 ${condLabel})에서 실제와 같게 했을 때와 견준 것이라, 차이는 조치에서만 왔습니다.`;
-  if (mv < bv) return `최고 수위가 ${Number((bv - mv).toFixed(1))} m 낮아지고 초과가 ${delay ?? 0}분 늦어졌지만, 여전히 기준을 넘었습니다. 이 조건에서는 그 조치만으로 막지 못합니다.`;
-  return "조치를 했지만 이 조건에서는 나아지지 않았습니다.";
+
+  const rows = debriefRowsOf(mine, base);
+  const changed = rows.filter((r) => r.base !== r.mine);
+  if (changed.length === 0) return `조치를 했지만 이 조건(${condLabel})에서는 결과가 달라지지 않았습니다.`;
+
+  /* 달라진 것 둘까지만 적는다 — 셋을 넘기면 결론이 표를 되풀이한다 */
+  const what = changed.slice(0, 2).map((r) => `${r.label} ${r.base} → ${r.mine}`).join(" · ");
+  const cross = rows.find((r) => r.label === "기준 초과 시각");
+  const same = `같은 조건(${condLabel})에서 실제와 같게 했을 때와 견준 것이라, 차이는 조치에서만 왔습니다.`;
+
+  /* 넘는다는 개념이 있는 유형에서만 "막았다"를 말한다 */
+  if (cross && cross.mine === "없음" && cross.base !== "없음") return `${what}. 기준을 넘지 않았습니다 — ${same}`;
+  if (cross) return `${what}. 나아졌지만 여전히 기준을 넘었습니다. 이 조건에서는 그 조치만으로 막지 못합니다.`;
+  return `${what}. ${same}`;
 }
 
 export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvements, onAddImprovement, onRemoveImprovement, onSave, saved }: {
@@ -74,20 +132,12 @@ export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvemen
   }
   const my = mine ?? base;
   const noAct = Object.keys(acts).length === 0;
-  const basePeak = peakOf(base), myPeak = peakOf(my);
-  const baseV = basePeak.metric?.value ?? basePeak.maxDepthM, myV = myPeak.metric?.value ?? myPeak.maxDepthM;
-  const better = myV < baseV;
   const held = crossOf(my) === "없음";
-  const baseCross = arrivalAtOf(base), myCross = arrivalAtOf(my);
-  const delay = baseCross && myCross ? minutesBetween(baseCross, myCross) : null;
 
-  const rows = [
-    { label: `${markMetricLabel(basePeak)} · 최고`, a: formatMarkMetric(basePeak), b: formatMarkMetric(myPeak), good: better },
-    { label: "기준 초과 시각", a: crossOf(base), b: crossOf(my), good: held || (delay !== null && delay > 0) },
-    { label: "천변도로 이용자", a: exposureOf(base), b: exposureOf(my), good: exposureOf(my) !== exposureOf(base) },
-  ];
+  /* 화면과 저장 기록이 **같은 표**를 읽는다. 두 벌로 적으면 보고서와 화면이 갈린다 */
+  const rows = debriefRowsOf(mine, base);
   /* 개선 항목에 자동으로 붙는 맥락 — 사람이 다시 적지 않는다 */
-  const context = [wcase.title, `강우 ${condLabel}`,
+  const context = [wcase.title, condLabel,
     Object.keys(acts).length > 0
       ? (wcase.sop ?? []).filter((s) => acts[s.id]).map((s) => `${s.id} ${minutesBetween(s.firedAt, acts[s.id])}분`).join(" · ")
       : "조치 없음",
@@ -98,7 +148,7 @@ export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvemen
       <section className="flex flex-col gap-2 p-3" aria-label="내 조치가 만든 차이">
         <header className="flex items-baseline justify-between gap-2">
           <h2 className="text-body font-semibold text-foreground">내 조치가 만든 차이</h2>
-          <span className="shrink-0 text-caption text-foreground-subtle">둘 다 강우 {condLabel}</span>
+          <span className="shrink-0 text-caption text-foreground-subtle">둘 다 {condLabel}</span>
         </header>
         <p className="break-keep text-caption text-foreground-subtle">
           기준은 <span className="text-foreground-muted">실제와 같은 시각에 했을 때</span>입니다
@@ -116,8 +166,8 @@ export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvemen
           {rows.map((r) => (
             <span key={r.label} className="contents">
               <span className="min-w-0 break-keep leading-tight text-foreground-muted">{r.label}</span>
-              <span className="text-right font-mono leading-tight text-foreground-muted">{r.a}</span>
-              <span className={cn("text-right font-mono font-semibold leading-tight", r.a === r.b ? "text-foreground-muted" : r.good ? "text-success" : "text-warning")}>{r.b}</span>
+              <span className="text-right font-mono leading-tight text-foreground-muted">{r.base}</span>
+              <span className={cn("text-right font-mono font-semibold leading-tight", r.base === r.mine ? "text-foreground-muted" : r.better ? "text-success" : "text-warning")}>{r.mine}</span>
             </span>
           ))}
         </div>

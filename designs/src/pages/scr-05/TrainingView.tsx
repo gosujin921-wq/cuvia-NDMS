@@ -108,6 +108,8 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
    */
   const mapStop = (flow ? stops[flow.to] : stop) ?? null;
   const condStep = t?.conditions[0]?.steps.find((s) => s.id === condStepId) ?? null;
+  /** 조건의 완성된 이름 — "강우 +20%" · "열대야 +2°C". 화면·기록·보고서가 이 하나를 쓴다(유형 이름을 화면이 붙이지 않는다) */
+  const condLabel = t?.conditions[0] && condStep ? `${t.conditions[0].label} ${condStep.label}` : "당시 조건";
 
   /* 내 조치가 만든 판과 기준 판 — 기준은 같은 조건에서 실제와 같게 했을 때다(03 §26.7) */
   const { mine, base } = useMemo(
@@ -353,7 +355,7 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
       incidentId: wcase.incidentId,
       incidentTitle: wcase.title,
       conditionStepIds: condStep ? [condStep.id] : [],
-      conditionLabel: condStep ? `강우 ${condStep.label}` : "당시 조건",
+      conditionLabel: condLabel,
       stops: t.stops.map((s) => ({ at: s.at, phase: s.phase, note: s.note })),
       /* 안 한 규정도 담는다 — 보고서에서 "안 함 · 실제와 같게"가 한 줄로 서야 한다 */
       sopRows: (wcase.sop ?? []).map((s) => ({
@@ -365,7 +367,7 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
       resultForecastId: (mine ?? base).forecastId,
       baselineForecastId: base.forecastId,
       rows: debriefRowsOf(mine, base),
-      headline: debriefHeadline(mine, base, condStep?.label ?? "당시", Object.keys(acts).length === 0),
+      headline: debriefHeadline(mine, base, condLabel, Object.keys(acts).length === 0),
       stateRows: (state?.rows ?? []).map((r) => ({ label: r.label, value: r.value })),
       improvements: improvements.filter((x) => x.incidentId === wcase.incidentId).map(({ axis, text }) => ({ axis, text })),
       /* 저장 시점 지도 한 장 — 강평에서 누르므로 마지막 정지점의 화면이 담긴다 */
@@ -628,14 +630,14 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
                 )}
                 <TrainingDebrief
                   wcase={wcase}
-                  condLabel={condStep?.label ?? "당시"}
+                  condLabel={condLabel}
                   acts={acts}
                   mine={mine}
                   base={base}
                   improvements={improvements.filter((x) => x.incidentId === wcase.incidentId)}
                   onAddImprovement={(axis, text) => addImprovement({
                     incidentId: wcase.incidentId, axis, text,
-                    context: [wcase.title, `강우 ${condStep?.label ?? "당시"}`].join(" · "),
+                    context: [wcase.title, condLabel].join(" · "),
                     author: OFFICER,
                   })}
                   onRemoveImprovement={removeImprovement}
