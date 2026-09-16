@@ -291,10 +291,20 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
           return;
         }
         setStopIndex(flow.to);
-        /* 마지막 결과에 닿았고 조치로 판이 달라졌으면, 곧바로 비교를 돌린다 */
-        setFlow(flow.to >= lastIdx && changedRef.current
-          ? { from: 0, to: 1, p: 0, as: "base", loop: true }
-          : null);
+        /* 결과 정지점에서는 서지 않는다 — 거기서 결정할 일이 없다(2026-09-17 사용자 "스텝이 나눠져 있어야 해?").
+           판단 국면이 끝나면 물이 오는 것을 끝까지 한 번에 본다. 시계는 여전히 [다음 단계]로만 가고, 한 번에 더 멀리 갈 뿐이다 */
+        if (flow.to < lastIdx && stops[flow.to].phase === "결과") {
+          setFlow({ from: flow.to, to: flow.to + 1, p: 0 });
+          return;
+        }
+        /* 마지막 결과에 닿았고 조치로 판이 달라졌으면 비교를 돌린다 —
+           단, **내 조치의 끝 장면에 한 박자 머문 뒤**다. 닿자마자 반대 판 처음으로 넘기면 방금 본 결과가 눈에 남지 않는다 */
+        if (flow.to >= lastIdx && changedRef.current) {
+          setFlow((f) => (f ? { ...f, p: 1 } : f));
+          hold = window.setTimeout(() => setFlow({ from: 0, to: 1, p: 0, as: "base", loop: true }), COMPARE_HOLD_MS);
+          return;
+        }
+        setFlow(null);
         return;
       }
       if (now - last > 120) { last = now; setFlow((f) => (f ? { ...f, p } : f)); }
@@ -748,7 +758,10 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
                   ? "시간이 흐르는 중…"
                   : stopIndex >= stops.length - 1
                     ? "훈련 마치기"
-                    : `다음 단계 · ${formatClock(stops[stopIndex + 1].at)}`}
+                    : stops[stopIndex + 1].phase === "결과"
+                      /* 마지막 판단 — 여기서부터는 결과 정지점에서 서지 않고 끝까지 흐른다 */
+                      ? `판단 끝 · 결과 보기 (${formatClock(stops[stopIndex + 1].at)} → ${formatClock(stops[stops.length - 1].at)})`
+                      : `다음 단계 · ${formatClock(stops[stopIndex + 1].at)}`}
             </Button>
           )}
           {/* 돌아보기의 주 동작은 **저장**이다. 스크롤 아래에 두면 마치고도 저장을 못 찾는다(2026-09-17 검수).
