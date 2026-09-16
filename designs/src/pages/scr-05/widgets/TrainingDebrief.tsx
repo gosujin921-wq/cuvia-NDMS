@@ -101,7 +101,15 @@ export function debriefRowsOf(mine: Forecast | null, base: Forecast | null): Deb
       better: mTarget.exposure !== bTarget.exposure && mTarget.exposure !== "노출",
     });
   }
-  return rows;
+
+  /**
+   * ★ **달라진 것이 먼저 온다.** 표의 논리 순서(핵심 지표 → 도달 → 영향 → 사람)를 그대로 두면
+   * 조치로 바뀌지 않는 값이 맨 위에 서는 유형이 있다 — 폭염의 `위험 지속시간`은 조건이 정하지
+   * 쉼터가 바꾸지 않아 `28시간 → 28시간`이 첫 줄이 되고, 훈련의 답이 "효과 없음"으로 읽힌다.
+   * 안 바뀐 행도 버리지 않는다(그대로임을 아는 것도 정보다). 아래로 내릴 뿐이다.
+   * 조건과 조치가 같으면 순서도 같으므로 표가 흔들리지 않는다.
+   */
+  return [...rows.filter((r) => r.base !== r.mine), ...rows.filter((r) => r.base === r.mine)];
 }
 
 /**
