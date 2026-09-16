@@ -7,17 +7,20 @@
  * ───────────────────────────────────────────── */
 
 import type { EventEnvelope, EventType } from "./event";
-import type { Forecast, AlternativeId } from "./forecast";
+import { ALTERNATIVE_LABEL, type Forecast } from "./forecast";
 import type { CityOperationalState, HazardAssessment, Incident, IncidentPhase, StatusChange, WorkflowStatus } from "./incident";
 import { ACTIVE_WORKFLOW_STATUSES } from "./incident";
 import type { AttentionAlert, AlertStatus } from "./alert";
 import type { RiskMatrixResult } from "./risk-matrix";
 import type { Action, ActionStatus, Decision, Dissemination, DisseminationResult, Outcome, Recommendation, Report } from "./response";
-import type { TrainingConditionSet, TrainingScenario, TrainingScenarioRequest } from "./training";
+import type { CaseAction, CaseRow, CaseTargetRow, PredictionCase } from "./prediction-case";
 import type { DemoStage, DemoTick } from "./stage";
-import { ALL_FORECASTS, EVENTS, INCIDENTS, DEMO_TICKS_BY_INCIDENT, ALTERNATIVE_FORECAST_IDS, ALERTS, CCTV_CHANNELS, RISK_MATRIX_SPECS, TRAINING_CONDITION_SETS, type CctvChannel } from "../fixtures";
+import { ALL_FORECASTS, EVENTS, INCIDENTS, DEMO_TICKS_BY_INCIDENT, ALERTS, CCTV_CHANNELS, RISK_MATRIX_SPECS, WHATIF_CASES, SUBJECT_LOCATION, type CctvChannel } from "../fixtures";
+import type { RecordEntry, WhatIfCase, WhatIfPreset, WhatIfResponse, WhatIfSituation, WhatIfSopItem, WhatIfStatus } from "./whatif";
 
 const ms = (iso: string): number => new Date(iso).getTime();
+/** 예측 케이스 표의 시각 칸 — HH:MM */
+const clockOf = (iso: string): string => new Date(iso).toTimeString().slice(0, 5);
 
 /* ── 원장 ── */
 
@@ -195,7 +198,7 @@ export type ForecastResolution =
   | { kind: "expired"; forecast: Forecast }
   | { kind: "not-yet"; forecast: Forecast };
 
-/** 예측판 찾기 — 유효성은 보지 않는다. 훈련 스냅샷처럼 고정 참조를 읽을 때 쓴다(IA §13.1) */
+/** 예측판 찾기 — 유효성은 보지 않는다. 조건 세트처럼 고정 참조를 읽을 때 쓴다(03 §25) */
 export function findForecast(forecastId: string): Forecast | undefined {
   return ALL_FORECASTS.find((f) => f.forecastId === forecastId);
 }
@@ -230,10 +233,6 @@ export function forecastHeadlineAt(forecast: Forecast, now: Date): string {
   if (lead > 0) return `${lead}분 뒤 침수 예상 · ${first}`;
   const next = forecast.marks.find((m) => ms(m.validAt) >= now.getTime());
   return next ? next.impactSummary : forecast.marks[forecast.marks.length - 1]?.impactSummary ?? "";
-}
-
-export function alternativesOf(incidentId: string, now: Date): { id: AlternativeId; forecast: Forecast }[] {
-  return currentForecastsOf(incidentId, now).map((f) => ({ id: f.alternativeId, forecast: f }));
 }
 
 /* ── 대응·실행 ── */
@@ -384,62 +383,6 @@ export function cctvChannelsAt(now: Date): CctvChannelView[] {
   });
 }
 
-/* ── 훈련 스냅샷 (IA §13.1) ── */
-
-export function buildTrainingScenario(req: TrainingScenarioRequest, now: Date): TrainingScenario | null {
-  const view = incidentViewAt(req.sourceIncidentId, now);
-  if (!view) return null;
-  const forecast = ALL_FORECASTS.find((f) => f.forecastId === req.selectedForecastId);
-  if (!forecast) return null;
-  const evidence = evidenceEventsAt(req.sourceIncidentId, now);
-  const decisions = decisionsAt(req.sourceIncidentId, now);
-  const actions = actionsAt(req.sourceIncidentId, now);
-  const outcomes = outcomesAt(req.sourceIncidentId, now);
-  const alternatives = alternativesOf(req.sourceIncidentId, now).map((a) => a.forecast.forecastId);
-  return {
-    scenarioId: `TS-${view.incident.incidentId}-v1`, snapshotVersion: 1, createdAt: req.requestedAt, origin: "incident-snapshot",
-    source: { sourceIncidentId: view.incident.incidentId, hazardKind: view.incident.hazardKind, twinFamily: view.incident.twinFamily, scopeKind: view.incident.scopeKind, scope: view.incident.scope },
-    timing: { snapshotAt: now.toISOString(), originalStartAt: view.firstObservedAt ?? view.createdAt ?? now.toISOString(), trainingBaseTime: view.incident.scenarioContext.scenarioBaseTime },
-    conditionEvents: evidence.map((e) => ({ eventId: e.eventId, demoRef: e.demoRef, schemaVersion: e.schemaVersion })),
-    selectedForecast: { forecastId: forecast.forecastId, validAt: forecast.marks[0]?.validAt ?? forecast.basis.baseTime, alternativeId: forecast.alternativeId, affectedGeometryId: forecast.marks[forecast.marks.length - 1]?.extentGeometryId },
-    history: { evidenceEventIds: view.assessment?.evidenceEventIds ?? [], decisionIds: decisions.map((d) => d.decisionId), actionIds: actions.map((a) => a.actionId), outcomeIds: outcomes.map((o) => o.outcomeId) },
-    training: { changeableConditions: ["펌프 가용성", "통제 시작 시각", "전파 채널 구성"], alternativeForecastIds: alternatives.length ? alternatives : ALTERNATIVE_FORECAST_IDS, objectives: ["후보 확인까지의 판단 시간 단축", "실패 채널 대체조치 선택", "전망 기준 통제 시각 결정"] },
-    provenance: { composition: view.incident.scenarioContext.scenarioMode, transformRules: [...new Set(evidence.map((e) => e.scenario?.scenarioRuleId).filter(Boolean) as string[])], calculationActor: forecast.basis.calculationActor, replacementTargets: [forecast.basis.replacementNote ?? ""].filter(Boolean) },
-  };
-}
-
-/**
- * 사전 조건 세트 → 훈련 시나리오 (IA-T01 사전 조건분석). 사건 없이 조건을 골라 여는 길이다.
- * 범위·유형은 대표 사건에서 빌리고, 이력·조건 이벤트는 비어 있다. 예측판은 세트가 가리키는 사전 작성 결과다.
- */
-export function conditionScenarioOf(set: TrainingConditionSet): TrainingScenario | null {
-  const incident = set.incidentId ? findIncident(set.incidentId) : undefined;
-  const forecast = set.baselineForecastId ? ALL_FORECASTS.find((f) => f.forecastId === set.baselineForecastId) : undefined;
-  /* 개념 장면은 사건이 없다 — 세트가 든 범위·유형으로 세우고 기준시각은 예측판 기준시각이다 */
-  const source = incident
-    ? { sourceIncidentId: incident.incidentId, hazardKind: incident.hazardKind, twinFamily: incident.twinFamily, scopeKind: incident.scopeKind, scope: incident.scope }
-    : set.source
-      ? { sourceIncidentId: "", hazardKind: set.source.hazardKind, twinFamily: set.source.twinFamily, scopeKind: set.source.scope.kind, scope: set.source.scope }
-      : null;
-  if (!source) return null;
-  const base = incident?.scenarioContext.scenarioBaseTime ?? forecast?.basis.baseTime ?? "";
-  return {
-    scenarioId: `TS-COND-${set.setId}`, snapshotVersion: 1, createdAt: base, origin: "condition-set", conditionSet: set,
-    source,
-    timing: { snapshotAt: base, originalStartAt: base, trainingBaseTime: base },
-    conditionEvents: [],
-    selectedForecast: forecast ? { forecastId: forecast.forecastId, validAt: forecast.marks[0]?.validAt ?? forecast.basis.baseTime, alternativeId: forecast.alternativeId, affectedGeometryId: forecast.marks[forecast.marks.length - 1]?.extentGeometryId } : null,
-    history: { evidenceEventIds: [], decisionIds: [], actionIds: [], outcomeIds: [] },
-    training: { changeableConditions: set.changeableConditions, alternativeForecastIds: set.alternativeForecastIds, objectives: set.objectives },
-    provenance: { composition: "완전 모의", transformRules: [], calculationActor: forecast?.basis.calculationActor ?? "해당 없음", replacementTargets: ["모델 연계 시 같은 조건의 ModelRun 결과로 교체"] },
-  };
-}
-
-/** 준비된 조건 세트 전부 — 예측판이 없는 조합도 세운다(정직한 빈 자리) */
-export function conditionScenarios(): TrainingScenario[] {
-  return TRAINING_CONDITION_SETS.map(conditionScenarioOf).filter((s): s is TrainingScenario => Boolean(s));
-}
-
 /* ── 사건 작업공간 (IA §7 · 초안 §4) ── */
 
 export interface RelatedEventRow {
@@ -513,7 +456,7 @@ export function qualityOf(subjectId: string, now: Date): string {
 
 import { DISTRICTS } from "../demo/districts";
 import { DEVICES } from "../demo/devices";
-import { alertRoleLabel, eventCategoryOf, EVENT_CATEGORY_ORDER, type DistrictStatus, type EventCategory } from "../lib/status-tone";
+import { eventCategoryOf, EVENT_CATEGORY_ORDER, type DistrictStatus, type EventCategory } from "../lib/status-tone";
 import type { RiskGrade } from "./risk-matrix";
 
 const GRADE_RANK: Record<RiskGrade, number> = { 심각: 3, 경계: 2, 주의: 1, 관심: 0 };
@@ -535,15 +478,36 @@ export function topIncidentByDistrictAt(now: Date): Map<string, IncidentView> {
   return out;
 }
 
-/** 지구 상태 — 심각 = 위험, 그 외 활성 사건·후보 = 주의, 없음 = 정상 */
+/**
+ * 아직 사건이 안 된 열린 알림과 그 지구. 실시간 주요 사건의 감지 카드와 지구 상태가 같은 목록을 읽는다.
+ * 후보를 만든 알림은 빠진다. 그 뒤로는 사건이 같은 자리를 잇는다
+ */
+function preIncidentAlertsAt(now: Date): { alert: AlertView; districtId: string | null }[] {
+  return alertsAt(now)
+    .filter((a) => a.open && !(a.incidentId && incidentExistsAt(a.incidentId, now)))
+    .map((alert) => ({ alert, districtId: incidentOfAlert(alert)?.legacyDistrictId ?? null }));
+}
+
+const DISTRICT_RANK: Record<DistrictStatus, number> = { 심각: 3, 경계: 2, 주의: 1, 정상: 0 };
+
+/**
+ * 지구 상태. 진행 중인 사건의 등급과 아직 사건이 안 된 열린 알림의 등급 중 높은 쪽이고, 둘 다 없으면 정상.
+ * 알림 카드가 주의(노랑)면 그 지구 점도 노랑이다. 한 지구의 색이 목록·지도·지구 현황에서 갈리지 않는다(2026-09-16)
+ */
 export function districtStatusAt(now: Date): Map<string, DistrictStatus> {
   const top = topIncidentByDistrictAt(now);
+  const byAlert = new Map<string, DistrictStatus>();
+  for (const { alert, districtId } of preIncidentAlertsAt(now)) {
+    if (districtId && DISTRICT_RANK[alert.grade] > DISTRICT_RANK[byAlert.get(districtId) ?? "정상"]) byAlert.set(districtId, alert.grade);
+  }
   const out = new Map<string, DistrictStatus>();
   for (const d of DISTRICTS) {
     const v = top.get(d.id);
     /* 등급 램프 그대로. 판단 전(등급 없음)·관심은 사건이 서 있으니 주의로 둔다 */
     const g = v ? gradeOf(v) : null;
-    out.set(d.id, !v ? "정상" : g === "심각" || g === "경계" ? g : "주의");
+    const byIncident: DistrictStatus = !v ? "정상" : g === "심각" || g === "경계" ? g : "주의";
+    const a = byAlert.get(d.id) ?? "정상";
+    out.set(d.id, DISTRICT_RANK[a] > DISTRICT_RANK[byIncident] ? a : byIncident);
   }
   return out;
 }
@@ -585,6 +549,7 @@ export function eventCategoryCountsAt(now: Date): CategoryCount[] {
 export interface FeedItem {
   id: string;
   kind: "감지" | "사건";
+  /** 무슨 일이 일어났나. 사건은 사건 제목, 감지는 알림 제목. 알림 역할명(사전 감시 등)이나 할 일은 싣지 않는다 */
   title: string;
   grade: RiskGrade | null;
   /** 지구명 · 장비 · 시각 */
@@ -596,8 +561,6 @@ export interface FeedItem {
   process: WorkflowStatus | null;
   /** SOP 진행률 — 조치가 배정된 사건만 */
   sop: { done: number; total: number } | null;
-  /** 조치 전 상태 문구 */
-  statusText: string | null;
   incidentId: string | null;
   alertId: string | null;
   active: boolean;
@@ -616,36 +579,23 @@ function sopOf(incidentId: string, now: Date): { done: number; total: number } |
 }
 
 export function feedItemsAt(now: Date): FeedItem[] {
-  const alerts = alertsAt(now);
   const items: FeedItem[] = [];
   for (const v of incidentsAt(now)) {
-    const acts = actionsAt(v.incident.incidentId, now);
-    const grade = gradeOf(v);
     const firstEvidence = v.events.find((e) => e.eventType === "INCIDENT_CREATED");
     const subject = (firstEvidence?.derivedFrom ?? []).map(findEvent).find(Boolean)?.location?.label ?? v.incident.scope.label;
     items.push({
-      id: v.incident.incidentId, kind: "사건", title: v.incident.title, grade,
+      id: v.incident.incidentId, kind: "사건", title: v.incident.title, grade: gradeOf(v),
       districtId: v.incident.legacyDistrictId ?? null, subjectLabel: subject, at: v.lastUpdatedAt ?? v.createdAt ?? "",
       needsAck: v.workflowStatus === "후보", process: v.workflowStatus,
       sop: sopOf(v.incident.incidentId, now),
-      statusText: acts.length ? null
-        : v.workflowStatus === "오탐" ? "오탐 종결 · 원천 이벤트 보존"
-        : v.workflowStatus === "병합됨" ? `${(v.mergedInto && findIncident(v.mergedInto)?.title) ?? v.mergedInto ?? "기준 사건"}에 병합`
-        : v.workflowStatus === "종료" ? "종료"
-        : v.workflowStatus === "후보" ? "검토 인수 대기"
-        : v.workflowStatus === "확인중" ? "근거 확인 중"
-        : !grade ? "위험도 판단 전"
-        : v.forecastHeadline,
       incidentId: v.incident.incidentId, alertId: null, active: isActiveStatus(v.workflowStatus),
     });
   }
-  for (const a of alerts) {
-    if (a.incidentId && incidentExistsAt(a.incidentId, now)) continue; // 사건이 된 알림은 사건 카드가 잇는다
-    if (!a.open) continue;
+  for (const { alert: a, districtId } of preIncidentAlertsAt(now)) {
     items.push({
-      id: a.alertId, kind: "감지", title: alertRoleLabel(a.demoRole).replace(" 알림", ""), grade: a.grade === "심각" ? "심각" : a.grade === "경계" ? "경계" : "주의",
-      districtId: incidentOfAlert(a)?.legacyDistrictId ?? null, subjectLabel: a.target.label, at: a.updatedAt,
-      needsAck: false, process: null, sop: null, statusText: a.task, incidentId: null, alertId: a.alertId, active: true,
+      id: a.alertId, kind: "감지", title: a.title, grade: a.grade,
+      districtId, subjectLabel: a.target.label, at: a.updatedAt,
+      needsAck: false, process: null, sop: null, incidentId: null, alertId: a.alertId, active: true,
     });
   }
   return items.sort((x, y) => Number(y.active) - Number(x.active) || GRADE_RANK[y.grade ?? "관심"] - GRADE_RANK[x.grade ?? "관심"] || y.at.localeCompare(x.at));
@@ -886,4 +836,300 @@ export function districtAlertAt(districtId: string, now: Date): AlertView | null
   return alertsAt(now)
     .filter((a) => a.open && !(a.incidentId && incidentExistsAt(a.incidentId, now)) && incidentOfAlert(a)?.legacyDistrictId === districtId)
     .sort((a, b) => (ALERT_GRADE_RANK[b.grade] ?? 0) - (ALERT_GRADE_RANK[a.grade] ?? 0))[0] ?? null;
+}
+
+/* ── 예측 케이스 (IA §13.1) ────────────────────────────────────────────────
+ * 사건이 끝나면 예측판 하나가 케이스 한 건이 된다. 원 객체를 고치지 않고 참조만 해 조립한다.
+ * 점수를 매기지 않는다 — 예측과 실제를 나란히 두고 차이와 개선 항목만 남긴다.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/** 라벨 끝의 수 — "저지대 건물 12동" → 12 · "동" */
+function countOfLabel(label: string): { n: number; unit: string } | null {
+  const m = label.match(/(\d+)(\S*)$/);
+  return m ? { n: Number(m[1]), unit: m[2] } : null;
+}
+const signed = (d: number, digits = 0): string => `${d > 0 ? "+" : "−"}${Math.abs(d).toFixed(digits)}`;
+
+/**
+ * 이 사건의 예측 케이스. 종료(D8)에서 실제 결과가 붙은 뒤에만 선다.
+ * 실제 결과가 아직 없으면 빈 목록이다 — 사건 도중에는 검증할 것이 없다.
+ */
+export function predictionCasesAt(incidentId: string, now: Date): PredictionCase[] {
+  const incident = findIncident(incidentId);
+  const outcome = outcomesAt(incidentId, now).at(-1);
+  if (!incident || !outcome) return [];
+  const closedAt = allOfType<StatusChange>(eventsOfIncident(incidentId, now), "INCIDENT_STATUS_CHANGED").reverse().find((e) => e.payload.to === "종료")?.observedAt;
+
+  const v = outcome.verification;
+  const forecastId = v.available ? v.forecastId : forecastsOf(incidentId, now).find((f) => f.alternativeId === "baseline")?.forecastId ?? "";
+  const forecast = findForecast(forecastId);
+  if (!forecast) return [];
+  /* 검증한 그 예측값의 눈금 — 검증이 든 최대 침수심과 같은 눈금이라야 지도의 예측 범위가 표의 값과 맞는다.
+     검증이 없으면 가장 깊은 눈금을 쓴다 */
+  const verifiedMark = v.available ? forecast.marks.find((m) => Math.abs(m.maxDepthM - v.predictedDepthM) < 0.005) : undefined;
+  const peak = verifiedMark ?? [...forecast.marks].sort((a, b) => b.maxDepthM - a.maxDepthM)[0];
+
+  /* ① 예측 대 실제 — 예측판이 든 값과 실측값만. 없는 값을 만들지 않는다 */
+  const rows: CaseRow[] = [];
+  const targets: CaseTargetRow[] = [];
+  if (v.available) {
+    const arrivalDelta = Math.round((new Date(v.observedArrivalAt).getTime() - new Date(v.predictedArrivalAt).getTime()) / 60000);
+    rows.push({
+      label: "침수 도달", predicted: clockOf(v.predictedArrivalAt), actual: clockOf(v.observedArrivalAt),
+      error: arrivalDelta === 0 ? "0분" : `${signed(arrivalDelta)}분`,
+      /* 실제가 더 늦으면 예측이 이르게 본 것 = 과대 */
+      direction: arrivalDelta === 0 ? "일치" : arrivalDelta > 0 ? "과대" : "과소",
+    });
+    const depthDelta = Number((v.observedDepthM - v.predictedDepthM).toFixed(2));
+    rows.push({
+      label: "최대 침수심", predicted: `${v.predictedDepthM.toFixed(2)} m`, actual: `${v.observedDepthM.toFixed(2)} m`,
+      error: depthDelta === 0 ? "0 m" : `${signed(depthDelta, 2)} m`,
+      direction: depthDelta === 0 ? "일치" : depthDelta < 0 ? "과대" : "과소",
+    });
+    for (const t of forecast.targets) {
+      const observed = v.observedTargets?.find((o) => o.id === t.id) ?? null;
+      /* 수가 적힌 대상은 수를 한 줄로 올린다 — "영향 건물 12동 / 10동 / −2동".
+         예측판은 2026-09-16부터 수를 적지 않으므로(README §2.3 기준 ③) 이 줄은 실측에만 수가 있는 지난 판본에서만 선다 */
+      const cp = countOfLabel(t.label), ca = observed ? countOfLabel(observed.label) : null;
+      if (cp && ca) {
+        const d = ca.n - cp.n;
+        rows.push({
+          label: t.label.replace(/\s*\d+\S*$/, ""), predicted: `${cp.n}${cp.unit}`, actual: `${ca.n}${ca.unit}`,
+          error: d === 0 ? `0${cp.unit}` : `${signed(d)}${cp.unit}`,
+          direction: d === 0 ? "일치" : d < 0 ? "과대" : "과소",
+        });
+      }
+      targets.push({
+        id: t.id, kind: t.kind, predicted: t.exposure, actual: observed?.exposure ?? null,
+        hit: observed ? observed.exposure === t.exposure : null,
+        byResponse: observed?.exposure === "통제됨" && t.exposure !== "통제됨",
+      });
+    }
+  }
+
+  /* ② 실제 대응 — 성공으로 끝난 조치만. 결정은 그 위에 한 줄 */
+  const approvals = decisionsAt(incidentId, now).filter((d) => d.kind === "대응 승인" && d.status === "승인");
+  const done = actionsAt(incidentId, now).filter((a) => a.status === "성공");
+  const actions: CaseAction[] = [
+    ...approvals.map((d) => ({ at: d.recordedAt, text: `대응안 승인 · ${d.approver}` })),
+    ...done.map((a) => ({ at: a.updatedAt, text: a.detail ?? `${a.kind} · ${a.target}` })),
+  ].sort((x, y) => ms(x.at) - ms(y.at));
+
+  const alternatives = forecastsOf(incidentId, now)
+    .filter((f) => f.forecastId !== forecastId && f.alternativeId !== "baseline")
+    .map((f) => ({ label: ALTERNATIVE_LABEL[f.alternativeId], headline: forecastHeadlineAt(f, now) }));
+
+  return [{
+    caseId: incidentId.replace(/^INC-/, "PC-"),
+    sourceIncidentId: incidentId,
+    incidentTitle: incident.title,
+    hazardLabel: incident.hazardKind,
+    twinFamily: incident.twinFamily,
+    regionLabel: incident.scope.label,
+    baseTime: forecast.basis.baseTime,
+    confirmedAt: closedAt ?? outcome.milestones.at(-1)?.at ?? forecast.basis.generatedAt,
+    forecastId,
+    inputs: forecast.basis.inputs ?? [],
+    modelName: forecast.basis.modelName,
+    modelVersion: forecast.basis.modelVersion,
+    inputQuality: forecast.basis.inputQuality,
+    rows,
+    targets,
+    predictedGeometryId: peak?.extentGeometryId ?? "",
+    actualGeometryId: v.available ? v.observedGeometryId ?? null : null,
+    alternatives,
+    actions,
+    improvements: outcome.improvements,
+    unavailableReason: v.available ? undefined : v.reason,
+  }];
+}
+
+/* ── 디지털트윈 (03 §25 · §26 · 2026-09-16 확정) ─────────────────────────────
+ * 사건의 시간·공간 상태를 탐색하는 분석 공간이다. 진행 중이면 기록 | 지금 | 전망, 종료면 기록 전체(재현)를 훑고,
+ * 필요할 때만 조건을 바꿔 대안을 본다. 진행 중인지 종료인지는 원장이 정한다.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/** 사건의 지금 상태 — 원장에 없으면 준비물의 closedAt 으로 판단한다(과거 사건) */
+export function whatIfStatusOf(c: WhatIfCase, now: Date): WhatIfStatus | null {
+  if (c.closedAt) return "종료";
+  const view = incidentViewAt(c.incidentId, now);
+  if (!view) return null;
+  return isActiveStatus(view.workflowStatus) ? "진행 중" : "종료";
+}
+
+/** 목록 — 지금 시계에 존재하는 사건만. 진행 중 사건은 준비물이 열린 뒤부터. 진행 중이 먼저, 그다음 종료(최근 순) */
+export function whatIfCasesAt(now: Date): { item: WhatIfCase; status: WhatIfStatus }[] {
+  return WHATIF_CASES
+    .map((item) => ({ item, status: whatIfStatusOf(item, now) }))
+    .filter((r): r is { item: WhatIfCase; status: WhatIfStatus } =>
+      r.status !== null && (r.status === "종료" || !r.item.availableFrom || ms(r.item.availableFrom) <= now.getTime()))
+    .sort((a, b) => (a.status === b.status ? ms(b.item.occurredAt) - ms(a.item.occurredAt) : a.status === "진행 중" ? -1 : 1));
+}
+
+/**
+ * 모의훈련의 지난 사건 목록 — 끝난 사건만 (README §2.3 · 03 §26.1 · 2026-09-16).
+ * 진행 중 사건은 여기 서지 않는다. "지금 대응하면?"은 사건 작업공간 전망 탭이 맡는다.
+ * 대표 사건(서항)도 종료된 뒤에 이 목록에 들어온다.
+ */
+export function pastWhatIfCasesAt(now: Date): WhatIfCase[] {
+  return WHATIF_CASES
+    .filter((item) => whatIfStatusOf(item, now) === "종료")
+    .sort((a, b) => ms(b.occurredAt) - ms(a.occurredAt));
+}
+
+export function findWhatIfCase(incidentId: string): WhatIfCase | undefined {
+  return WHATIF_CASES.find((c) => c.incidentId === incidentId);
+}
+
+/** Phase 1 지구 링크(/scr-05/:districtId)가 가리키는 사건 트윈 — 그 지구에 사건 트윈이 없으면 없다(다른 사건으로 바꾸지 않는다 · IA §5.2) */
+export function whatIfCaseOfDistrict(districtId: string): WhatIfCase | undefined {
+  return WHATIF_CASES.find((c) => (c.legacyDistrictId ?? findIncident(c.incidentId)?.legacyDistrictId) === districtId);
+}
+
+/** 사건 진행 — 진행 중 사건은 지금까지만 보인다(아직 일어나지 않은 일은 기록이 아니다) */
+export function whatIfRecordAt(c: WhatIfCase, status: WhatIfStatus, now: Date): RecordEntry[] {
+  return status === "종료" ? c.record : c.record.filter((r) => ms(r.at) <= now.getTime());
+}
+
+/** 시간축의 멈춤 자리 — 지도 상태가 있는 시각. 진행 중은 기록(지금 이전) + 전망(지금 이후), 종료는 기준 재현 전체 */
+export interface WhatIfStop {
+  at: string;
+  kind: "기록" | "전망";
+  forecastId: string;
+}
+export function whatIfStopsAt(c: WhatIfCase, status: WhatIfStatus, now: Date): WhatIfStop[] {
+  const recon = findForecast(c.reconstructionForecastId);
+  if (!recon) return [];
+  if (status === "종료") return recon.marks.map((m) => ({ at: m.validAt, kind: "기록" as const, forecastId: recon.forecastId }));
+  const forecast = c.forecastId ? findForecast(c.forecastId) : undefined;
+  /* 예측판을 지난 구간에 그리지 않는다 — 지금 이전은 기록, 지금 이후는 전망 */
+  const past = recon.marks.filter((m) => ms(m.validAt) <= now.getTime()).map((m) => ({ at: m.validAt, kind: "기록" as const, forecastId: recon.forecastId }));
+  const future = (forecast?.marks ?? []).filter((m) => ms(m.validAt) > now.getTime()).map((m) => ({ at: m.validAt, kind: "전망" as const, forecastId: forecast!.forecastId }));
+  return [...past, ...future];
+}
+
+/** 비교의 기준 판 — 진행 중은 기준 전망, 종료는 기준 재현(실제 대응을 넣어 같은 방식으로 다시 계산한 것) */
+export function whatIfBaselineIdOf(c: WhatIfCase, status: WhatIfStatus): string {
+  return status === "종료" ? c.reconstructionForecastId : c.forecastId ?? c.reconstructionForecastId;
+}
+
+/**
+ * 분석 기준(▲) — 진행 중 사건은 지금이고 옮기지 않는다. 종료 사건은 원장의 판단 시점(decision) 중 고른 것,
+ * 고르지 않았으면 처음 판단할 수 있었던 시점이다. 보던 시각(커서)을 기준으로 삼지 않는다 — 최대 영향 시각에서 대안을 열면 선택지가 전부 닫힌다.
+ */
+export function whatIfBasisOf(c: WhatIfCase, status: WhatIfStatus, now: Date, requested?: string | null): { at: string; label: string } {
+  if (status !== "종료") return { at: now.toISOString(), label: "지금" };
+  const decisions = c.record.filter((r) => r.decision);
+  const hit = requested ? decisions.find((r) => r.at === requested) : undefined;
+  const pick = hit ?? decisions[0] ?? c.record[0];
+  return pick ? { at: pick.at, label: pick.label } : { at: c.occurredAt, label: "사건 발생" };
+}
+
+/** 상황 조건의 판 — 진행 중은 지금부터 갈리는 판 하나, 종료는 분석 기준(▲)에 맞춰 사전 계산한 판. 없으면 그 기준에서 고를 수 없다 */
+export function whatIfSituationForecastId(s: WhatIfSituation, status: WhatIfStatus, basisAt: string | null): string | null {
+  if (status !== "종료") return s.forecastId ?? null;
+  return s.byBasis?.find((b) => basisAt !== null && ms(b.at) === ms(basisAt))?.forecastId ?? null;
+}
+
+/** 상황 판 위에 대응 선택지를 얹은 조합 판 — 없으면 그 조합은 고를 수 없다 */
+export function whatIfComboForecastId(c: WhatIfCase, situationForecastId: string, responseId: string, presetId: string): string | null {
+  return c.combos?.find((x) => x.situationForecastId === situationForecastId && x.responseId === responseId && x.presetId === presetId)?.forecastId ?? null;
+}
+
+/**
+ * 분석 기준보다 이른 선택지는 고를 수 없다 — 그 시각에 서서 "20분 일찍 했다면"을 물어도 이미 지난 일이다.
+ * 시점을 바꾸는 대응에만 쓴다. 범위·수준을 바꾸는 선택지는 시각이 같다.
+ */
+export function whatIfPresetPassed(basisAt: string, preset: WhatIfPreset): boolean {
+  return ms(preset.at) < ms(basisAt);
+}
+
+/**
+ * 그 시각의 상태 줄. 과거 사건은 준비물의 복원값(그 시각 이전 마지막 것), 진행 중 사건은 원장에서 그 시각의 마지막 관측·시설 상태를 읽는다.
+ * 네 줄까지 — 강우 · 수위 · 시설. 무엇을 보이는지는 사건 주체가 정한다.
+ */
+export function whatIfStateRowsAt(c: WhatIfCase, atIso: string): { at: string; rows: { label: string; value: string }[] } {
+  if (c.stateByTime?.length) {
+    const sorted = [...c.stateByTime].sort((a, b) => ms(a.at) - ms(b.at));
+    const hit = [...sorted].reverse().find((s) => ms(s.at) <= ms(atIso)) ?? sorted[0];
+    return { at: hit.at, rows: hit.rows };
+  }
+  const incident = findIncident(c.incidentId);
+  if (!incident) return { at: atIso, rows: [] };
+  const at = new Date(atIso);
+  const rows: { label: string; value: string }[] = [];
+  for (const id of incident.correlationKeys) {
+    const series = observationSeriesAt(id, at);
+    const last = series[series.length - 1];
+    if (last) {
+      rows.push({ label: subjectLabelOf(id), value: `${last.value} ${last.unit}` });
+      continue;
+    }
+    const fac = facilityStateOf(id, at);
+    if (fac && fac.engaged) rows.push({ label: subjectLabelOf(id), value: fac.label });
+  }
+  return { at: atIso, rows: rows.slice(0, 4) };
+}
+
+/** 주체 이름 — 주체 공간 표(SUBJECT_LOCATION)의 이름 */
+function subjectLabelOf(subjectId: string): string {
+  return SUBJECT_LOCATION[subjectId]?.label ?? subjectId;
+}
+
+
+/* ── 모의훈련 (03 §26 · 2026-09-16 v2) ──────────────────────────────────
+ * 화면은 여기 함수만 부른다. 사건 fixture 를 직접 뒤지지 않는다.
+ * ───────────────────────────────────────────────────────────────────── */
+
+/** 훈련할 수 있는 사건 — `training` 이 있는 종료 사건. 없는 사건도 목록에는 서고 이유를 밝힌다 */
+export function trainingCasesAt(now: Date): { c: WhatIfCase; ready: boolean; core: WhatIfResponse | null }[] {
+  return pastWhatIfCasesAt(now).map((c) => ({
+    c,
+    ready: Boolean(c.training),
+    /* 그 유형의 핵심 판단 = 현상 대응. 없으면 훈련 시나리오를 만들 수 없다(03 §26.3) */
+    core: c.responses.find((r) => r.kind === "현상") ?? null,
+  }));
+}
+
+/** 그 정지점에서 고를 수 있는 조치 — 아직 안 했고, 그 시각 선택지가 있는 규정 */
+export function trainingSopsAt(c: WhatIfCase, at: string, acts: Record<string, string>): { sop: WhatIfSopItem; response: WhatIfResponse | null; preset: WhatIfPreset | null; can: boolean }[] {
+  const ids = c.training?.firedSopIds ?? [];
+  return ids
+    .map((id) => c.sop?.find((s) => s.id === id))
+    .filter((s): s is WhatIfSopItem => Boolean(s))
+    .map((sop) => {
+      const response = c.responses.find((r) => r.responseId === sop.responseId) ?? null;
+      /* 그 시각에 고를 수 있나.
+         결과를 가르는 조치(resultSopIds)는 **조합 판이 정본이다** — 판이 있어야 결과를 낼 수 있다.
+         결과를 안 가르는 조치(창원천 S1 둔치 통제)는 판이 없어도 **판단 국면이면 언제든 실행**한다.
+         발동했는데 실행할 방법이 없으면 "규정 3건 발동"과 화면이 어긋난다(2026-09-16 사용자). */
+      const gates = c.training?.resultSopIds ?? [];
+      const can = gates.includes(sop.id)
+        ? (c.training?.combos ?? []).some((x) => x.acts[sop.id] === at)
+        : true;
+      return { sop, response, preset: null as WhatIfPreset | null, can };
+    })
+    /* 이번 정지점에 실행한 것은 남긴다(되돌릴 수 있게). 앞서 확정한 것은 뺀다 */
+    .filter(({ sop, can }) => (acts[sop.id] ? acts[sop.id] === at : can))
+    /* 핵심(현상 대응)이 위로 */
+    .sort((a, b) => Number(b.response?.kind === "현상") - Number(a.response?.kind === "현상"));
+}
+
+/**
+ * 내 조치가 만든 판과 비교의 기준 판.
+ * 기준은 **같은 조건에서 실제와 같은 시각에 했을 때**다(03 §26.7). 조건과 조치를 동시에 바꾼 비교를 하지 않는다.
+ */
+export function trainingResultOf(c: WhatIfCase, conditionStepId: string, acts: Record<string, string>): { mine: Forecast | null; base: Forecast | null } {
+  const t = c.training;
+  if (!t) return { mine: null, base: null };
+  /* 결과를 가르는 조치만 조합 키가 된다 */
+  const keys = t.resultSopIds;
+  const same = (a: Record<string, string>) =>
+    keys.every((k) => (a[k] ?? null) === (acts[k] ?? null));
+  const hit = t.combos.find((x) => x.conditionStepId === conditionStepId && same(x.acts));
+  const baseHit = t.combos.find((x) => x.conditionStepId === conditionStepId && keys.every((k) => !x.acts[k]));
+  return {
+    mine: hit ? findForecast(hit.forecastId) ?? null : null,
+    base: baseHit ? findForecast(baseHit.forecastId) ?? null : null,
+  };
 }

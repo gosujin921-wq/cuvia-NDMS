@@ -252,19 +252,19 @@ def mermaid_state():
     required = {
         ("후보", "확인중"), ("후보", "오탐"), ("후보·확인중", "병합됨"),
         ("확인중", "대응중"), ("확인중", "오탐"),
-        ("대응중", "대응중 (국면 통제)"), ("대응중 (통제)", "종료"), ("종료", "확인중 또는 대응중"),
+        ("대응중", "대응중 (국면 안정)"), ("대응중 (안정)", "종료"), ("대응중 (안정)", "대응중"), ("종료", "확인중 또는 대응중"),
     }
     actual = {(cur, nxt) for cur, _, nxt, _ in rows}
     if actual != required:
         raise SystemExit("[01_이벤트·사건모델.md] §7.4 전환 행이 바뀌었다. overview 상태도를 다시 검토해야 한다.")
 
-    # 처리상태 다섯(후보·확인중·대응중·종료·오탐) + 예외 병합됨. 통제는 대응중 안의 국면 (2026-09-14)
+    # 처리상태 다섯(후보·확인중·대응중·종료·오탐) + 예외 병합됨. 안정은 대응중 안의 국면 (2026-09-14, 이름은 2026-09-16 통제 → 안정)
     primary = "\n".join([
         "flowchart TD",
         '  START((시작)) --> CAND["후보"]',
         '  CAND -->|담당자가 열어 검토 인수| REVIEW["확인중"]',
         '  REVIEW -->|실제 사건 판단 · 대응 시작<br/><small>자동 조치 즉시 · 승인 항목 대기</small>| RESPONDING["대응중"]',
-        '  RESPONDING -->|확대 정지·감시 전환| CONTROLLED["대응중 · 통제 국면"]',
+        '  RESPONDING -->|확대 정지·감시 전환| CONTROLLED["대응중 · 안정 국면"]',
         '  CONTROLLED -->|종료 조건·잔여사항 정리| CLOSED["종료"]',
     ])
     exceptions = "\n".join([
@@ -278,6 +278,8 @@ def mermaid_state():
         '  CLOSED["종료"] -->|같은 원인 지속·위험 징후 재발| REOPEN{"재개"}',
         '  REOPEN -->|확인중으로 재개| REVIEW["확인중"]',
         '  REOPEN -->|대응중으로 재개| RESPONDING["대응중"]',
+        # 안정 중 위험 재상승 (2026-09-16). 들어가는 것은 담당자, 풀리는 것은 시스템
+        '  STABLE["대응중 · 안정 국면"] -->|새 이벤트로 위험등급 상향<br/><small>자동 해제 · 담당자 알림</small>| RESPONDING',
     ])
     return primary, exceptions, (header, rows)
 
@@ -341,16 +343,17 @@ def mermaid_ia():
         out.append("  " + node(rid).strip())
     out += [
         "    IA_02 -->|예측 이벤트 선택| IA_03",
-        "    IA_03 -->|이 전망으로 대응 검토| IA_04",
+        "    IA_03 -->|이 전망으로 조치안 갱신| IA_04",
         "    IA_02 -.->|긴급 대응| IA_04",
         "  end",
         node("IA-05"),
-        node("IA-T01", "round"),
+        node("IA-07", "round"),
         node("IA-G01", "round"),
         node("IA-A01", "round"),
         "  IA_01 -->|사건·후보 선택| IA_02",
         "  IA_04 -->|결과·종료| IA_05",
-        "  IA_05 -.->|D8 훈련 후보| IA_T01",
+        "  IA_05 -->|종료 사건| IA_07",
+        "  IA_07 -.-|같은 트윈 부품| IA_03",
         "  IA_G01 -.- IA_02",
         "  IA_A01 -.- IA_01",
     ]
@@ -470,19 +473,19 @@ _, ia17 = section("IA", "17")
 _, ia20 = section("IA", "20")
 ia_mm, (ih, irows) = mermaid_ia()
 space_blocks = []
-for key, label in (("6", "IA-01 종합상황"), ("7", "IA-02 사건 작업공간"), ("8", "IA-03 트윈 비교"), ("9", "IA-04 대응·실행"), ("10", "IA-05 기록·검증"), ("11", "IA-G01 공통 AI 보조"), ("12", "IA-A01 운영 관리")):
+for key, label in (("6", "IA-01 종합상황"), ("7", "IA-02 사건 작업공간"), ("8", "IA-03 전망 탭 · 기준과 대안"), ("9", "IA-04 대응·실행"), ("10", "IA-05 기록·검증"), ("11", "IA-G01 공통 AI 보조"), ("12", "IA-A01 운영 관리")):
     t, b = section("IA", key)
     space_blocks.append(details(t, render_md(b, skip_headings=False)))
 parts.append(sec_html("ia", "4", "업무 공간과 화면 관계", (
     mermaid_block(ia_mm, "상시 메뉴, 사건 내부 화면 모드와 팝업을 구분한 IA §5 흐름")
     + '<p>SCR-02의 지도·관련 이벤트·판단·전망·대응 집중 팝업 배치는 ' + src("04", "2") + '에서 확인한다.</p>'
-    + '<p>디지털트윈의 유형별 장면·광역 인셋·표현 부품과 메뉴의 조건 세트·훈련은 ' + src("03", "22") + '에서 확인한다.</p>'
+    + '<p>디지털트윈의 유형별 장면·광역 인셋·표현 부품은 ' + src("03", "22") + ', 모의훈련(IA-07)의 시나리오·비교·개선 항목은 ' + src("03", "26") + '에서 확인한다.</p>'
     + render_table(ih, irows, "wide")
     + details("전체 메뉴·화면 구조 (IA §4)", render_md(ia4))
     + details("라우트 계약·전환·예외 처리 (IA §5.2)", render_md(subsection(ia5, "5.2 Phase 2 라우트 계약"), skip_headings=False))
     + details("화면 간 유지할 사건 맥락", render_md(ia14))
     + details("공통 정보 객체", render_md(ia15))
-    + details("D8 → 대응 모의훈련 전달 계약 (IA §13.1)", render_md(ia131))
+    + details("D8 → 기록·검증 예측 케이스 계약 (IA §13.1)", render_md(ia131))
     + "<h3>업무 공간별 상세</h3>" + "".join(space_blocks)
     + details("Phase 1 화면 초기 판정 (IA §17)", render_md(ia17))
     + details("확정 전 확인할 사항 (IA §20)", render_md(ia20))
@@ -507,7 +510,7 @@ parts.append(sec_html("twin", "5", "유형별 디지털트윈", (
     + mermaid_block(hz_mm, "재난별로 주 유형군을 먼저 읽고, 점선의 결합 가능 유형군을 확인한다. 03 §13")
     + "<h3>복합재난</h3>" + render_md(t14)
     + "<h3>준비도</h3>" + render_md(t15)
-    + "<h3>디지털트윈 메뉴의 유형별 조건 기준안</h3>" + render_md(subsection(t16, "디지털트윈 메뉴의 유형별 조건 기준안 (2026-09-15)"))
+    + "<h3>모의훈련의 유형별 조건 기준안</h3>" + render_md(subsection(t16, "모의훈련의 유형별 조건 기준안 (2026-09-15 · 2026-09-16 모의훈련으로 고침)"))
     + "<h3>IA에서의 역할</h3>" + render_md(t17)
     + "<h3>유형군별 계약</h3>" + "".join(type_blocks)
 ), [("03", "2"), ("03", "5"), ("03", "13"), ("03", "14"), ("03", "15"), ("03", "16")]))

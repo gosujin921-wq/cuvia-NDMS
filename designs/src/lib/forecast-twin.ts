@@ -3,7 +3,7 @@
  *
  * Phase 2 Forecast 는 유효시각 눈금(marks)과 산정 근거(basis)를 든다. 트윈 카드 두 벌
  * (TimelinePanel · AnalysisBasisCard)은 Phase 1 의 Timeline · AnalysisBasis 모양을 받으므로
- * 여기서 한 번만 옮긴다. 사건 작업공간의 전망 레일(scr-02)과 대응 모의훈련(scr-05)이 같은
+ * 여기서 한 번만 옮긴다. 사건 작업공간의 전망 레일(scr-02)과 디지털트윈(scr-05)이 같은
  * 함수를 쓴다 — 두 화면이 각자 옮기면 눈금 이름·근거 항이 갈린다.
  *
  * ★ 눈금 사이 값은 만들지 않는다(IA §8). 판단에 쓰는 값은 눈금값이다.
@@ -32,8 +32,8 @@ export function formatOffsetMinutes(minutes: number): string {
 }
 
 /**
- * 예측판의 시간축. 첫 눈금은 `origin`(현재 또는 훈련 기준시각), 나머지는 예측판 유효시각이다.
- * 눈금 이름은 `labelFrom`(기본 예측판 기준시각, 훈련은 훈련 기준시각)에서의 경과다.
+ * 예측판의 시간축. 첫 눈금은 `origin`(현재 또는 예측 기준시각), 나머지는 예측판 유효시각이다.
+ * 눈금 이름은 `labelFrom`(기본 예측판 기준시각)에서의 경과다.
  */
 export function forecastTimelineOf(forecast: Forecast, origin: Date, originLabel = "현재", labelFrom: string | Date = forecast.basis.baseTime): Timeline {
   const marks: TimeMark[] = [

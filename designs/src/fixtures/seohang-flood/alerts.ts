@@ -12,7 +12,7 @@ import { FORECAST_BASE_ID, FORECAST_BASE_2_ID, FORECAST_DRAIN_ID, FORECAST_ROAD_
 
 export const ALERTS: AttentionAlert[] = [
   {
-    alertId: "AL-01", kind: "공식 상황", demoRole: "사전 감시 알림", grade: "주의", status: "생성", createdAt: t("16:40"), updatedAt: t("16:40"),
+    alertId: "AL-01", title: "호우경보 · 배수취약 구역", kind: "공식 상황", demoRole: "사전 감시 알림", grade: "주의", status: "생성", createdAt: t("16:40"), updatedAt: t("16:40"),
     target: BASIN_SCOPE, task: "감시 우선구역 · 카메라 2 · 센서 3 우선 확인",
     evidenceEventIds: ["EV-E1-01", "EV-E2-02", "EV-E3A-01"], forecastIds: [],
     reason: "호우경보가 내려졌고 예측강우가 올라가는데, 만조(18:24)가 강우 정점과 겹치는 배수취약 권역이라 먼저 봐야 한다",
@@ -25,7 +25,7 @@ export const ALERTS: AttentionAlert[] = [
     incidentId: INCIDENT_ID, createdIncident: false,
   },
   {
-    alertId: "AL-02", kind: "복합 징후", demoRole: "복합 징후 알림", grade: "경계", status: "생성", createdAt: t("17:13"), updatedAt: t("17:13"),
+    alertId: "AL-02", title: "관로·도로 수위 동반 상승", kind: "복합 징후", demoRole: "복합 징후 알림", grade: "경계", status: "생성", createdAt: t("17:13"), updatedAt: t("17:13"),
     target: BASIN_SCOPE, task: "사건 후보 검토 인수",
     evidenceEventIds: ["EV-E4B-01", "EV-E5A-03", "EV-E6A-01"], forecastIds: [FORECAST_BASE_ID],
     reason: "같은 배수권역에서 15분 안에 관로가 급상승하고 도로수위가 따라 올랐다. 침수가 60분 안에 도달할 전망이고 펌프 한 대가 서 있어 등급을 올렸다",
@@ -38,7 +38,7 @@ export const ALERTS: AttentionAlert[] = [
     incidentId: INCIDENT_ID, createdIncident: true, assignee: "김상황", acknowledgedAt: t("17:26"),
   },
   {
-    alertId: "AL-03", kind: "복합 징후", demoRole: "영상 교차확인 알림", grade: "경계", status: "생성", createdAt: t("17:24"), updatedAt: t("17:24"),
+    alertId: "AL-03", title: "영상 물고임 감지", kind: "복합 징후", demoRole: "영상 교차확인 알림", grade: "경계", status: "생성", createdAt: t("17:24"), updatedAt: t("17:24"),
     target: SUBJECT_LOCATION[SUBJECTS.cctvPump], task: "실제 영상 확인 · 확인/오탐/추가 확인 결정",
     evidenceEventIds: ["EV-E7-01", "EV-E4B-01", "EV-E5B-01"], forecastIds: [FORECAST_BASE_ID],
     reason: "같은 카메라 시야에서 물고임이 보여 관로·도로 징후와 맞아떨어진다",
@@ -51,7 +51,7 @@ export const ALERTS: AttentionAlert[] = [
     incidentId: INCIDENT_ID, createdIncident: false, assignee: "김상황", acknowledgedAt: t("17:30"),
   },
   {
-    alertId: "AL-04", kind: "예측 영향", demoRole: "예측 영향 알림", grade: "경계", status: "생성", createdAt: t("17:13"), updatedAt: t("17:13"),
+    alertId: "AL-04", title: "도로 침수 도달 전망", kind: "예측 영향", demoRole: "예측 영향 알림", grade: "경계", status: "생성", createdAt: t("17:13"), updatedAt: t("17:13"),
     target: { kind: "회랑", displayAnchor: [128.5663, 35.1961], affectedGeometryId: "GEO-ROAD-COAST", label: "해안도로 저지대 구간" }, task: "예측 유효시각·영향 공간 검토 · [디지털트윈 보기]",
     evidenceEventIds: ["EV-E8-01"], forecastIds: [FORECAST_BASE_ID, FORECAST_DRAIN_ID, FORECAST_ROAD_ID],
     reason: "18:00에 최대 0.32 m까지 잠기고 해안도로에는 17:52에 닿을 전망이라 검토 기준을 넘었다",
@@ -64,7 +64,7 @@ export const ALERTS: AttentionAlert[] = [
     incidentId: INCIDENT_ID, createdIncident: false,
   },
   {
-    alertId: "AL-05", kind: "품질·연계", demoRole: "품질·대체 확인 알림", grade: "주의", status: "생성", createdAt: t("17:16"), updatedAt: t("17:16"),
+    alertId: "AL-05", title: "강우계 수신 지연", kind: "품질·연계", demoRole: "품질·대체 확인 알림", grade: "주의", status: "생성", createdAt: t("17:16"), updatedAt: t("17:16"),
     target: SUBJECT_LOCATION[SUBJECTS.rainGauge], task: "강우 추세는 예측강우로 대체 확인",
     evidenceEventIds: ["EV-E10-01"], forecastIds: [],
     reason: "강우계가 6분째 안 들어와 강우 추세를 볼 수 없다. 예측강우로 대신 확인한다",

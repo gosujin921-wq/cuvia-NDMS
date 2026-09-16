@@ -30,12 +30,30 @@ import { CHANNELS, type DispatchRecord } from "./dispatch";
 export interface ReportSection {
   id: string;
   title: string;
-  /** 이름표 있는 값들. 없으면 비운다 */
-  rows: { label: string; value: string }[];
-  /** 줄글 한 문단. 없으면 비운다 */
+  /** 절 제목 옆의 회색 한마디 — "26년 07월(전월) 대비" 같은 것 */
   note?: string;
+  /** 이름표 있는 값들(항목표). 없으면 비운다 */
+  rows: { label: string; value: string }[];
+  /** 칸이 셋 이상인 표. 항목표로 접으면 읽히지 않는 비교·집계가 여기 선다 */
+  table?: ReportTable;
+  /** 절 끝의 각주 한 문단. 없으면 비운다 */
+  footnote?: string;
+  /** 절 안의 그림 한 장 — 분석 보고서의 "지도 결과" */
+  figure?: { src: string; alt: string; caption?: string };
   /** 아직 일어나지 않아 비어 있는 절 */
   pending?: boolean;
+}
+
+/** 여러 칸 표 — 머리글과 줄. 값은 이미 문자열이다(문서는 계산하지 않는다) */
+export interface ReportTable {
+  head: string[];
+  rows: string[][];
+  /** 칸별 정렬. 안 주면 전부 왼쪽 (양식 규칙: 표는 항상 좌측 정렬) */
+  align?: ("left" | "right")[];
+  /** 칸별 너비. 값 칸을 고정해야 첫 칸이 남는 폭을 다 먹고 숫자가 한쪽에 몰리지 않는다 */
+  widths?: (string | undefined)[];
+  /** 마지막 줄이 합계인가 — 굵게, 아래선 없이 */
+  summary?: boolean;
 }
 
 export interface Report {
@@ -126,7 +144,7 @@ export function reportOf(event: AlertEvent, ctx: TimelineContext): Report {
       label: d.name,
       value: deviceLine(d, peakTime, event.districtId),
     })),
-    note: `최초 확인 ${hhmm(HERO_CONFIRMED_AT)}. 값은 최고 단계 시점(${hhmm(peakTime)}) 기준이고, 계측이 ${levelSpec(view.level).label} 구간에 들었다.`,
+    footnote: `최초 확인 ${hhmm(HERO_CONFIRMED_AT)}. 값은 최고 단계 시점(${hhmm(peakTime)}) 기준이고, 계측이 ${levelSpec(view.level).label} 구간에 들었다.`,
   });
 
   /* ── 2. 판단근거 ───────────────────────────────── */
@@ -153,7 +171,7 @@ export function reportOf(event: AlertEvent, ctx: TimelineContext): Report {
     id: "judge",
     title: "판단근거",
     rows: judge,
-    note: risk.basis ?? risk.impactBasis ?? undefined,
+    footnote: risk.basis ?? risk.impactBasis ?? undefined,
   });
 
   /* ── 3. 영향 ──────────────────────────────────── */
@@ -172,7 +190,7 @@ export function reportOf(event: AlertEvent, ctx: TimelineContext): Report {
         ]
       : [],
     pending: !impact,
-    note: impact ? undefined : "이 지구·유형의 침수영향표가 아직 등재되지 않았다.",
+    footnote: impact ? undefined : "이 지구·유형의 침수영향표가 아직 등재되지 않았다.",
   });
 
   /* ── 4. 조치사항 ───────────────────────────────── */
@@ -197,7 +215,7 @@ export function reportOf(event: AlertEvent, ctx: TimelineContext): Report {
     title: "조치사항",
     rows: actionRows,
     pending: executed.length === 0,
-    note: executed.length === 0 ? "SOP 가 아직 실행되지 않았다." : undefined,
+    footnote: executed.length === 0 ? "SOP 가 아직 실행되지 않았다." : undefined,
   });
 
   /* ── 5. 전파 ──────────────────────────────────── */
@@ -212,7 +230,7 @@ export function reportOf(event: AlertEvent, ctx: TimelineContext): Report {
         .join(" · ")} · ${d.recipients}명`,
     })),
     pending: sent.length === 0,
-    note: sent.length === 0 ? "전파 내역이 없다." : undefined,
+    footnote: sent.length === 0 ? "전파 내역이 없다." : undefined,
   });
 
   /* ── 6. 특이사항 ───────────────────────────────── */
@@ -223,7 +241,7 @@ export function reportOf(event: AlertEvent, ctx: TimelineContext): Report {
     title: "특이사항",
     rows: odd.map((e) => ({ label: hhmm(e.at), value: `${e.label}${e.detail ? ` · ${e.detail}` : ""}` })),
     pending: odd.length === 0,
-    note: odd.length === 0 ? "특이사항 없음." : undefined,
+    footnote: odd.length === 0 ? "특이사항 없음." : undefined,
   });
 
   return {

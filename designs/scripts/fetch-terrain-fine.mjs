@@ -7,7 +7,7 @@
  * 방식은 fetch-terrain-grid.mjs 와 같다(크로미엄 canvas 로 WebP 픽셀 읽기 · dev 서버가 출처).
  *
  * 준비: dev 서버(:5400)  실행: designs/ 에서 `node scripts/fetch-terrain-fine.mjs`
- * 산출: public/weather/terrain-fine.json — patches.seohang (TerrainPatch 와 같은 모양)
+ * 산출: public/weather/terrain-fine.json — patches.seohang · patches.changwoncheon · cw-st-* (TerrainPatch 와 같은 모양)
  * ───────────────────────────────────────────── */
 
 import path from "node:path";
@@ -20,7 +20,19 @@ const KEY = "WPWmpNf4y5nzKDA7mQXe";
 const ZOOM = 14; // terrain-rgb-v2 최대 줌. 512px 타일 ≈ 7.8m/px
 const RADIUS_M = 800;
 const STEP_M = 10;
-const PATCHES = [{ id: "seohang", lng: 128.567, lat: 35.197 }];
+/**
+ * 패치 — 중심과 반경(m). 반경을 안 주면 RADIUS_M.
+ *   seohang        A 도시침수 · 서항 배수권역
+ *   changwoncheon  B 하천범람 · 창원천 하류(산단 구간 → 남천 합류 → 마산만 하구). 범람면을 여기서 굽는다
+ *   cw-st-*        종단도 관측소 세 곳의 바닥 표고 — 한 칸짜리. 하류 패치 밖이라 따로 뜬다
+ */
+const PATCHES = [
+  { id: "seohang", lng: 128.567, lat: 35.197 },
+  { id: "changwoncheon", lng: 128.621, lat: 35.2185, radiusM: 1700 },
+  { id: "cw-st-a", lng: 128.6660, lat: 35.2458, radiusM: 0 },
+  { id: "cw-st-b", lng: 128.6493, lat: 35.2390, radiusM: 0 },
+  { id: "cw-st-c", lng: 128.6362, lat: 35.2236, radiusM: 0 },
+];
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "public", "weather", "terrain-fine.json");
@@ -63,7 +75,7 @@ const result = await page.evaluate(async ({ patches, key, zoom, radiusM, stepM }
   for (const p of patches) {
     const latStep = stepM / M_PER_DEG_LAT;
     const lngStep = stepM / (M_PER_DEG_LAT * Math.cos((p.lat * Math.PI) / 180));
-    const half = Math.ceil(radiusM / stepM);
+    const half = Math.ceil((p.radiusM ?? radiusM) / stepM);
     const n = half * 2 + 1;
     const west = p.lng - half * lngStep, south = p.lat - half * latStep;
     const elev = new Array(n * n);

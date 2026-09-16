@@ -2,7 +2,7 @@
  * 내비게이션 구조 — 정본: docs/고도화/CUVIA_NDMS_기능및정보구조도.md §4 · §5.2
  *
  * 메뉴는 Phase 1 다섯 개 그대로다. IA-01 종합상황 = /scr-01, IA-02·04 사건 작업공간과 대응 패널 = /scr-02/:districtId,
- * 디지털트윈(사건 없이 여는 트윈 + IA-T01 훈련) = /scr-05, IA-05 기록·검증 = /scr-04 · /scr-07. 대응은 별도 URL 없이 우측 패널이고
+ * IA-07 모의훈련 = /scr-05, IA-05 이력 = /scr-07, IA-06 통계 = /scr-04. 대응은 별도 URL 없이 우측 패널이고
  * 사건의 트윈(IA-03)은 /scr-02 안의 예측 모드(query panel=twin)다(IA §5.2 · §8).
  *
  * 화면을 추가하거나 메뉴를 바꿀 때는 IA 문서를 먼저 고친다.
@@ -22,6 +22,12 @@ export interface NavItem {
    * 지도·3D 가 배경인 화면이 여기 해당하고, 화면 요소는 페이지가 오버레이로 얹는다.
    */
   fullBleed?: boolean;
+  /**
+   * 탭 줄이 머리를 겸하는 화면 — 상단바 없이 페이지 첫 줄의 탭 줄(components/SubNav)이 머리다.
+   * METIS 문법이다(platform_web apps/metis router `topbar={null}` · system-monitoring-layout).
+   * fullBleed 와 달리 지도가 배경이 아니라 목록·지표 화면이고, 질의 버튼은 화면 우하단에 선다.
+   */
+  subNav?: boolean;
   /**
    * 하단 중앙 도크가 서는 화면 — 현장영상 스트립(SCR-02 · 03 §2). 좌우 레일 사이 바닥을
    * 도크가 쓰므로, 화면 위에 떠 있는 질의 버튼이 그 자리를 비켜 선다(AgentFab).
@@ -57,28 +63,30 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     id: "statistics",
-    scr: "SCR-04",
-    label: "통계·분석",
-    short: "통계",
+    /* IA-06 통계 — 탭 없는 한 화면이라 상단바가 머리다. 사건 이력·예측 검증은 이력으로 옮겼다(2026-09-16) */
+    scr: "IA-06",
+    label: "통계",
     route: "/scr-04",
     icon: "mdi:chart-line",
   },
   {
     id: "twin",
-    scr: "SCR-05",
-    /* 디지털트윈 — 사건 없이 유형·지역·조건을 골라 트윈을 열고, 훈련(결정 기록)은 그 안의 행동이다 (2026-09-15 결정).
-       IA §4·03 §17 은 메뉴를 "대응 모의훈련"으로 적었다 — 정본 두 줄 갱신 대상 */
-    label: "디지털트윈",
+    scr: "IA-07",
+    /* 모의훈련 — 지난 사건으로 시나리오를 만들어 조건·대응을 바꿔 돌려 보고 개선 항목을 남긴다(README §2.3 · 03 §26 · 2026-09-16).
+       진행 중 사건의 대안 비교는 재난관제의 전망 탭이 맡는다 */
+    label: "모의훈련",
     route: "/scr-05",
-    icon: "mdi:cube-scan",
+    icon: "mdi:clipboard-play-outline",
     fullBleed: true,
   },
   {
-    id: "report",
-    scr: "SCR-07",
-    label: "보고서",
+    id: "history",
+    /* IA-05 이력 — 보고서 메뉴를 바꿨다(2026-09-16). [사건] · [보고서] 탭 줄이 머리다(디지털트윈과 같은 모양) */
+    scr: "IA-05",
+    label: "이력",
     route: "/scr-07",
-    icon: "mdi:file-document-outline",
+    icon: "mdi:history",
+    subNav: true,
   },
   { id: "ai-search", scr: "SCR-06", label: "AI 검색", route: "/scr-06", icon: "mdi:creation-outline", hidden: true },
 ];

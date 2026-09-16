@@ -75,7 +75,9 @@ export const CANNED_QUERIES: CannedQuery[] = [
     text: "최근 한 달 가장 위험했던 지구는?",
     districtId: "seohang",
     route: "/scr-04",
-    routeLabel: "통계·분석",
+    /* 메뉴 이름을 `통계`로 바꿨다(IA-06 · 2026-09-16).
+       TODO(phase2): 통계는 이제 사건 원장(Phase 2)을 센다. 이 답의 수치(Phase 1 한 달 원장)와 화면 수치가 다르다. 답을 다시 쓸 것 */
+    routeLabel: "통계",
     keywords: ["위험", "최근", "한 달", "한달", "통계", "이력", "되풀이"],
   },
   {
@@ -94,8 +96,9 @@ export const CANNED_QUERIES: CannedQuery[] = [
     kind: "dome",
     text: "수온이 왜 이렇게 높아?",
     districtId: "seohang",
+    /* TODO(phase2): 통계에서 열돔·수온 판을 걷었다(IA §10.2 · 2026-09-16). 이 질의가 설 자리를 다시 정할 것 */
     route: "/scr-04",
-    routeLabel: "통계·분석",
+    routeLabel: "통계",
     keywords: ["수온", "폭염", "열돔", "더워", "더운", "뜨거", "기온"],
     /* 답이 흐르는 동안 왼쪽이 디지털트윈 열돔으로 바뀐다 */
     backdrop: "/scr-05?hazard=열돔",

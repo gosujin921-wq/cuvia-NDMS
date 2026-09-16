@@ -31,6 +31,8 @@ export interface AlertUpdate {
 
 export interface AttentionAlert {
   alertId: string;
+  /** 무슨 일이 일어났나. 목록 카드의 제목이다. 장소는 target 이 들므로 되풀이하지 않는다 */
+  title: string;
   kind: AlertKind;
   demoRole: AlertDemoRole;
   grade: AlertGrade;

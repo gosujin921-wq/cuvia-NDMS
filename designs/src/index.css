@@ -185,3 +185,39 @@ body {
     animation: none;
   }
 }
+
+/* ── 조건 슬라이더 손잡이 (scr-05 모의훈련 · 03 §26.6) ──────────────────
+ * 네이티브 range 의 트랙은 숨기고(위 레이어가 단계 눈금을 그린다) 손잡이만 남긴다.
+ * 판이 있는 값에만 멈추므로 step=1 이고 사이 값이 없다.
+ * ───────────────────────────────────────────────────────────────── */
+.slider-range::-webkit-slider-runnable-track {
+  height: 1rem;
+  background: transparent;
+}
+.slider-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: var(--color-primary);
+  border: 2px solid var(--color-surface);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.4);
+  cursor: pointer;
+}
+.slider-range::-moz-range-track {
+  height: 1rem;
+  background: transparent;
+}
+.slider-range::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: var(--color-primary);
+  border: 2px solid var(--color-surface);
+  cursor: pointer;
+}
+.slider-range:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-primary-text);
+  outline-offset: 2px;
+}

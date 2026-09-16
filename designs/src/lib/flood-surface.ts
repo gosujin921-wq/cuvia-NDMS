@@ -7,6 +7,7 @@
  *
  * 수위는 눈금마다 사전 작성한 시나리오 편집값이다(FLOOD_LEVELS). 화면은 형상을 그릴 뿐 침수심을 계산하지 않는다.
  * Phase 1 의 flood-scene(슬라이더 수위 · 90m 격자 · 연결 무시)과 다른 점은 셋 — 10m 격자, 시드 연결, 바다 제외.
+ * 하천(창원천)은 물길이 통로라 바다 제외 대신 물 칸을 건넌다(throughWaterM). 어느 지형·수위인지는 lib/flood-surfaces 가 찾는다.
  * 색은 영향 면(extentPaint)·범례와 같은 토큰이다. MapLibre 는 CSS 변수를 못 읽어 cssColor 로 푼다.
  * ───────────────────────────────────────────── */
 
@@ -30,6 +31,11 @@ export interface FloodSurfaceSpec {
   level: number;
   seed: [number, number];
   box: [number, number, number, number];
+  /**
+   * 물 칸을 건넌다 — 이 값(m) 아래 칸도 채운다. 하천처럼 물길이 물이 오르는 통로일 때 준다(창원천).
+   * 안 주면 해발 0 이하(바다)는 건너지 않는다(서항 저지대 그릇).
+   */
+  throughWaterM?: number;
 }
 
 /** 욕조 채우기 — 시드에서 4방향으로, 수위 아래·바다 아님·상자 안. 굽기 스크립트와 같은 규칙 */
@@ -58,7 +64,8 @@ function fillCells(patch: TerrainPatch, spec: FloodSurfaceSpec): FeatureCollecti
       const j = jy * nx + jx;
       if (mask[j] || !inBox(jx, jy)) continue;
       const zj = elev[j];
-      if (zj <= 0 || zj >= spec.level) continue;
+      if (zj >= spec.level) continue;
+      if (spec.throughWaterM === undefined && zj <= 0) continue;
       mask[j] = 1;
       stack.push(j);
     }

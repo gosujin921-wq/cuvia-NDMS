@@ -3,12 +3,14 @@
  *
  * 켜진 층만 선다. 예측 침수 범위(침수심) · 해안침수예상도(안전지도 5등급) · 강수(mm/h) · 기온(℃).
  * 색은 각 층이 실제로 칠하는 램프·페인트 함수 그대로 가져온다 — 범례 색을 따로 적으면 두 벌이 된다.
- * 바람은 면이 아니라 입자라 여기 없다.
+ * 좌상단 광역 인셋이 그리는 층(광역 강우 · 풍향장 · 열돔)도 여기 선다(2026-09-16 사용자
+ * "전역지도패널에 강우 또는 열섬 등등이 노출되는거면 범례영역에도 추가해줘"). 인셋도 지도라 눈금이 필요하다.
  * ───────────────────────────────────────────── */
 
 import { useEffect, useState } from "react";
+import { Icon } from "@iconify/react";
 import { GlassPanel } from "@ds";
-import { depthLevel, extentPaint } from "../../lib/map-polygon";
+import { depthLevel, extentPaint, scopePaint, type ExtentTone, type PolygonPaint } from "../../lib/map-polygon";
 import { FLOOD_DEPTH_LEGEND } from "../../lib/safemap";
 import { RAIN_RAMP } from "../../lib/precipitation-layer";
 import { TEMP_RAMP } from "../../lib/temperature-layer";
@@ -22,13 +24,35 @@ export interface MapLegendProps {
   official?: boolean;
   rain?: boolean;
   temp?: boolean;
+  wind?: boolean;
+  /** 사건 범위 링(빨간 점선) */
+  scope?: boolean;
+  /** 영향 범위 — 물 유형은 침수심 줄이 대신하므로 색 하나만 쓰는 유형에서 준다 */
+  extent?: { label: string; tone: ExtentTone } | null;
+  /** 좌상단 광역 인셋이 그리는 층 — 강우 격자 · 풍향장 · 열돔 */
+  inset?: "rain" | "wind" | "globe" | null;
 }
 
-export function MapLegend({ depth, official, rain, temp }: MapLegendProps) {
+/**
+ * 켜진 층은 모두 선다(2026-09-16 사용자 "화면에 나와있는 레이어가 다 범례에 나와야 하지 않나").
+ * 다만 장비 핀·대피 시설은 핀마다 이름표가 붙어 스스로 읽히므로 넣지 않는다 — 범례가 조작판의 복제가 되면 지도를 덮는다.
+ */
+export function MapLegend({ depth, official, rain, temp, wind, scope, extent, inset }: MapLegendProps) {
   const tempRange = useTemperatureRange(Boolean(temp));
-  if (!depth && !official && !rain && !temp) return null;
+  if (!depth && !official && !rain && !temp && !wind && !scope && !extent && !inset) return null;
   return (
     <GlassPanel className="pointer-events-auto flex w-full flex-col gap-1.5 px-2.5 py-2" aria-label="면 범례">
+      {/* 이름이 곧 설명이라 문장을 덧붙이지 않는다 — 줄이 접혀 범례가 두 배가 됐다(2026-09-16 사용자 "글줄 정리 좀") */}
+      {scope && (
+        <Row title="사건 범위">
+          <Swatch paint={scopePaint()} dashed />
+        </Row>
+      )}
+      {extent && (
+        <Row title={extent.label}>
+          <Swatch paint={extentPaint(0.45, extent.tone)} dashed />
+        </Row>
+      )}
       {depth && (
         <Row title={depth.label}>
           {DEPTH_STOPS.map((d) => {
@@ -58,20 +82,58 @@ export function MapLegend({ depth, official, rain, temp }: MapLegendProps) {
           <Ramp colors={RAIN_RAMP} from="0.5" to="30 mm/h 이상" />
         </Row>
       )}
+      {/* 광역 인셋 — 메인 지도의 층과 같은 램프를 쓴다. 메인에 같은 층이 켜져 있으면 겹쳐 적지 않는다 */}
+      {inset === "rain" && !rain && (
+        <Row title="광역 강우">
+          <Ramp colors={RAIN_RAMP} from="0.5" to="30 mm/h 이상" />
+        </Row>
+      )}
+      {inset === "wind" && (
+        <Row title="광역 풍향">
+          <span className="flex items-center gap-1.5 text-caption text-foreground-muted">
+            <Icon icon="mdi:arrow-right-thin" className="size-4 text-primary-text" aria-hidden />
+            방향 = 풍향 · 속도 = 풍속
+          </span>
+        </Row>
+      )}
+      {inset === "globe" && (
+        <Row title="열돔">
+          <span className="whitespace-nowrap text-caption text-foreground-muted">붉을수록 상층 기압이 높다</span>
+        </Row>
+      )}
       {temp && (
         <Row title="기온">
           <Ramp colors={TEMP_RAMP} from={tempRange ? `${tempRange.min.toFixed(0)}℃` : "낮음"} to={tempRange ? `${tempRange.max.toFixed(0)}℃` : "높음"} />
+        </Row>
+      )}
+      {wind && (
+        <Row title="바람">
+          <span className="flex items-center gap-1.5 text-caption text-foreground-muted">
+            <Icon icon="mdi:arrow-right-thin" className="size-4 text-primary-text" aria-hidden />
+            방향 = 풍향 · 속도 = 풍속
+          </span>
         </Row>
       )}
     </GlassPanel>
   );
 }
 
+/** 단색 면 견본 — 지도가 칠하는 페인트 그대로 */
+function Swatch({ paint, dashed }: { paint: PolygonPaint; dashed?: boolean }) {
+  return (
+    <span
+      className="inline-block size-3.5 shrink-0 rounded-sm border"
+      style={{ backgroundColor: paint.fill, opacity: Math.min(1, paint.opacity * 2.2), borderColor: paint.line, borderStyle: dashed ? "dashed" : "solid" }}
+      aria-hidden
+    />
+  );
+}
+
 function Row({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-[88px] shrink-0 text-caption font-semibold text-foreground">{title}</span>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">{children}</div>
+      <span className="w-[72px] shrink-0 truncate text-caption font-semibold text-foreground">{title}</span>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2">{children}</div>
     </div>
   );
 }
@@ -79,9 +141,9 @@ function Row({ title, children }: { title: string; children: React.ReactNode }) 
 /** 시퀀셜 램프 — 층이 쓰는 색 배열 그대로 그라데이션 */
 function Ramp({ colors, from, to }: { colors: readonly string[]; from: string; to: string }) {
   return (
-    <span className="flex items-center gap-1.5 font-mono text-caption text-foreground-muted">
+    <span className="flex items-center gap-1.5 whitespace-nowrap font-mono text-caption text-foreground-muted">
       {from}
-      <span className="inline-block h-3 w-20 rounded-sm" style={{ background: `linear-gradient(90deg, ${colors.join(", ")})`, opacity: 0.85 }} aria-hidden />
+      <span className="inline-block h-3 w-14 shrink-0 rounded-sm" style={{ background: `linear-gradient(90deg, ${colors.join(", ")})`, opacity: 0.85 }} aria-hidden />
       {to}
     </span>
   );

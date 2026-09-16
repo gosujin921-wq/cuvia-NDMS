@@ -1,10 +1,10 @@
 /* ─────────────────────────────────────────────
- * 집중 확인 팝업 — 승인·전파문 확인 / 대체조치 / 통제 전환 / 오탐 (IA §9 · 04 §7 W7)
+ * 집중 확인 팝업 — 승인·전파문 확인 / 대체조치 / 상황 안정 전환 / 오탐 (IA §9 · 04 §7 W7)
  *
  * 대응 전체를 여기 두지 않는다 — 검토는 우측 대응 탭이 한다. 이 팝업은 되돌리기 어려운 결정을 담당자가 한 번 더
  * 읽고 확인하는 자리다. 확인 버튼은 행위 동사이고 그 버튼이 곧 엔진 tick 전진이다(호출부). 상태는 여기 없다.
  *
- * 승인은 CAP 문안 전문이 있어 640, 대체조치·통제 전환은 참조 확인창 폭 480 (platform_web control-popup 문법).
+ * 승인은 CAP 문안 전문이 있어 640, 대체조치·안정 전환은 참조 확인창 폭 480 (platform_web control-popup 문법).
  * 딤 규격은 KISA 관제 팝업 원본 값(variant glass · rgba(0,0,0,.55) + blur)을 그대로 쓴다.
  * ───────────────────────────────────────────── */
 
@@ -31,8 +31,8 @@ interface ExecutionPopupProps {
 
 export function ExecutionPopup({ open, request, onClose, onConfirm, incidentTitle, now, approver, message, channels, recipients }: ExecutionPopupProps) {
   const wide = request.kind === "approve";
-  const title = request.kind === "approve" ? (message ? "SOP 승인 · 전파문 확인" : "SOP 승인 · 추가 조치") : request.kind === "fallback" ? `${request.channel} 실패 · 대체조치` : request.kind === "dismiss" ? "오탐으로 닫을까요?" : "통제 상태로 전환할까요?";
-  const verb = request.kind === "approve" ? "승인 · 실행 요청" : request.kind === "fallback" ? "대체조치 기록" : request.kind === "dismiss" ? "오탐으로 닫기" : "통제로 전환";
+  const title = request.kind === "approve" ? (message ? "SOP 승인 · 전파문 확인" : "SOP 승인 · 추가 조치") : request.kind === "fallback" ? `${request.channel} 실패 · 대체조치` : request.kind === "dismiss" ? "오탐으로 닫을까요?" : "상황 안정으로 전환할까요?";
+  const verb = request.kind === "approve" ? "승인 · 실행 요청" : request.kind === "fallback" ? "대체조치 기록" : request.kind === "dismiss" ? "오탐으로 닫기" : "안정으로 전환";
   const verbIcon = request.kind === "approve" ? "mdi:check-decagram-outline" : request.kind === "fallback" ? "mdi:phone-outline" : request.kind === "dismiss" ? "mdi:close-circle-outline" : "mdi:shield-check-outline";
 
   return (
@@ -90,7 +90,7 @@ export function ExecutionPopup({ open, request, onClose, onConfirm, incidentTitl
             </>
           )}
           {request.kind === "control" && (
-            <p className="text-foreground">급격한 확대가 멈추고 조치가 유지되는 감시 상태로 전환합니다. 종료가 아닙니다. 잔여 조치와 확인사항은 그대로 남습니다.</p>
+            <p className="text-foreground">급격한 확대가 멈추고 조치가 유지되는 감시 상태로 전환합니다. 종료가 아닙니다. 잔여 조치와 확인사항은 그대로 남고, 새 이벤트도 계속 사건에 쌓입니다.</p>
           )}
         </div>
 

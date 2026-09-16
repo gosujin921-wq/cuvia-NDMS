@@ -1,12 +1,12 @@
 /* ─────────────────────────────────────────────
  * 판단 탭 액션 바 — 사건 작업공간 우측 레일 바닥 (IA §7 주요 행동 · 04 §2 "다음 행동")
  *
- * 담당자가 내리는 결정은 둘뿐이다 — 오탐이냐 대응이냐 (2026-09-14 확정). 나머지는 팝업 안 승인·통제 전환·종료 검토.
+ * 담당자가 내리는 결정은 둘뿐이다 — 오탐이냐 대응이냐 (2026-09-14 확정). 나머지는 팝업 안 승인·안정 전환·종료 검토.
  * 누를 수 없는 자리는 세우지 않는다. 추가 확인·병합·분리는 I3 예외 경로.
  *   후보     [검토 인수]           보통은 안 보인다 — 후보는 여는 순간 인수돼 확인중이 된다(EarlyWarningPage). 대비용
  *   확인중   [오탐] [사건 대응]    사건 대응 = 대응중 전환 + 대응 팝업. 자동 조치는 그 순간 돌고 승인 항목은 팝업에서 기다린다
- *   대응중   [대응 실행]           팝업에서 승인·결과 확인·통제 전환
- *   대응중·통제 국면  [대응 실행] [종료 검토]
+ *   대응중   [대응 실행]           팝업에서 승인·결과 확인·안정 전환
+ *   대응중·안정 국면  [대응 실행] [종료 검토]
  * 버튼은 상태를 쓰지 않는다 — 엔진 tick 을 옮긴다(CLAUDE.md).
  * ───────────────────────────────────────────── */
 
@@ -44,14 +44,14 @@ const NEXT: Partial<Record<WorkflowStatus, { caption: string; label: string; ico
 export function JudgeActionBar({ status, phase, assessed, approved, failure, resultsArrived, pendingApproval, onTakeReview, onDismiss, onRespond, onOpenResponse, onCloseReview }: JudgeActionBarProps) {
   const next = NEXT[status];
   if (!next) return null;
-  const controlled = status === "대응중" && phase === "통제";
+  const controlled = status === "대응중" && phase === "안정";
   const responding = status === "대응중" && !controlled
     ? !assessed ? "판단 갱신 전입니다. 긴급이면 전망 없이 대응을 엽니다."
       : !approved ? "CUVIA가 채운 SOP를 검토하고 승인합니다."
       : pendingApproval > 0 ? `위험도 상향 · 추가 조치 ${pendingApproval}건 승인이 필요합니다.`
       : failure ? `${failure} 실패 · 대체조치가 필요합니다.`
       : !resultsArrived ? "조치·전파 결과를 기다립니다."
-      : "결과를 확인하고 통제 국면으로 전환합니다."
+      : "결과를 확인하고 상황 안정으로 전환합니다."
     : null;
   const caption = controlled ? "잔여 조치를 감시하고 종료 조건을 확인합니다." : responding ?? next.caption;
   const primary = controlled ? { label: "종료 검토", icon: "mdi:file-check-outline", onClick: onCloseReview } : { label: next.label, icon: next.icon, onClick: status === "후보" ? onTakeReview : status === "확인중" ? onRespond : onOpenResponse };

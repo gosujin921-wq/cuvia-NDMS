@@ -1,4 +1,5 @@
-import { useEffect, useRef, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { Icon } from "@iconify/react";
 import { useComposableInput } from "../hooks/use-composable-input";
 
 /** 입력창 높이 — 한 줄에서 시작해 최대 4줄까지 늘어난다. */
@@ -10,6 +11,12 @@ const BORDER_WIDTH = 3;
 
 /** 그라데이션 테두리 불투명도 — 1이면 브랜드색이 그대로 선명하게 나온다. */
 const BORDER_OPACITY = 0.7;
+
+/** 추천 질문 띠 가장자리를 흐리는 폭(px). 넘김 버튼(28) 뒤로 칩이 스러지게 버튼보다 조금 넓다. */
+const EDGE_FADE = 40;
+
+/** 넘김 버튼 한 번에 움직이는 양. 보이는 폭의 이만큼이라 앞 화면의 끝 칩이 다음 화면 첫머리에 남는다. */
+const PAGE_RATIO = 0.8;
 
 export interface PillChatInputProps {
   value: string;
@@ -75,19 +82,7 @@ export function PillChatInput({
   return (
     <div className={className}>
       {presets && presets.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {presets.map((preset) => (
-            <button
-              key={preset}
-              type="button"
-              onClick={() => onSubmit(preset)}
-              disabled={disabled}
-              className="glass-surface rounded-full px-3 py-1 text-caption text-foreground-muted transition-all hover:scale-[1.03] hover:text-foreground active:scale-95 disabled:opacity-50"
-            >
-              {preset}
-            </button>
-          ))}
-        </div>
+        <PresetStrip presets={presets} disabled={disabled} onPick={onSubmit} />
       )}
 
       {/* 오른쪽 여백은 py 와 같은 8px — 전송 버튼이 위아래와 같은 간격으로 앉는다.
@@ -148,5 +143,88 @@ export function PillChatInput({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * 추천 질문 띠. 한 줄로 두고, 입력창 폭을 넘치면 좌우 원 버튼으로 넘긴다.
+ *
+ * platform_web `features/fast-search/components/confirmed-person-strip.tsx` 의 넘김 문법
+ * (가로 스크롤 · 스크롤바 숨김 · 셰브론 버튼 · scrollBy smooth)을 따른다. 다른 점은 둘이다.
+ *   · 버튼은 넘길 것이 남은 쪽에만 선다. 뒤에 질문이 남았으면 오른쪽 `>`, 앞으로 넘겼으면 왼쪽 `<`
+ *   · 버튼은 칩 옆이 아니라 칩 위 가장자리에 겹쳐 서고, 그쪽 칩은 흐려진다. 옆에 세우면 버튼이
+ *     나타나고 사라질 때마다 칩 줄이 버튼 폭만큼 밀린다
+ * 트랙패드·터치로 직접 밀어도 같은 스크롤이라 버튼 상태가 따라온다.
+ */
+function PresetStrip({ presets, disabled, onPick }: { presets: string[]; disabled: boolean; onPick: (preset: string) => void }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState({ left: false, right: false });
+
+  const measure = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    /* 1px 여유 — 소수점 폭에서 끝까지 넘겨도 0.5px 가 남아 버튼이 안 걷히는 것을 막는다 */
+    const left = el.scrollLeft > 1;
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    setEdge((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+  }, []);
+
+  /* 띠 폭(창 크기)과 칩 줄 폭(글꼴 로딩·문구 교체)이 바뀌면 다시 잰다 */
+  useEffect(() => {
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (scrollerRef.current) observer.observe(scrollerRef.current);
+    if (rowRef.current) observer.observe(rowRef.current);
+    return () => observer.disconnect();
+  }, [measure, presets]);
+
+  const page = (direction: -1 | 1) => {
+    const el = scrollerRef.current;
+    if (el) el.scrollBy({ left: direction * el.clientWidth * PAGE_RATIO, behavior: "smooth" });
+  };
+
+  /* 알파만 쓰는 마스크라 색은 뜻이 없다(위 테두리 마스크와 같은 쓰임) */
+  const fade = `linear-gradient(to right, ${edge.left ? "transparent" : "#fff"} 0, #fff ${edge.left ? EDGE_FADE : 0}px, #fff calc(100% - ${edge.right ? EDGE_FADE : 0}px), ${edge.right ? "transparent" : "#fff"} 100%)`;
+
+  return (
+    <div className="relative mb-2">
+      {/* overflow-y-hidden · 칩 hover 확대가 세로 스크롤을 만들지 않게. py 는 그 확대가 잘리지 않을 여백 */}
+      <div
+        ref={scrollerRef}
+        onScroll={measure}
+        className="overflow-x-auto overflow-y-hidden py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        style={{ maskImage: fade, WebkitMaskImage: fade }}
+      >
+        <div ref={rowRef} className="flex w-max gap-1.5">
+          {presets.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => onPick(preset)}
+              disabled={disabled}
+              className="glass-surface shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-caption text-foreground-muted transition-all hover:scale-[1.03] hover:text-foreground active:scale-95 disabled:opacity-50"
+            >
+              {preset}
+            </button>
+          ))}
+        </div>
+      </div>
+      {edge.left && <PageButton side="left" onClick={() => page(-1)} />}
+      {edge.right && <PageButton side="right" onClick={() => page(1)} />}
+    </div>
+  );
+}
+
+function PageButton({ side, onClick }: { side: "left" | "right"; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={side === "left" ? "이전 추천 질문" : "다음 추천 질문"}
+      className={`glass-surface absolute top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-foreground-muted transition-colors hover:text-foreground ${side === "left" ? "left-0" : "right-0"}`}
+    >
+      <Icon icon={side === "left" ? "mdi:chevron-left" : "mdi:chevron-right"} className="size-4" aria-hidden />
+    </button>
   );
 }

@@ -18,19 +18,28 @@
  *   제품으로 옮길 때 이 파일은 버리고 정본을 쓴다. 구조를 바꿀 일이 생기면 정본을 먼저 본다.
  * ───────────────────────────────────────────── */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@ds";
 import { AppSidebar } from "./AppSidebar";
 import { AppTopbar } from "./AppTopbar";
 import { findNav, HUB_ROUTE } from "./nav";
-import { FAB_SLOT, FAB_SLOT_DOCK, FAB_SLOT_RAIL } from "../lib/layout";
+import { AGENT_PILL_WIDTH, FAB_SLOT, FAB_SLOT_CLOCK, FAB_SLOT_DOCK, FAB_SLOT_RAIL } from "../lib/layout";
+import { FabSlotProvider, type FabSlotKind } from "./fab-slot";
 import { AgentOverlay } from "../agent";
 import { useScenario } from "../state/ScenarioProvider";
 import { CANNED_QUERIES, matchQuery } from "../demo/ai";
 
 /** 서비스명 — 화면명을 못 찾았을 때의 상단바 제목 */
 const SERVICE_NAME = "CUVIA 재난안전관제시스템";
+
+/** 질의 버튼 자리 — 화면이 알린 모양(fab-slot.tsx)마다 하나씩. 자리 값은 lib/layout.ts 가 든다 */
+const FAB_SLOTS: Record<FabSlotKind, { right: number; bottom: number }> = {
+  screen: FAB_SLOT,
+  rail: FAB_SLOT_RAIL,
+  dock: FAB_SLOT_DOCK,
+  clock: FAB_SLOT_CLOCK,
+};
 
 /** 알약 입력창 위 추천 질문 · 빈 대화의 고를 수 있는 질문 — 질의 문안 그대로 (04 §14-1) */
 const PILL_PRESETS = CANNED_QUERIES.map((query) => query.text);
@@ -53,6 +62,12 @@ export function AppLayout() {
   const navigate = useNavigate();
   const item = findNav(pathname);
   const fullBleed = item?.fullBleed ?? false;
+  /* 상단바를 세우지 않는 화면 — 전면 화면과 탭 줄이 머리인 화면(nav.ts subNav). 스크롤은 페이지가 맡는다 */
+  const headless = fullBleed || (item?.subNav ?? false);
+  /* 질의 버튼 자리 — 화면이 알려 주면 그것, 아니면 경로 기본값(fab-slot.tsx) */
+  const [fabOverride, setFabOverride] = useState<FabSlotKind | null>(null);
+  const routeFab: FabSlotKind = item?.bottomDock ? "dock" : item?.fullBleed ? "rail" : "screen";
+  const fabKind = fabOverride ?? routeFab;
   const onStats = pathname.startsWith(STATS_ROUTE);
   /* 허브(종합상황)의 질의 바만 전용 화면으로 보낸다 — 아래 onSubmit 주석 참고 */
   const onHub = pathname === HUB_ROUTE;
@@ -98,12 +113,14 @@ export function AppLayout() {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* 정본 AppTopbar 는 title 이 필수다. 경로를 못 찾는 화면(있어선 안 되지만)에서는
             서비스명을 세운다 — 제목 자리를 비워 두지 않는다 */}
-        {!fullBleed && <AppTopbar title={item?.label ?? SERVICE_NAME} scr={item?.scr} />}
+        {!headless && <AppTopbar title={item?.label ?? SERVICE_NAME} scr={item?.scr} />}
         <main
-          className={cn("min-h-0 flex-1", fullBleed ? "overflow-hidden" : "overflow-auto")}
+          className={cn("min-h-0 flex-1", headless ? "overflow-hidden" : "overflow-auto")}
           role="main"
         >
-          <Outlet />
+          <FabSlotProvider value={setFabOverride}>
+            <Outlet />
+          </FabSlotProvider>
         </main>
       </div>
 
@@ -120,9 +137,10 @@ export function AppLayout() {
           같은 것이 두 벌 선다. 알약이 보낼 때 패널을 여는 것은 이식본의 기본 동작이고
           (agent-overlay handlePillSubmit), 그 기본은 건드리지 않는다 */}
       <AgentOverlay
-        /* 질의 버튼 자리 — 도크가 있는 화면은 도크 위 가운데 영역 우하단, 레일만 있는 전면 화면은 가운데 영역 우하단,
-           나머지는 화면 우하단 (lib/layout.ts). 우측 레일 바닥의 액션 바를 가리지 않는다 */
-        fabInset={item?.bottomDock ? FAB_SLOT_DOCK : item?.fullBleed ? FAB_SLOT_RAIL : FAB_SLOT}
+        /* 질의 버튼 자리 — 하단 중앙에 선 것(도크·훈련 시계)이 있으면 그 위로, 레일만 있는 전면 화면은
+           가운데 영역 우하단, 나머지는 화면 우하단 (lib/layout.ts). 우측 레일 바닥의 액션 바를 가리지 않는다 */
+        fabInset={FAB_SLOTS[fabKind]}
+        pillWidth={AGENT_PILL_WIDTH}
         open={agentOpen}
         onOpen={openAgent}
         onClose={closeAgent}

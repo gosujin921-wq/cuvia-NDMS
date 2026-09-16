@@ -11,7 +11,7 @@ import type { CalculationActor, DataQuality } from "./event";
 import type { ConditionLine, SceneLayer, SceneProfile, SceneSystem } from "./scene";
 
 /** 대안 종류 — A 배수·통제, B 방류·대피, C 수문·해안 통제 (03 §6~§8 대안 조건). 결과 세트가 어느 것을 가지는지는 fixture 가 정한다 */
-export type AlternativeId = "baseline" | "drainage" | "road-control" | "discharge" | "evacuation" | "gate" | "coast-control" | "containment" | "backup-power" | "inspection-priority" | "recovery-order" | "shelter-extend" | "patrol";
+export type AlternativeId = "baseline" | "drainage" | "road-control" | "discharge" | "evacuation" | "gate" | "coast-control" | "containment" | "backup-power" | "inspection-priority" | "evacuation-range" | "recovery-order" | "shelter-extend" | "patrol" | "situation";
 
 export const ALTERNATIVE_LABEL: Record<AlternativeId, string> = {
   baseline: "현재 조건",
@@ -24,9 +24,12 @@ export const ALTERNATIVE_LABEL: Record<AlternativeId, string> = {
   containment: "차단선·진압",
   "backup-power": "비상전원 투입",
   "inspection-priority": "점검·보강 우선순위",
+  "evacuation-range": "대피 범위",
   "recovery-order": "복구 순서",
   "shelter-extend": "쉼터 연장",
   patrol: "순회 자원",
+  /* 상황 조건 판 — 대응이 아니라 사람이 조작하지 못한 환경·시설 상태를 바꾼 판(03 §26 · 2026-09-16) */
+  situation: "상황 조건",
 };
 
 /** 눈금의 핵심 지표 — 유형이 정한다. 없으면 침수심(maxDepthM · m)이다 */
@@ -52,6 +55,17 @@ export interface ForecastMark {
   scene?: SceneLayer[];
   extentGeometryId: string;
   impactSummary: string;
+  /**
+   * 그 시각의 핵심 영향 2~3개 — 사건 전체 합계가 아니라 이 눈금의 상태다(2026-09-16 "선택 시점과 사건 전체를 섞지 않는다").
+   * 지표(metric)는 따로 선다. 없으면 화면이 impactSummary 한 줄을 쓴다
+   */
+  impacts?: MarkImpact[];
+}
+
+export interface MarkImpact {
+  label: string;
+  value: string;
+  tone?: "danger" | "warning" | "safe" | "muted";
 }
 
 export interface ImpactTarget {
@@ -63,11 +77,30 @@ export interface ImpactTarget {
   exposure: "영향 없음" | "노출" | "부분 중단" | "중단" | "통제됨";
 }
 
+/**
+ * 예측에 들어간 입력 한 줄 — "강우 관측 17:09 수신".
+ *
+ * 기준시각만 보이면 "내가 설정한 가상 시나리오"로 읽힌다. 무엇이 언제 들어와 이 전망을 만들었는지가 같이 서야
+ * 예측이 관측 위에 선 것으로 읽히고, 데이터 최신성(지연·결측)도 같은 자리에서 읽힌다.
+ */
+export interface ForecastInput {
+  /** 자료 이름 — "강우 관측" · "도로 수위" · "조위 예보" · "펌프 상태" */
+  label: string;
+  /** 수신·갱신 시각 */
+  at: string;
+  /** 관측은 지난 것, 예보는 앞으로의 것, 시설은 상태값 */
+  kind: "관측" | "예보" | "시설";
+}
+
 export interface ForecastBasis {
   modelName: string;
   modelVersion: string;
   baseTime: string;
   generatedAt: string;
+  /** 관측 구간의 시작 — 전망 타임라인 왼쪽 끝. 없으면 기준시각 1시간 전으로 본다 */
+  observedFrom?: string;
+  /** 무엇이 언제 들어왔는가. 전망 타임라인의 관측 구간에 점으로 서고 예측 기준 카드가 목록으로 편다 */
+  inputs?: ForecastInput[];
   inputEventIds: string[];
   assumptions: string[];
   uncertainty: { grade: "낮음" | "보통" | "높음"; sensitiveTo: string[]; unusableRanges: string[] };
@@ -81,7 +114,6 @@ export interface Forecast {
   incidentId: string;
   alternativeId: AlternativeId;
   changedConditions: string[];
-  deltaSummary?: string;
   marks: ForecastMark[];
   arrivalAt: string;
   targets: ImpactTarget[];
@@ -98,6 +130,11 @@ export interface Forecast {
   system?: SceneSystem;
   /** 조건 요약 카드 — 없으면 날씨 카드 */
   conditions?: ConditionLine[];
+  /**
+   * 전망 타임라인의 조건 마커 — "만조 18:24" · "강우 정점 19:00".
+   * 영향 마커(도달·최대 영향)는 targets·marks 에서 뽑으므로 여기 적지 않는다. 조건은 예측판 밖의 사실이라 여기 적는다.
+   */
+  conditionMarkers?: { at: string; label: string }[];
   /** 대응 시점 — "통제 시점 17:50". 도달 시각과의 여유가 결정의 핵심이라 시간 줄·비교표가 세운다 */
   actionAt?: { label: string; at: string };
   /** 가정 한 문장 — "해안도로 저지대 구간을 17:50부터 통제하는 경우". 대응 버튼은 이 가정의 미리보기다 */

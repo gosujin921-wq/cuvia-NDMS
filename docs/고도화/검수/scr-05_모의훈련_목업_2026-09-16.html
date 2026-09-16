@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SCR-05 모의훈련 · 클릭 목업 · 2026-09-16</title>
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --card:#1b212a; --raised:#222a35;
+    --line:#2b3542; --line2:#3a4756;
+    --fg:#e6ebf2; --fg-muted:#9aa7b8; --fg-sub:#6b7a8d;
+    --primary:#3b82f6; --primary-text:#60a5fa; --primary-fg:#fff;
+    --warn:#f59e0b; --ok:#22c55e; --danger:#ef4444;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+    --rail:360px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#07090c;color:var(--fg);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+    word-break:keep-all}
+  .page{max-width:1480px;margin:0 auto;padding:18px 16px 60px}
+  .head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+  .head h1{font-size:18px;margin:0}
+  .head .sub{font-size:12.5px;color:var(--fg-sub)}
+  .head .steps{margin-left:auto;font-size:12px;color:var(--fg-sub);font-family:var(--mono)}
+  .head .steps b{color:var(--primary-text)}
+
+  /* 1440x900 실치수 프레임 */
+  .stage{width:1440px;height:900px;transform-origin:top left;background:var(--bg);
+    border:1px solid var(--line2);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+  .stagewrap{overflow:hidden}
+
+  /* 앱 셸 */
+  .app{display:flex;flex:1;min-height:0}
+  .lnb{width:80px;background:var(--surface);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:18px;flex:none}
+  .lnb .logo{width:34px;height:34px;border-radius:9px;background:var(--primary);opacity:.85}
+  .lnb .it{font-size:11px;color:var(--fg-sub);text-align:center;line-height:1.5}
+  .lnb .it b{display:block;width:26px;height:26px;margin:0 auto 3px;border-radius:7px;background:var(--line2)}
+  .lnb .it.on{color:var(--primary-text)} .lnb .it.on b{background:var(--primary)}
+
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .tabs{height:46px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;padding:0 16px;background:var(--surface)}
+  .tab{font-size:13.5px;color:var(--fg-sub);padding:6px 12px;border-radius:7px;cursor:pointer}
+  .tab.on{color:var(--fg);background:var(--card);font-weight:600}
+  .work{flex:1;display:flex;min-height:0;position:relative}
+
+  /* 지도 */
+  .board{position:absolute;inset:0;background:var(--bg);z-index:5;display:none;flex-direction:column}
+  .board.on{display:flex}
+  .board .bh{padding:18px 22px 10px}
+  .board .bh h2{margin:0;font-size:17px}
+  .board .bh p{margin:4px 0 0;font-size:13px;color:var(--fg-sub)}
+  .board .btbl{flex:1;overflow:auto;margin:4px 22px 22px}
+  .bd{--cols:1.7fr .8fr 1.3fr 1.2fr .7fr 1.6fr}
+  .bdh,.bdr{display:grid;grid-template-columns:var(--cols);gap:12px;align-items:center}
+  .bdh{padding:9px 12px;background:var(--surface);border-bottom:1px solid var(--line2);
+    font-size:12.5px;color:var(--fg-muted);font-weight:600;border-radius:7px 7px 0 0}
+  .bdr{padding:13px 12px;border-bottom:1px solid var(--line);font-size:13.5px;color:var(--fg-muted);cursor:pointer}
+  .bdr:hover{background:var(--card)}
+  .bdr.off{opacity:.45;cursor:default} .bdr.off:hover{background:transparent}
+  .bdr .ti{color:var(--fg);font-weight:600}
+  .bdr .nt{font-size:12.5px;color:var(--fg-sub);line-height:1.45}
+  .bd .tag{display:inline-block;font-size:11px;border:1px solid var(--line2);border-radius:4px;
+    padding:1px 6px;color:var(--fg-sub);font-weight:400;white-space:nowrap}
+  .bd .tag.ok{border-color:var(--ok);color:var(--ok)}
+
+  .map{flex:1;position:relative;background:
+    radial-gradient(1200px 500px at 30% 20%, #18222c 0%, #121922 60%, #0f151c 100%);overflow:hidden}
+  .terrain{position:absolute;inset:0;opacity:.5;
+    background:repeating-linear-gradient(118deg,#141d26 0 22px,#111922 22px 44px)}
+  .river{position:absolute;left:12%;top:18%;width:64%;height:62%;
+    border-left:3px solid #2a4a63;border-bottom:3px solid #2a4a63;border-radius:0 0 0 70%;transform:rotate(-6deg)}
+  .flood{position:absolute;border:1px dashed rgba(96,165,250,.7);border-radius:48% 62% 40% 58%;
+    background:linear-gradient(118deg,rgba(59,130,246,.42),rgba(59,130,246,.10));
+    transform:rotate(-14deg);transition:all .5s cubic-bezier(.2,.7,.3,1)}
+  .road{position:absolute;left:22%;top:58%;width:44%;height:3px;background:#3a4756;transform:rotate(6deg);border-radius:2px}
+  .road.wet{background:var(--warn)} .road.ctl{background:var(--primary)}
+  .pin{position:absolute;font-size:11px;color:var(--fg-muted);background:rgba(14,17,22,.92);
+    border:1px solid var(--line2);border-radius:5px;padding:2px 6px;white-space:nowrap}
+  .pin.act{border-color:var(--primary);color:var(--primary-text);font-weight:600}
+  .acts{position:absolute;inset:0;pointer-events:none}
+  .maptag{position:absolute;left:16px;top:16px;font-size:12px;color:var(--fg-sub);
+    background:rgba(14,17,22,.9);border:1px solid var(--line);border-radius:7px;padding:7px 10px;line-height:1.6}
+  .maptag b{color:var(--fg)}
+
+  /* 시계 */
+  .inset{position:absolute;left:16px;top:60px;width:272px;background:rgba(14,17,22,.92);
+    border:1px solid var(--line2);border-radius:9px;overflow:hidden}
+  .inset .ih{font-size:12px;color:var(--fg-muted);padding:7px 10px;border-bottom:1px solid var(--line);
+    display:flex;justify-content:space-between}
+  .inset .ih span{color:var(--fg-sub)}
+  .inset .ibody{height:118px;background:
+    radial-gradient(90px 70px at 42% 44%, rgba(124,92,255,.85), rgba(88,64,200,.55) 55%, rgba(40,34,90,.35) 100%),
+    repeating-linear-gradient(122deg,#1a1430 0 12px,#171128 12px 24px);position:relative}
+  .inset .ibody::after{content:"";position:absolute;left:46%;top:46%;width:11px;height:11px;border-radius:50%;
+    border:2px solid #9ab7ff;background:rgba(96,165,250,.5)}
+  .legend{position:absolute;left:16px;bottom:16px;width:272px;background:rgba(14,17,22,.92);
+    border:1px solid var(--line2);border-radius:9px;padding:9px 11px;font-size:11.5px}
+  .legend .lr{display:flex;align-items:center;gap:7px;padding:2px 0}
+  .legend .lk{width:62px;color:var(--fg-muted);flex:none}
+  .legend .lv{color:var(--fg-sub);white-space:nowrap;font-family:var(--mono);font-size:11px}
+  .legend .sw{width:16px;height:11px;border-radius:2px;flex:none}
+  .legend .sw.scope{border:1px dashed var(--danger);background:rgba(239,68,68,.18)}
+  .legend .sw.act{border:1px solid var(--primary);background:rgba(59,130,246,.35)}
+  .legend .ramp{width:56px;height:8px;border-radius:2px;flex:none;
+    background:linear-gradient(90deg,rgba(59,130,246,.25),rgba(59,130,246,.9))}
+  .legend .ramp.rain{background:linear-gradient(90deg,rgba(124,92,255,.2),rgba(124,92,255,.95))}
+  .strip{position:absolute;right:16px;top:60px;display:flex;flex-direction:column;gap:7px}
+  .strip .sb{width:34px;height:34px;border-radius:9px;background:rgba(14,17,22,.92);border:1px solid var(--line2);
+    color:var(--fg-sub);display:flex;align-items:center;justify-content:center;font-size:15px}
+
+  .clock{position:absolute;left:304px;right:16px;bottom:16px;background:rgba(14,17,22,.94);
+    border:1px solid var(--line2);border-radius:10px;padding:11px 14px}
+  .clock .r1{display:flex;align-items:center;gap:12px}
+  .clock .t{font-family:var(--mono);font-size:20px;font-weight:700;letter-spacing:-.5px}
+  .clock .ph{font-size:12px;border:1px solid var(--warn);color:var(--warn);border-radius:5px;padding:1px 7px}
+  .clock .ph.res{border-color:var(--ok);color:var(--ok)}
+  .bar{flex:1;height:5px;background:var(--line);border-radius:3px;position:relative;margin:0 4px}
+  .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--primary);border-radius:3px;transition:width .4s}
+  .bar u{position:absolute;top:-5px;width:2px;height:15px;background:var(--line2);border-radius:1px}
+  .bar u.on{background:var(--primary-text)}
+  .bar .future{position:absolute;top:1px;right:0;height:3px;border-top:2px dotted var(--line2)}
+  .bar.live .tk{cursor:pointer;padding:1px 5px;border-radius:4px}
+  .bar.live .tk:hover{background:var(--raised);color:var(--fg)}
+  .bar .tk{position:absolute;top:10px;transform:translateX(-50%);font-family:var(--mono);font-size:11px;
+    font-weight:400;white-space:nowrap}
+  .bar .tk.j{color:var(--warn)} .bar .tk.r{color:var(--ok)}
+  .bar .tk.now{font-weight:700;font-size:12px}
+  .clock .r2{display:flex;font-size:11.5px;color:var(--fg-sub);margin-top:22px}
+
+  /* 레일 */
+  .rail{width:var(--rail);flex:none;border-left:1px solid var(--line);background:var(--surface);
+    display:flex;flex-direction:column;min-height:0}
+  .railbody{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+  .railfoot{padding:12px;border-top:1px solid var(--line);display:flex;gap:8px}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:11px 12px}
+  .card h3{margin:0 0 6px;font-size:14px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .card h3 .m{font-size:12px;font-weight:400;color:var(--fg-sub)}
+  .card.hl{border-color:var(--warn)}
+  .card.q{border-color:var(--primary)}
+  .sub{color:var(--fg-muted);font-size:13px}
+  .dim{color:var(--fg-sub);font-size:12.5px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line2);
+    background:var(--raised);color:var(--fg-muted);border-radius:7px;padding:8px 12px;font-size:13px;cursor:pointer;
+    transition:.15s;font-family:inherit}
+  .btn:hover{color:var(--fg);border-color:var(--fg-sub)}
+  .btn.pri{background:var(--primary);border-color:var(--primary);color:var(--primary-fg);font-weight:600}
+  .btn.pri:hover{filter:brightness(1.1)}
+  .btn.blk{width:100%}
+  .btn:disabled{opacity:.4;cursor:default}
+  .row{display:flex;gap:7px;margin-top:8px}
+  .row .btn{flex:1}
+
+  .kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:13px}
+  .kv .k{color:var(--fg-muted)} .kv .v{font-family:var(--mono);text-align:right}
+  .kv .v.w{color:var(--warn);font-weight:600} .kv .v.g{color:var(--ok);font-weight:600}
+
+  .sop{border:1px solid var(--line2);border-radius:8px;padding:9px 10px;margin-top:8px;background:var(--bg)}
+  .sop.core{border-color:var(--warn)}
+  .sop .t{font-size:13.5px;font-weight:600;display:flex;gap:6px;align-items:center}
+  .sop .tag{font-size:11px;border:1px solid var(--line2);border-radius:4px;padding:0 5px;color:var(--fg-sub);font-weight:400}
+  .sop .tag.w{border-color:var(--warn);color:var(--warn)}
+  .sop .g{font-size:12.5px;color:var(--fg-sub);margin-top:3px}
+  .sop.folded{padding:7px 10px;cursor:pointer;opacity:.85}
+  .sop.folded:hover{opacity:1;border-color:var(--fg-sub)}
+  .done{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line);line-height:1.45}
+  .done .tm{text-align:right;flex:none}
+  .done:last-child{border:0}
+  .done .tm{font-family:var(--mono);color:var(--fg-sub)}
+
+  .steplist{display:flex;flex-direction:column;gap:7px;margin-top:2px}
+  .sl{display:flex;gap:9px;font-size:13px;line-height:1.5;align-items:flex-start}
+  .sl .no{flex:none;width:19px;height:19px;border-radius:50%;background:var(--raised);border:1px solid var(--line2);
+    color:var(--fg-muted);font-size:11.5px;display:flex;align-items:center;justify-content:center;margin-top:1px;font-family:var(--mono)}
+  .sl .tm{flex:none;width:44px;font-family:var(--mono);font-size:12px;color:var(--fg-sub);line-height:1.4;margin-top:2px}
+  .sl>span:last-child{color:var(--fg-muted)}
+  .sl b{color:var(--fg)}
+
+  .caserow{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:10px 12px;cursor:pointer;transition:.15s}
+  .caserow:hover{border-color:var(--primary);background:var(--raised)}
+  .caserow.sel{border-color:var(--primary)}
+  .caserow.off{opacity:.5;cursor:default}
+  .caserow.off:hover{border-color:var(--line);background:var(--card)}
+  .caserow .t{font-size:14px;font-weight:600;display:flex;gap:6px;align-items:center}
+  .caserow .g{font-size:12.5px;color:var(--fg-sub);margin-top:3px}
+  .caserow .tag{font-size:11px;border:1px solid var(--line2);border-radius:4px;padding:0 5px;color:var(--fg-sub);font-weight:400}
+
+  .slider{margin:10px 2px 2px}
+  .strack{height:5px;background:var(--line);border-radius:3px;position:relative;margin:16px 8px 10px}
+  .strack u{position:absolute;top:-5px;width:2px;height:15px;background:var(--line2)}
+  .strack i{position:absolute;top:-8px;width:20px;height:20px;border-radius:50%;background:var(--primary);
+    border:3px solid var(--bg);margin-left:-10px;transition:left .2s;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+  .sticks{display:flex;justify-content:space-between;font-size:12px;color:var(--fg-sub);font-family:var(--mono)}
+  .sticks span{cursor:pointer;padding:2px 4px;border-radius:4px}
+  .sticks span.on{color:var(--primary-text);font-weight:700}
+  .sticks span:hover{background:var(--raised)}
+
+  table.cmp{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  table.cmp th,table.cmp td{padding:5px 4px;border-bottom:1px solid var(--line)}
+  table.cmp th{color:var(--fg-sub);font-weight:600;text-align:right;font-size:12.5px}
+  table.cmp th:first-child{text-align:left}
+  table.cmp td{text-align:right;font-family:var(--mono)}
+  table.cmp td:first-child{text-align:left;font-family:inherit;color:var(--fg-muted)}
+  table.cmp .b{color:var(--ok);font-weight:700} table.cmp .w{color:var(--warn)}
+
+  .note{font-size:12.5px;line-height:1.6;margin-top:8px}
+  .note.ok{color:var(--ok)} .note.warn{color:var(--warn)}
+  .inp{width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:7px;
+    padding:8px 10px;color:var(--fg);font:inherit;font-size:13px;margin-top:6px}
+  .chips{display:flex;gap:6px;margin-top:6px}
+  .chip{border:1px solid var(--line2);border-radius:6px;padding:4px 10px;font-size:12.5px;color:var(--fg-muted);cursor:pointer}
+  .chip.on{border-color:var(--primary);background:var(--primary);color:#fff}
+
+  .hint{margin-top:14px;font-size:12.5px;color:var(--fg-sub);line-height:1.8}
+  .hint b{color:var(--fg-muted)}
+  .hint code{font-family:var(--mono);font-size:11.5px;background:var(--surface);padding:1px 5px;border-radius:4px;color:var(--primary-text)}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="head">
+    <h1>SCR-05 모의훈련 · 클릭 목업</h1>
+    <span class="sub">1440×900 실치수 · 레일 360px · 값은 fixture 실측</span>
+    <span class="steps" id="steps"></span>
+  </div>
+
+  <div class="stagewrap"><div class="stage" id="stage">
+    <div class="app">
+      <div class="lnb">
+        <div class="logo"></div>
+        <div class="it"><b></b>종합상황</div>
+        <div class="it"><b></b>재난관제</div>
+        <div class="it"><b></b>통계</div>
+        <div class="it on"><b></b>모의훈련</div>
+        <div class="it"><b></b>이력</div>
+      </div>
+      <div class="main">
+        <div class="tabs">
+          <div class="tab on">훈련하기</div>
+          <div class="tab">지난 훈련</div>
+        </div>
+        <div class="work" id="work">
+          <div class="board" id="board"></div>
+          <div class="map">
+            <div class="terrain"></div><div class="river"></div>
+            <div class="road" id="road"></div>
+            <div class="flood" id="flood"></div>
+            <div class="pin" id="pinA" style="left:26%;top:30%"></div>
+            <div class="pin" id="pinB" style="left:58%;top:66%"></div>
+            <div class="acts" id="acts"></div>
+            <div class="maptag" id="maptag"></div>
+            <!-- 지금 구현에 있는 것들 — 그대로 둔다 -->
+            <div class="inset" id="inset">
+              <div class="ih">◎ 유역 강우 <span>⤢</span></div>
+              <div class="ibody"></div>
+            </div>
+            <div class="legend" id="legend">
+              <div class="lr"><span class="lk">사건 범위</span><span class="sw scope"></span></div>
+              <div class="lr"><span class="lk">범람심</span>
+                <span class="ramp"></span><span class="lv">0.1 0.3 0.5 m 이상</span></div>
+              <div class="lr"><span class="lk">광역 강우</span>
+                <span class="ramp rain"></span><span class="lv">0.5　30 mm/h 이상</span></div>
+              <div class="lr" id="lrAct"><span class="lk">조치</span><span class="sw act"></span><span class="lv">방류 · 차단</span></div>
+            </div>
+            <div class="strip">
+              <div class="sb">◳</div><div class="sb">⬚</div><div class="sb">＋</div><div class="sb">－</div>
+              <div class="sb">↺</div><div class="sb">⤢</div>
+            </div>
+            <div class="clock" id="clock"></div>
+          </div>
+          <div class="rail">
+            <div class="railbody" id="rail"></div>
+            <div class="railfoot" id="foot"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+
+  <div class="hint">
+    <b>눌러 보세요.</b> 조건 슬라이더 → [훈련 시작] → 조치 [실행] → [다음 단계] → 강평까지 실제 흐름대로 돕니다.
+    <code>R</code> 키로 처음부터.<br />
+    <b>값은 전부 fixture 실측</b>입니다(조건 × 방류 시각별 최고 수위·기준 초과 시각). 지도 면적은 수위에 비례해 그립니다.
+  </div>
+</div>
+
+<script>
+/* ── fixture 실측값 (designs/src/fixtures/changwoncheon/whatif.ts) ──
+   키: 조건 / 방류 시각. "none" = 방류를 안 하면 실제(15:05)와 같다 */
+const DATA = {
+  "당시":  { none:{peak:3.2,cross:"15:22"}, "14:35":{peak:2.3,cross:"없음"}, "14:55":{peak:2.8,cross:"15:37"} },
+  "+20%": { none:{peak:3.6,cross:"15:10"}, "14:35":{peak:2.7,cross:"15:40"}, "14:55":{peak:3.2,cross:"15:17"} },
+  "+50%": { none:{peak:4.1,cross:"15:02"}, "14:35":{peak:3.2,cross:"15:17"}, "14:55":{peak:3.7,cross:"15:04"} },
+};
+const COND = ["당시","+20%","+50%"];
+/* 훈련할 수 있는 사건 — `ready` 는 훈련 시나리오(정지점·조건·발동 규정)가 있는가 */
+const CASES = [
+  { id:"cw", title:"창원천 하류 범람", kind:"하천범람", date:"2024.08.28", span:"14:20 ~ 17:40", x:38, y:48,
+    ready:true, runs:2, core:"상류 저류지 방류", note:"상류 강우 급증 → 합류부 기준 수위 초과 → 하구 천변도로 침수" },
+  { id:"gh", title:"구항 방파제 월류", kind:"해안월류", date:"2024.08.20", span:"17:10 ~ 20:30", x:22, y:76, ready:false, core:"수문·차수" },
+  { id:"mh", title:"무학산 산불", kind:"산불", date:"2024.04.02", span:"16:40 ~ 익일 02:10", x:14, y:24, ready:false, core:"방화선·진압" },
+  { id:"gb", title:"교방동 급경사지 변위", kind:"급경사지", date:"2024.07.10", span:"2일", x:26, y:38, ready:false, core:"배수로 정비·보강" },
+  { id:"sp", title:"서항 펌프장 정전 파급", kind:"기반시설", date:"2024.07.24", span:"17:05 ~ 21:40", x:44, y:82, ready:false, core:"비상전원 투입" },
+  { id:"hw", title:"창원 도심 폭염", kind:"폭염", date:"2024.08.06", span:"2일", x:62, y:34, ready:false, core:null },
+];
+const RAIN = { "당시":"35 mm/h", "+20%":"42 mm/h", "+50%":"53 mm/h" };
+const STOPS = [
+  { at:"14:35", phase:"판단", note:"범람 예측 발생 · 규정 3건 발동" },
+  { at:"14:55", phase:"판단", note:"방류 마지막 기회" },
+  { at:"15:30", phase:"결과", note:"조치 창 닫힘" },
+  { at:"16:00", phase:"결과", note:"최고 수위" },
+];
+/* 규정 3건 — 모두 14:35 발동. guide 는 대응의 target·level 에서 옮긴 것 */
+const SOPS = [
+  { id:"S2", label:"상류 저류지 방류", kind:"현상", trigger:"합류부 기준 수위 2.5 m 초과 예측",
+    guide:"사전 방류로 저류 여유 확보", times:["14:35","14:55"], actual:"15:05",
+    effect:"합류부 첨두가 낮아집니다", when:"결과는 15:30부터 보입니다", mark:"저류지 방류 중" },
+  { id:"S3", label:"하구 천변도로 통제", kind:"노출", trigger:"합류부 기준 수위 2.5 m 도달 예측",
+    guide:"양방향 통제 · 우회 안내", times:["14:35","14:55"], actual:"15:22",
+    effect:"천변도로 이용자가 빠집니다", when:"지도에 바로 섭니다", mark:"천변도로 차단" },
+  { id:"S1", label:"둔치 산책로 출입통제", kind:"노출", trigger:"상류 수위 상승 · 둔치 잠김 예상",
+    guide:"", times:["14:35","14:55"], actual:"14:50",
+    effect:"둔치 이용자가 빠집니다", when:"지도에 바로 섭니다", mark:"둔치 출입통제" },
+];
+const lag = (a,b)=>Math.round((Date.parse("2024-08-28T"+b+":00+09:00")-Date.parse("2024-08-28T"+a+":00+09:00"))/60000);
+
+let S = {};
+function reset(){ S = { phase:"list", caseId:"cw", cond:1, stop:0, acts:{}, open:{}, axis:"SOP", memo:"" }; render(); }
+
+/* 내 훈련 / 기준(실제와 같게) 결과 */
+const myResult = ()=> DATA[COND[S.cond]][S.acts.S2 || "none"];
+const baseResult = ()=> DATA[COND[S.cond]]["none"];
+
+function scale(){
+  const w = document.querySelector(".page").clientWidth;
+  const s = Math.min(1, w/1440);
+  const st = document.getElementById("stage");
+  st.style.transform = "scale("+s+")";
+  st.parentElement.style.height = (900*s)+"px";
+}
+addEventListener("resize", scale);
+addEventListener("keydown", e=>{ if(e.key==="r"||e.key==="R") reset(); });
+
+function render(){
+  const p = S.phase;
+  document.getElementById("steps").innerHTML =
+    p==="list" ? "사건 고르기" :
+    p==="prepare" ? "사건 고르기 → <b>준비</b>" :
+    p==="debrief" ? "준비 → 판단 → 결과 → <b>강평</b>" :
+    "준비 → " + STOPS.map((s,i)=> i===S.stop ? "<b>"+s.at+"</b>" : s.at).join(" → ");
+
+  renderBoard(); renderMap(); renderRail(); renderFoot(); scale();
+}
+
+/* ── 목록(게시판) ── */
+function renderBoard(){
+  if(S.phase!=="list") return;
+  document.getElementById("board").innerHTML = `
+    <div class="bh"><h2>어느 사건으로 훈련할까</h2>
+      <p>실제 사건 원장에서 만든 시나리오로 훈련합니다 · 지난 사건 ${CASES.length} · 훈련 가능 ${CASES.filter(c=>c.ready).length}</p></div>
+    <div class="btbl bd">
+      <div class="bdh"><span>사건</span><span>유형</span><span>발생</span><span>핵심 판단</span><span>훈련</span><span>비고</span></div>
+      ${CASES.map(c=>`
+        <div class="bdr ${c.ready?"":"off"}" ${c.ready?`onclick="pick('${c.id}')"`:""}>
+          <span class="ti">${c.title}</span>
+          <span>${c.kind}</span>
+          <span class="nt">${c.date}<br />${c.span}</span>
+          <span>${c.core ?? `<span style="color:var(--fg-sub)">없음</span>`}</span>
+          <span>${c.ready?`<span class="tag ok">가능</span>`:`<span class="tag">없음</span>`}</span>
+          <span class="nt">${
+            c.ready ? `지난 훈련 ${c.runs}회`
+            : c.core ? "정지점과 발동 규정을 아직 정하지 않았습니다"
+            : "현상을 바꾸는 대응이 없어 만들 수 없습니다"}</span>
+        </div>`).join("")}
+    </div>`;
+}
+
+/* ── 지도 ── */
+function renderMap(){
+  /* 목록 화면은 게시판이 전체를 덮는다 — 사건을 고르기 전에는 지도 위 패널이 설명할 것이 없다 */
+  document.getElementById("board").classList.toggle("on", S.phase==="list");
+  const flood = document.getElementById("flood"), road = document.getElementById("road");
+  const tag = document.getElementById("maptag"), clock = document.getElementById("clock");
+  const pinA = document.getElementById("pinA"), pinB = document.getElementById("pinB");
+  const p = S.phase;
+
+  if(p==="prepare"||p==="list"){
+    flood.style.cssText = "left:18%;top:44%;width:26%;height:9%;opacity:.22";
+    document.getElementById("acts").innerHTML = "";
+    road.className = "road";
+    tag.innerHTML = p==="list"
+      ? "<span style='color:var(--fg-sub)'>사건을 고르면 그 사건의 범위가 섭니다</span>"
+      : "<b>창원천 하류</b> · 사건 범위<br /><span style='color:var(--fg-sub)'>훈련 시작 전</span>";
+    pinA.textContent = ""; pinB.textContent = "";
+    clock.style.display = "none"; return;
+  }
+  clock.style.display = "";
+
+  const st = p==="debrief" ? STOPS[S.look ?? 3] : STOPS[S.stop];
+  const r = myResult();
+  /* 정지점별 수위 — 14:35 은 1.3, 이후 최고값까지 올라간다 */
+  const prog = [0, 0.3, 0.8, 1.0][p==="debrief" ? (S.look ?? 3) : S.stop];
+  const lv = (1.3 + (r.peak-1.3)*prog).toFixed(1);
+  const size = 18 + (lv-1.3)*22;
+
+  flood.style.cssText = `left:${20-size*0.12}%;top:${46-size*0.30}%;width:${size*1.5+8}%;height:${size*0.42+4}%;opacity:${0.30+prog*0.55}`;
+  const wet = lv >= 1.9, ctl = Boolean(S.acts.S3);
+  road.className = "road" + (ctl ? " ctl" : wet ? " wet" : "");
+  pinA.textContent = "상류 " + (12.4 + prog*0.8).toFixed(1) + " m";
+  pinB.textContent = "합류부 " + lv + " m";
+  tag.innerHTML = p==="debrief" && (S.look ?? 3)===3
+    ? `<b>최종 범람 범위</b><br /><span style='color:var(--fg-sub)'>합류부 최고 ${r.peak} m</span>`
+    : `<b>${lv>=2.5?"합류부 기준 초과":lv>=1.9?"천변도로 물고임":"둔치 가장자리 물참"}</b><br />`+
+      `<span style='color:var(--fg-sub)'>${ctl?"천변도로 통제됨 · ":""}강우 ${RAIN[COND[S.cond]]}</span>`;
+
+  /* 실행한 조치의 표식 — 지도에서 "내가 뭘 했는지"가 보여야 한다 */
+  document.getElementById("acts").innerHTML = [
+    S.acts.S2 ? `<span class="pin act" style="left:17%;top:22%">💧 저류지 방류 중 · ${S.acts.S2}</span>` : "",
+    S.acts.S3 ? `<span class="pin act" style="left:24%;top:62%">🚧 차단 (서)</span><span class="pin act" style="left:60%;top:56%">🚧 차단 (동)</span>` : "",
+    S.acts.S1 ? `<span class="pin act" style="left:38%;top:38%">🚧 둔치 통제</span>` : "",
+  ].join("");
+
+  document.getElementById("lrAct").style.display = Object.keys(S.acts).length ? "" : "none";
+  const idx = p==="debrief" ? (S.look ?? 3) : S.stop;
+  /* 훈련 중에는 진행 표시다 — 시간을 되돌릴 수 없으므로 누르는 자리처럼 보이면 안 된다.
+     강평에서는 복기라서 누를 수 있다(조치는 못 바꾼다) */
+  const done = p==="debrief";
+  const X = [6,30,72,100];
+  clock.innerHTML = `
+    <div class="r1">
+      <span class="t">${st.at}</span>
+      <span class="ph ${st.phase==="결과"?"res":""}">${done?"복기":st.phase+" 국면"}</span>
+      <span class="bar ${done?"live":""}">
+        <i style="width:${X[idx]}%"></i>
+        <span class="future" style="left:${X[idx]}%"></span>
+        ${X.map((x,i)=>`<u class="${i<=idx?"on":""}" style="left:${x}%"></u>
+          <b class="tk ${i===idx?"now":""} ${STOPS[i].phase==="판단"?"j":"r"}" style="left:${x}%"
+             ${done?`onclick="goStop(${i})"`:""}>${STOPS[i].at}</b>`).join("")}
+      </span>
+    </div>
+    <div class="r2">${done
+      ? `<span>눌러서 그 시각으로 돌아가 봅니다 · 조치는 바꿀 수 없습니다</span>`
+      : `<span style="color:var(--warn)">판단 국면 · 조치를 정한다</span><span style="flex:1"></span>`+
+        `<span style="color:var(--ok)">결과 국면 · 물이 온다</span><span style="flex:1"></span>`+
+        `<span>시간은 [다음 단계]로만 갑니다 · 되돌릴 수 없습니다</span>`}</div>`;
+}
+
+/* ── 레일 ── */
+function renderRail(){
+  const el = document.getElementById("rail"), p = S.phase;
+  if(p==="list") return void (el.innerHTML = "");
+
+  if(p==="prepare") return void (el.innerHTML = `
+    <div class="card">
+      <h3>고른 사건<span class="m"><span style="cursor:pointer;color:var(--primary-text)" onclick="S.phase='list';render()">바꾸기 ›</span></span></h3>
+      <div class="t" style="font-size:14px;font-weight:600">창원천 하류 범람 <span class="tag">하천범람</span></div>
+      <div class="dim" style="margin-top:3px">2024.08.28 14:20 ~ 17:40 · 상류 강우 급증 → 합류부 기준 수위 초과 → 하구 천변도로 침수</div>
+    </div>
+
+    <div class="card">
+      <h3>이 훈련에서 하는 일<span class="m">14:35 ~ 17:40</span></h3>
+      <div class="steplist">
+        <div class="sl"><span class="no">1</span><span class="tm">14:35</span>
+          <span>규정 <b>3건</b>이 뜹니다. <b>어느 것을 언제 할지</b> 정합니다</span></div>
+        <div class="sl"><span class="no">2</span><span class="tm">14:55</span>
+          <span>마지막으로 정할 기회입니다</span></div>
+        <div class="sl"><span class="no">3</span><span class="tm">15:30<br />16:00</span>
+          <span>물이 오는 것을 봅니다. 이때는 조치를 바꿀 수 없습니다</span></div>
+        <div class="sl"><span class="no">4</span><span class="tm">강평</span>
+          <span>내 판단과 실제를 견주고 <b>고칠 거리</b>를 남깁니다</span></div>
+      </div>
+      <div class="dim" style="margin-top:8px">언제 무엇이 일어나는지는 진행하면서 열립니다</div>
+    </div>
+
+    <div class="card q">
+      <h3>조건<span class="m">더 어렵게 할 수 있습니다</span></h3>
+      <div class="sub">강우</div>
+      <div class="slider">
+        <div class="strack"><u style="left:0"></u><u style="left:50%"></u><u style="left:100%"></u>
+          <i style="left:${S.cond*50}%"></i></div>
+        <div class="sticks">
+          ${COND.map((c,i)=>`<span class="${i===S.cond?"on":""}" onclick="S.cond=${i};render()">${c==="당시"?"당시 35":c+" "+RAIN[c].replace(" mm/h","")}</span>`).join("")}
+        </div>
+      </div>
+      <div class="dim" style="margin-top:8px">판이 있는 값에만 멈춥니다 · 지금 <b style="color:var(--fg)">강우 ${RAIN[COND[S.cond]]}</b></div>
+    </div>`);
+
+  if(p==="debrief") return void (el.innerHTML = debriefHTML());
+
+  const st = STOPS[S.stop];
+  /* 이 정지점에서 다룰 조치 — 아직 안 한 것 + **이번에 실행한 것**(되돌릴 수 있게 그 자리에 남긴다) */
+  const here = SOPS.filter(s=>s.times.includes(st.at) && (!S.acts[s.id] || S.acts[s.id]===st.at));
+  const core = here.filter(s=>s.kind==="현상"), rest = here.filter(s=>s.kind!=="현상");
+  const listed = [...core,...rest];
+  const doneHere = listed.filter(s=>S.acts[s.id]).length;
+  /* 앞선 정지점에서 확정된 조치 */
+  const fixed = SOPS.filter(s=>S.acts[s.id] && S.acts[s.id]!==st.at);
+  const r = myResult();
+  const prog = [0,0.3,0.8,1.0][S.stop];
+  const lv = (1.3 + (r.peak-1.3)*prog).toFixed(1);
+
+  el.innerHTML = `
+    ${st.phase==="판단" && listed.length ? `
+    <div class="card hl">
+      <h3>지금 해야 할 조치<span class="m">${st.at} · ${listed.length}건 중 ${doneHere}건 실행</span></h3>
+      <div class="dim">${st.note}</div>
+      ${listed.map((s,i)=>{
+        const done = S.acts[s.id]===st.at;
+        if(done) return `
+        <div class="sop ${s.kind==="현상"?"core":""}" style="border-color:var(--ok)">
+          <div class="t"><span style="color:var(--ok)">✓</span> ${s.id} ${s.label}
+            <span class="tag" style="border-color:var(--ok);color:var(--ok)">${st.at} 실행</span></div>
+          <div class="g">${s.effect} · ${s.when}</div>
+          <div class="row"><button class="btn blk" onclick="undo('${s.id}')">되돌리기</button></div>
+        </div>`;
+        /* 안 한 것 중 첫 번째는 늘 펴져 있다 — 실행하면 그다음이 바로 그 자리로 올라온다 */
+        const open = s===listed.find(x=>!S.acts[x.id]) || S.open[s.id];
+        return open ? `
+        <div class="sop ${s.kind==="현상"?"core":""}">
+          <div class="t">${s.id} ${s.label} ${s.kind==="현상"?'<span class="tag w">핵심</span>':""}</div>
+          <div class="g">${s.trigger}</div>
+          ${s.guide?`<div class="g" style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px"><b style="color:var(--fg-muted)">지침</b> ${s.guide}</div>`:""}
+          <div class="row"><button class="btn pri blk" onclick="act('${s.id}')">실행</button></div>
+        </div>` : `
+        <div class="sop folded" onclick="fold('${s.id}')">
+          <div class="t" style="font-size:13px;color:var(--fg-muted)">${s.id} ${s.label} <span class="tag">펴기</span></div>
+        </div>`;}).join("")}
+      <div class="dim" style="margin-top:8px">실행해도 <b>시계는 그대로</b>입니다. 같은 시각에 여러 건을 할 수 있고,
+        <b>[다음 단계]를 누르기 전까지 되돌릴 수 있습니다</b>. 안 한 조치는 실제와 같은 시각에 한 것으로 봅니다</div>
+    </div>` : st.phase==="판단" ? `
+    <div class="card"><h3>지금 해야 할 조치<span class="m">${st.at}</span></h3>
+      <div class="sub">이 시점에 남은 조치가 없습니다. 다음 단계로 넘어가세요</div></div>` : `
+    <div class="card">
+      <h3>지금 일어나는 일<span class="m">${st.at}</span></h3>
+      <div class="kv">
+        <span class="k">합류부 수위</span><span class="v ${lv>=2.5?"w":""}">${lv} m</span>
+        <span class="k">기준</span><span class="v" style="color:var(--fg-sub)">2.5 m</span>
+        <span class="k">하구 천변도로</span><span class="v ${S.acts.S3?"g":"w"}">${S.acts.S3?"통제됨":lv>=1.9?"물고임":"정상"}</span>
+      </div>
+      <div class="dim" style="margin-top:8px">조치 창이 닫혔습니다. 안 한 조치는 <b>실제와 같은 시각</b>에 한 것으로 봅니다</div>
+    </div>`}
+
+    <div class="card">
+      <h3>지금 상태<span class="m">${st.at}</span></h3>
+      <div class="kv">
+        <span class="k">합류부 수위</span><span class="v">${lv} m</span>
+        <span class="k">상류 강우계</span><span class="v">28 mm/h</span>
+        <span class="k">상류 저류지</span><span class="v">${S.acts.S2?"방류 중 ("+S.acts.S2+")":"현행 운영"}</span>
+      </div>
+      <div class="dim" style="margin-top:7px"><span style="border:1px solid var(--warn);color:var(--warn);border-radius:4px;padding:1px 6px;font-size:11.5px">강우 ${COND[S.cond]} 적용 중</span>
+        관측값은 당시 기록 그대로입니다</div>
+    </div>
+
+    ${fixed.length ? `
+    <div class="card">
+      <h3>확정된 조치<span class="m">${fixed.length}건</span></h3>
+      ${fixed.map(s=>`
+        <div class="done"><span>${s.id} ${s.label}<br /><span class="dim" style="font-size:12px">${s.effect} · ${s.when}</span></span>
+          <span class="tm">${S.acts[s.id]}<br />${lag("14:35",S.acts[s.id])}분</span></div>`).join("")}
+    </div>` : ""}`;
+}
+
+function debriefHTML(){
+  const c = COND[S.cond], my = myResult(), base = baseResult();
+  const better = my.peak < base.peak;
+  return `
+    <div class="card q">
+      <h3>내 조치가 만든 차이<span class="m">둘 다 강우 ${c}</span></h3>
+      <div class="dim">기준은 <b>실제와 같은 시각에 했을 때</b>입니다(방류 15:05 · 통제 15:22)</div>
+      ${Object.keys(S.acts).length===0?`<div class="note warn">조치를 하나도 실행하지 않아 <b>실제와 똑같은 훈련</b>이 되었습니다. 두 열이 같습니다</div>`:""}
+      <table class="cmp">
+        <tr><th>　</th><th>실제와 같게</th><th style="color:var(--primary-text)">내 훈련</th></tr>
+        <tr><td>합류부 최고 수위</td><td class="w">${base.peak} m</td><td class="${better?"b":"w"}">${my.peak} m</td></tr>
+        <tr><td>기준 초과 시각</td><td class="w">${base.cross}</td><td class="${my.cross==="없음"||my.cross>base.cross?"b":"w"}">${my.cross}</td></tr>
+        <tr><td>천변도로 이용자</td><td class="w">노출</td><td class="${S.acts.S3?"b":"w"}">${S.acts.S3?"통제됨":"노출"}</td></tr>
+      </table>
+      <div class="note ${!S.acts.S2 ? "warn" : my.cross==="없음" ? "ok" : better ? "warn" : "warn"}">${
+        !S.acts.S2
+          ? "방류를 실제와 같은 시각에 했으므로 수위는 달라지지 않았습니다. 통제만으로는 물이 오는 시각을 바꾸지 못합니다."
+          : my.cross==="없음"
+            ? `방류를 ${S.acts.S2}에 한 결과 <b>기준 수위를 넘지 않았습니다.</b> 조건은 둘 다 강우 ${c}라 차이는 조치에서만 왔습니다.`
+            : better
+              ? `방류를 ${S.acts.S2}에 해서 최고 수위가 ${(base.peak-my.peak).toFixed(1)} m 낮아지고 초과가 ${Math.round((Date.parse("2024-08-28T"+my.cross+":00+09:00")-Date.parse("2024-08-28T"+base.cross+":00+09:00"))/60000)}분 늦어졌지만, <b>여전히 기준(2.5 m)을 넘었습니다.</b> 이 조건에서는 방류만으로 막지 못합니다.`
+              : "조치를 했지만 이 조건에서는 나아지지 않았습니다."}</div>
+      ${c!=="당시"?`<div class="dim" style="margin-top:8px;border-top:1px solid var(--line);padding-top:8px">
+        참고 · 당시 강우에서 실제 대응: 최고 ${DATA["당시"].none.peak} m · 초과 ${DATA["당시"].none.cross}</div>`:""}
+    </div>
+
+    <div class="card">
+      <h3>발동에서 조치까지<span class="m">실제와 견줌</span></h3>
+      ${SOPS.map(s=>{
+        const at = S.acts[s.id];
+        return `<div class="done"><span>${s.id} ${s.label}</span>
+          <span class="tm">${at
+            ? `<b style="color:var(--fg)">${lag("14:35",at)}분</b> <span style="color:var(--fg-sub)">· 실제 ${lag("14:35",s.actual)}분</span>`
+            : `<span style="color:var(--fg-sub)">안 함 · 실제와 같게(${lag("14:35",s.actual)}분)</span>`}</span></div>`;}).join("")}
+      <div class="dim" style="margin-top:7px">목표 시간 기준이 없어 <b>양호·지연으로 판정하지 않습니다</b></div>
+    </div>
+
+    <div class="card">
+      <h3>고칠 거리<span class="m">훈련이 남기는 것</span></h3>
+      <div class="chips">${["임계치","데이터","SOP"].map(a=>`<span class="chip ${S.axis===a?"on":""}" onclick="S.axis='${a}';render()">${a}</span>`).join("")}</div>
+      <input class="inp" placeholder="무엇을 고칠지 한 줄로" value="${S.memo}" oninput="S.memo=this.value" />
+      <div class="dim" style="margin-top:6px">근거 · 강우 ${c} · ${SOPS.filter(s=>S.acts[s.id]).map(s=>s.id+" "+lag("14:35",S.acts[s.id])+"분").join(" · ")||"조치 없음"}</div>
+    </div>`;
+}
+
+function renderFoot(){
+  const f = document.getElementById("foot"), p = S.phase;
+  if(p==="list") f.innerHTML = "";
+  else if(p==="prepare") f.innerHTML = `<button class="btn pri blk" onclick="start()">▶ 훈련 시작</button>`;
+  else if(p==="debrief") f.innerHTML =
+    `<button class="btn" style="flex:1" onclick="reset()">↺ 다시 훈련</button>
+     <button class="btn pri" style="flex:1">훈련 저장</button>`;
+  else {
+    const last = S.stop===STOPS.length-1;
+    f.innerHTML = `<button class="btn ${last?"pri":""} blk" onclick="next()">${last?"훈련 종료 · 강평":"▶ 다음 단계 · "+STOPS[S.stop+1].at}</button>`;
+  }
+}
+
+function hover(id){ if(S.phase!=="list"||S.caseId===id) return; S.caseId=id; render(); }
+function pick(id){ S.caseId=id; S.phase="prepare"; render(); }
+function start(){ S.phase="drill"; S.stop=0; render(); }
+function act(id){ S.acts[id] = STOPS[S.stop].at; render(); }
+function undo(id){ delete S.acts[id]; render(); }
+/* 강평에서만 — 그 시각 지도를 다시 본다. 조치는 못 바꾼다 */
+function goStop(i){ S.look = i; render(); }
+function fold(id){ S.open[id] = !S.open[id]; render(); }
+function next(){
+  if(S.stop===STOPS.length-1){ S.phase="debrief"; S.look=3; }
+  else { S.stop++; S.open={}; }
+  render();
+}
+reset();
+</script>
+</body>
+</html>

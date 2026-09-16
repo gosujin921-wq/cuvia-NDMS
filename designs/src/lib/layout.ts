@@ -74,15 +74,33 @@ export function utilStripStyle(agentOpen: boolean): CSSProperties {
 export const CCTV_DOCK = 160;
 
 /**
+ * 하단 중앙 도크 높이 (px) — 모의훈련 시계(SCR-05 · 03 §26.4).
+ *
+ * 훈련 중에는 시계가 CCTV 스트립과 같은 자리(좌우 레일 사이 · bottom-3)에 선다. 그래서 질의
+ * 버튼도 같은 규칙으로 그 위로 비킨다 — 안 비키면 마지막 정지점 라벨을 덮는다(2026-09-16 사용자).
+ * **폭을 깎아 비키지 않는다.** 이 바는 폭이 곧 시간 축이라, 오른쪽을 버튼만큼 잘라내면
+ * 마지막 정지점이 축 끝에서 안쪽으로 밀려 훈련이 어디서 끝나는지가 흐려진다.
+ */
+export const TRAINING_CLOCK = 88;
+
+/**
+ * 하단 중앙 질의 바(알약 입력창) 폭 (px). 제품 agent-overlay 기본값은 680 이다.
+ * 종합상황에서 CCTV 스트립 위에 서는 조연이라 좁혔고, 넘치는 추천 질문은 좌우 버튼으로 넘긴다(2026-09-16).
+ * 자리를 내주는 화면의 최대 폭과 포털이 그리는 폭이 이 수 하나를 읽는다.
+ */
+export const AGENT_PILL_WIDTH = 560;
+
+/**
  * 질의 버튼(AgentFab) 자리 — 화면 성격에 따라 셋 중 하나에 선다.
  *
  * 우측 레일 위에 떠 있으면 판단·대응 카드의 글과 레일 바닥 버튼을 가린다. 그래서 레일이
  * 선 화면에서는 레일 왼쪽으로 비켜 가운데 영역의 우하단에 선다(right = CENTER_RIGHT) —
  * 유틸 스트립과 같은 열이고, 여백은 레일 사이와 같은 EDGE 한 칸이다.
  *
- *   · FAB_SLOT      화면 우하단. 레일이 없는 화면(SCR-04·06)
- *   · FAB_SLOT_RAIL 가운데 영역 우하단. 레일이 선 화면(SCR-05)
- *   · FAB_SLOT_DOCK 거기서 도크 위로. 하단 중앙 도크까지 있는 화면(SCR-02)
+ *   · FAB_SLOT       화면 우하단. 레일이 없는 화면(SCR-04·06)
+ *   · FAB_SLOT_RAIL  가운데 영역 우하단. 레일이 선 화면(SCR-05 준비 화면)
+ *   · FAB_SLOT_DOCK  거기서 도크 위로. 하단 중앙 도크까지 있는 화면(SCR-02)
+ *   · FAB_SLOT_CLOCK 거기서 훈련 시계 위로. 훈련 중(SCR-05)
  *
  * 도크는 좌우 레일 사이에만 서므로(03 §1) 도크가 있는 화면에는 우측 레일도 반드시 있다.
  */
@@ -91,6 +109,7 @@ export const FAB_SIZE = 56;
 export const FAB_SLOT = { right: 16, bottom: 16 };
 export const FAB_SLOT_RAIL = { right: CENTER_RIGHT, bottom: EDGE };
 export const FAB_SLOT_DOCK = { right: CENTER_RIGHT, bottom: EDGE + CCTV_DOCK + EDGE };
+export const FAB_SLOT_CLOCK = { right: CENTER_RIGHT, bottom: EDGE + TRAINING_CLOCK + EDGE };
 
 /* 레일 바닥에 질의 버튼 자리를 비워 두던 RAIL_BOTTOM 은 없앴다 — 버튼이 레일 왼쪽으로
    비켜 서면서(FAB_SLOT_RAIL) 레일 바닥의 고정 버튼을 가리지 않는다. 레일은 어느 화면에서나

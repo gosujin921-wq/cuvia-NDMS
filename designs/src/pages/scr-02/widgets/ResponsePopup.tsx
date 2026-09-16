@@ -6,7 +6,7 @@
  * 바닥 액션 바. 탭은 `사건 개요 · SOP 대응 · 이력`. SOP 탭은 CSMS SOP 대응 탭 구조(SopPanel).
  *
  * 진입로 셋이 한 팝업이다 — 레일 [대응 실행] · 지도 마커 [이 사건 대응하기] · 전망 [이 전망으로 대응 검토].
- * 팝업은 별도 상태를 만들지 않는다. 승인·대체조치·통제 전환은 호출부가 여는 중첩 확인창(ExecutionPopup)이 tick 을 옮기고,
+ * 팝업은 별도 상태를 만들지 않는다. 승인·대체조치·안정 전환은 호출부가 여는 중첩 확인창(ExecutionPopup)이 tick 을 옮기고,
  * 닫으면 결과가 레일 `대응 요약`과 이력에 그대로 이어진다. 긴급 경로(판단·전망 전)로 열리면 사건 개요가 그 사실을 적는다.
  *
  * // TODO(I3): 실행 중 닫기 잠금 · ESC/배경 클릭 정책 · 닫힘 후 포커스 복귀 (레거시 03 §2 수용 기준). 지금은 관제 팝업 기본 동작
@@ -46,7 +46,7 @@ interface ResponsePopupProps {
   selectedBasis: { validAt: string; alternativeId: AlternativeId } | null;
   /** 판단·전망 없이 열렸는가 */
   emergency: boolean;
-  /** 실행 결과가 도착했는가 — 통제 전환 버튼 */
+  /** 실행 결과가 도착했는가 — 안정 전환 버튼 */
   resultsArrived: boolean;
   initialTab?: ResponseTab;
   onRequestConfirm: (req: ConfirmRequest) => void;
@@ -210,13 +210,13 @@ export function ResponsePopup({ open, onClose, view, incident, now, channels, re
             <Icon icon="mdi:eye-off-outline" className="size-4" aria-hidden />
             오탐
           </Button>
-          {view.workflowStatus === "대응중" && view.phase !== "통제" && approval && (
+          {view.workflowStatus === "대응중" && view.phase !== "안정" && approval && (
             <Button size="sm" variant={resultsArrived ? "default" : "secondary"} disabled={!resultsArrived} title={resultsArrived ? undefined : "실행 결과가 도착한 뒤 전환"} onClick={() => onRequestConfirm({ kind: "control" })}>
               <Icon icon="mdi:shield-check-outline" className="size-4" aria-hidden />
-              통제로 전환
+              안정으로 전환
             </Button>
           )}
-          {view.phase === "통제" && (
+          {view.phase === "안정" && (
             <Button size="sm" onClick={onCloseReview}>
               <Icon icon="mdi:file-check-outline" className="size-4" aria-hidden />
               종료 검토

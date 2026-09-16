@@ -6,7 +6,7 @@
  * 항목 줄은 `[체크(수동·대기만)] 상태 아이콘 · 이름 / 담당 또는 실패 사유 · [자동/수동] · 오른쪽 상태 칸`이고
  * 주민 전파 항목은 줄 아래 채널별 결과, 시설 항목은 가동 여부 한 줄이 붙는다. 전파는 SOP 한 항목이다.
  *
- * 승인·실행 요청, 대체조치, 통제 전환처럼 집중 확인이 필요한 순간에만 호출부가 팝업을 연다(onRequestConfirm).
+ * 승인·실행 요청, 대체조치, 안정 전환처럼 집중 확인이 필요한 순간에만 호출부가 팝업을 연다(onRequestConfirm).
  * 실패는 성공처럼 칠하지 않는다 — 실패 줄은 남고 대체조치가 그 아래 붙는다(IA §9 승인 경계).
  * 값은 전부 selectors 에서 온다. 여기서 상태를 쓰지 않는다.
  *
@@ -75,7 +75,7 @@ export function SopPanel({ status, grade, approval, items, chain, basis, emergen
           {/* 머리 한 줄 — 누가 무엇을 기준으로 채웠나. 이 줄이 옛 권고 카드의 전부다 */}
           <p className="-mb-2 text-caption text-foreground-subtle">
             {grade ? `${grade} SOP ${items.length}항목` : `SOP ${items.length}항목`}
-            {basis ? ` · ${formatClock(basis.validAt)} 전망(${ALTERNATIVE_LABEL[basis.alternativeId]}) 기준 · CUVIA 작성` : " · 전망 없이 CUVIA 작성"}
+            {basis ? ` · ${formatClock(basis.validAt)} 전망${basis.alternativeId === "baseline" ? "" : `(${ALTERNATIVE_LABEL[basis.alternativeId]})`} 기준 · CUVIA 작성` : " · 전망 없이 CUVIA 작성"}
           </p>
           <ResponseChain stages={chain} />
 

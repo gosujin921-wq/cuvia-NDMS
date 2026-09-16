@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SCR-05 모의훈련 · 데이터 모양 · 2026-09-16</title>
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --card:#1b212a;
+    --line:#2b3542; --line2:#3a4756;
+    --fg:#e6ebf2; --fg-muted:#9aa7b8; --fg-sub:#6b7a8d;
+    --primary:#3b82f6; --primary-text:#60a5fa;
+    --warn:#f59e0b; --ok:#22c55e; --danger:#ef4444;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.62 -apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+    word-break:keep-all}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 90px}
+  h1{font-size:23px;margin:0 0 4px}
+  h2{font-size:18px;margin:42px 0 12px;padding-top:16px;border-top:1px solid var(--line)}
+  h3{font-size:14.5px;margin:24px 0 8px}
+  h3 .st{font-size:11px;font-family:var(--mono);border:1px solid var(--line2);border-radius:4px;padding:1px 6px;margin-left:7px;vertical-align:2px}
+  .st.new{border-color:var(--ok);color:var(--ok)}
+  .st.fix{border-color:var(--warn);color:var(--warn)}
+  .st.keep{border-color:var(--line2);color:var(--fg-sub)}
+  .st.del{border-color:var(--danger);color:var(--danger)}
+  p{margin:8px 0}
+  .lede{color:var(--fg-muted);margin:0 0 18px}
+  code{font-family:var(--mono);font-size:12px;background:var(--surface);padding:1px 5px;border-radius:4px;color:var(--primary-text)}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--surface);color:var(--fg-muted);font-weight:600}
+  td.f{font-family:var(--mono);font-size:12px;color:var(--primary-text);width:170px}
+  td.n{width:44px;text-align:center;color:var(--fg-sub);font-family:var(--mono)}
+  .yes{color:var(--ok)} .no{color:var(--danger)} .part{color:var(--warn)}
+  .dim{color:var(--fg-sub)}
+  .quote{border-left:2px solid var(--primary-text);background:var(--surface);padding:10px 14px;margin:12px 0;color:var(--fg-muted);font-size:13px}
+  .quote b{color:var(--fg)}
+  .chk td.c{width:112px;text-align:center;white-space:nowrap}
+  .chk input{accent-color:var(--primary);margin:0 3px 0 0}
+  .chk label{font-size:11.5px;color:var(--fg-muted);cursor:pointer;margin-right:7px}
+  .chk tr.sec td{background:var(--surface);font-weight:700;color:var(--fg-muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>SCR-05 모의훈련 · 데이터 모양</h1>
+<p class="lede">2026-09-16 · 와이어프레임 v2.3의 화면에 들어갈 값이 <b>어디서 오고 어떤 모양인가</b>를 정합니다.
+이걸 먼저 정하지 않으면 코드 짜다가 화면에서 즉흥으로 결정하게 됩니다.</p>
+
+<div class="quote">
+  <b>읽는 법.</b> <span class="st new">새로</span> 새로 만든다 ·
+  <span class="st fix">고침</span> 지금 있는 것에 필드를 더한다 ·
+  <span class="st keep">그대로</span> 손대지 않는다 ·
+  <span class="st del">폐기</span> v1에서 만든 것을 지운다
+</div>
+
+<h2>1. 한눈에</h2>
+<table>
+  <tr><th style="width:190px">무엇</th><th style="width:80px">상태</th><th>왜</th></tr>
+  <tr><td><code>WhatIfResponse.kind</code></td><td class="yes">고침</td><td>유형별 <b>핵심 판단</b>(현상 대응)을 화면이 스스로 고르게 한다. 지금은 문서에만 있다</td></tr>
+  <tr><td><code>WhatIfSopItem.guide</code></td><td class="yes">고침</td><td>조치 카드의 지침 줄. 근거가 있는 것만 채우고 없으면 비운다</td></tr>
+  <tr><td><code>TrainingScenario</code></td><td class="yes">새로</td><td>정지점(판단/결과 국면)과 고를 수 있는 조건. 사건마다 다르다</td></tr>
+  <tr><td><code>TrainingRun</code></td><td class="yes">새로</td><td>훈련 한 회의 저장 단위. 지금 <code>AnalysisResult</code>는 모양이 다르다</td></tr>
+  <tr><td>조합 판 생성</td><td class="part">규칙 추가</td><td>방류 × 통제를 함께 고른 판이 없다. <code>roadOn</code> 규칙으로 만든다</td></tr>
+  <tr><td><code>WhatIfDrill</code></td><td class="no">폐기</td><td>v1의 "질문 하나 고르기". v2에는 질문이 없고 조치 실행이 있다</td></tr>
+  <tr><td><code>WhatIfCase</code> · <code>WhatIfSituation</code> · <code>WhatIfCombo</code> · 예측판</td><td class="dim">그대로</td><td>사건·조건·판은 지금 것을 그대로 쓴다</td></tr>
+  <tr><td><code>AnalysisResult</code></td><td class="dim">그대로</td><td>사건 작업공간 전망 탭의 저장 단위로 남긴다. 훈련과 섞지 않는다</td></tr>
+</table>
+
+<h2>2. 고치는 것</h2>
+
+<h3><code>WhatIfResponse.kind</code> <span class="st fix">고침</span></h3>
+<p>대응이 <b>현상을 바꾸나, 노출만 바꾸나.</b> 훈련의 핵심 판단은 현상 대응이다.</p>
+<table>
+  <tr><th style="width:80px">값</th><th>뜻</th><th>결과가 어떻게 나오나</th><th style="width:210px">예</th></tr>
+  <tr><td class="f">"현상"</td><td>재난 자체를 바꾼다</td><td>수위·도달·범위가 달라진다</td><td>저류지 방류 · 배수 · 수문 · 방화선 · 비상전원</td></tr>
+  <tr><td class="f">"노출"</td><td>사람·차량이 덜 닿게 한다</td><td>대상 상태와 도달 전 여유만 달라진다</td><td>도로 통제 · 대피 · 쉼터 연장 · 순회</td></tr>
+</table>
+<p class="lede">유형별로 이렇게 갈립니다. <b>E 폭염은 현상 대응이 없어 훈련 시나리오를 만들 수 없습니다.</b></p>
+<table>
+  <tr><th style="width:150px">유형</th><th>현상 대응 (핵심 판단)</th><th>노출 대응</th></tr>
+  <tr><td>A 도시침수</td><td>배수 대응</td><td>도로 통제</td></tr>
+  <tr><td>B 하천범람</td><td><b>저류지 방류</b> ← 창원천</td><td>천변도로 통제</td></tr>
+  <tr><td>C 해안월류</td><td>수문·차수</td><td>해안 통제</td></tr>
+  <tr><td>D 산불</td><td>방화선·진압</td><td>대피 개시</td></tr>
+  <tr><td>E 폭염</td><td class="no">없음</td><td>쉼터 연장 · 순회</td></tr>
+  <tr><td>F 급경사지</td><td>배수로 정비·보강</td><td>도로 통제 · 대피 범위</td></tr>
+  <tr><td>G 기반시설</td><td>비상전원 투입</td><td>순회 자원</td></tr>
+</table>
+
+<h3><code>WhatIfSopItem.guide</code> <span class="st fix">고침</span></h3>
+<p>조치 카드의 <b>지침</b> 한 줄. 무엇을 어떻게 하는가.</p>
+<table>
+  <tr><th style="width:80px">채우는 법</th><th>내용</th></tr>
+  <tr><td class="yes">있으면</td><td>이어진 대응의 <code>target</code> · <code>level</code> 을 옮겨 적는다. 예: "사전 방류로 저류 여유 확보"</td></tr>
+  <tr><td class="no">없으면</td><td><b>비운다.</b> 화면은 지침 줄을 안 그린다. 지어내지 않는다</td></tr>
+</table>
+<p class="lede"><b>목표 시간은 넣지 않습니다.</b> 재난안전법·매뉴얼에서 근거를 찾기 전에는 양호/지연 판정을 하지 않고,
+강평에서 <b>실제와의 차이</b>만 적습니다("내 0분 · 실제 30분").</p>
+
+<h2>3. 새로 만드는 것</h2>
+
+<h3><code>TrainingScenario</code> <span class="st new">새로</span> · 사건 하나를 훈련으로 쓰기 위한 준비물</h3>
+<table>
+  <tr><th style="width:170px">필드</th><th>뜻</th><th style="width:230px">창원천의 값</th></tr>
+  <tr><td class="f">incidentId</td><td>어느 사건인가</td><td>INC-2024-0828-CW01</td></tr>
+  <tr><td class="f">stops[]</td><td>정지점. <code>at</code> · <code>phase</code>(판단/결과) · <code>note</code></td>
+    <td>14:35 판단 · 14:55 판단 · 15:30 결과 · 16:00 결과</td></tr>
+  <tr><td class="f">conditions[]</td><td>고를 수 있는 조건. 단계마다 조건 판을 가리킨다</td>
+    <td>강우 = 당시(없음) · +20%(rain-plus20) · +50%(rain-plus50)</td></tr>
+  <tr><td class="f">firedSopIds[]</td><td>어느 규정이 이 훈련에서 발동하나</td><td>S1 · S2 · S3 (모두 14:35)</td></tr>
+</table>
+<p class="lede"><b>조치 가능 시각은 따로 안 적습니다.</b> 이미 대응의 선택지(<code>presets</code>)에 있고,
+정지점과 겹치는 것만 화면에 뜹니다. 두 곳에 적으면 값이 갈립니다.</p>
+<table>
+  <tr><th style="width:110px">정지점</th><th style="width:80px">국면</th><th>그때 고를 수 있는 조치</th></tr>
+  <tr><td>14:35</td><td class="part">판단</td><td>방류 14:35 · 통제 14:35 · 둔치 통제 14:35</td></tr>
+  <tr><td>14:55</td><td class="part">판단</td><td>방류 14:55(마지막) · 통제 14:52 · 둔치 통제</td></tr>
+  <tr><td>15:30</td><td class="yes">결과</td><td class="dim">없음 · 조치 창 닫힘</td></tr>
+  <tr><td>16:00</td><td class="yes">결과</td><td class="dim">없음 · 종료·강평으로</td></tr>
+</table>
+
+<h3><code>TrainingRun</code> <span class="st new">새로</span> · 훈련 한 회의 기록</h3>
+<table>
+  <tr><th style="width:170px">필드</th><th>뜻</th><th style="width:230px">예</th></tr>
+  <tr><td class="f">runId · incidentId</td><td>훈련 한 회 · 어느 사건</td><td>TR-001 · 창원천</td></tr>
+  <tr><td class="f">conditionIds[]</td><td>고른 조건</td><td>rain-plus20</td></tr>
+  <tr><td class="f">actions[]</td><td>내 조치. <code>sopId</code> · <code>at</code> · <code>lagMin</code>(발동에서 걸린 시간)</td>
+    <td>S2 14:35 0분 · S1 14:55 20분 · S3 14:55 20분</td></tr>
+  <tr><td class="f">resultForecastId</td><td>내 조치가 만든 판</td><td>조건 판 + 방류 + 통제 조합</td></tr>
+  <tr><td class="f">baselineForecastId</td><td>"실제와 같게 했다면" 판 · 비교의 기준</td><td>같은 조건 · 실제 대응</td></tr>
+  <tr><td class="f">improvements[]</td><td>고칠 거리. 축은 임계치·데이터·SOP</td><td>사람이 적는다</td></tr>
+  <tr><td class="f">startedAt · finishedAt · author</td><td>언제 · 누가</td><td></td></tr>
+</table>
+<p class="lede"><b>결과 수치를 저장하지 않습니다.</b> 판 id 둘만 저장하면 다시 열 때 같은 값이 나옵니다.
+수치를 복사해 두면 판을 고칠 때 값이 갈립니다.</p>
+
+<h2>4. 조합 판 — 언제 만드나</h2>
+<p>화면 4(강평)가 <b>방류와 통제를 함께 반영한 판</b>을 필요로 하는데 지금 없습니다.</p>
+<table>
+  <tr><th style="width:150px">방법</th><th>내용</th><th style="width:110px">판정</th></tr>
+  <tr><td>미리 다 만든다</td><td>조건 3 × 방류 3 × 통제 3 = 27벌을 빌드 때 생성. 지금 <code>COMBOS</code> 루프와 같은 방식</td><td class="yes"><b>권고</b></td></tr>
+  <tr><td>고를 때 만든다</td><td>훈련 중에 계산. 화면이 값을 만드는 셈이라 "화면이 계산하지 않는다" 원칙과 부딪힌다</td><td class="no">반대</td></tr>
+</table>
+<p class="lede">생성 규칙은 이미 있습니다. <code>roadOn(방류판, 통제시각)</code> 이 <b>임의의 판 위에 통제 시각만 얹습니다</b> —
+범람면·수위는 방류 판이 정하고 통제는 대상 상태만 바꿉니다. 근거 카드에 <b>"규칙 계산"</b> 이라고 그대로 적습니다.</p>
+
+<h2>5. 화면의 값이 어디서 오나</h2>
+<table>
+  <tr><th style="width:110px">화면</th><th>보여주는 것</th><th>출처</th></tr>
+  <tr><td>1 준비</td><td>사건 목록 · 훈련 준비 여부</td><td><code>TrainingScenario</code> 가 있는 사건만 훈련 가능</td></tr>
+  <tr><td>1 준비</td><td>훈련 구조(판단 지점 · 규정 건수)</td><td><code>stops</code> 개수 · <code>firedSopIds</code> 개수</td></tr>
+  <tr><td>1 준비</td><td>강우 슬라이더</td><td><code>conditions</code> · 단계마다 <code>WhatIfSituation</code></td></tr>
+  <tr><td>2 판단</td><td>지금 뜬 조치</td><td>그 정지점에 선택지가 있는 SOP 항목. 핵심(<code>kind: 현상</code>)이 위</td></tr>
+  <tr><td>2 판단</td><td>지침 줄</td><td><code>guide</code> · 없으면 안 그린다</td></tr>
+  <tr><td>2 판단</td><td>지금 상태</td><td><code>stateByTime</code> · 조건 배지는 따로(관측값은 당시 기록 그대로)</td></tr>
+  <tr><td>3 결과</td><td>지도 · 지금 일어나는 일</td><td>내 조치가 만든 판의 그 눈금</td></tr>
+  <tr><td>4 강평</td><td>내 조치가 만든 차이</td><td><code>resultForecastId</code> ↔ <code>baselineForecastId</code> · 같은 조건</td></tr>
+  <tr><td>4 강평</td><td>발동에서 조치까지</td><td><code>actions[].lagMin</code> ↔ 원장의 <code>actedAt</code></td></tr>
+  <tr><td>4 강평</td><td>참고 · 당시 조건 실제 대응</td><td>기준 재현 판</td></tr>
+  <tr><td>5 목록</td><td>회차 목록</td><td><code>TrainingRun</code> 들</td></tr>
+</table>
+
+<h2>6. 검수 결과 — 결정</h2>
+<p class="lede">우리 방향(<b>훈련하고 시뮬해서 개선한다</b>)과 기준 ①②③에 비추어 판단했습니다.
+아홉 중 <b>여덟은 그대로 채택</b>, <b>하나는 고쳐서 채택</b>, <b>둘을 새로 추가</b>했습니다.</p>
+
+<table>
+  <tr><th style="width:46px">#</th><th>결정</th><th>근거</th><th style="width:88px">판정</th></tr>
+
+  <tr><td class="n">E-1</td><td>대응에 <b>현상/노출</b> 표시를 붙이고 훈련의 핵심 판단은 현상 대응</td>
+    <td>기준 ③이 이미 이 구분을 담고 있다 — 현상 대응은 트윈 결과(도달·범위·강도)가 나오고 노출 대응은 여유 시간뿐이다.
+      창원천을 통제로 물었을 때 결과가 안 읽힌 이유가 이것이었다. <b>노출 대응을 훈련에서 빼는 것은 아니다</b> — 조치로는 실행하되 위계에서 아래다</td>
+    <td class="yes">채택</td></tr>
+
+  <tr><td class="n">E-2</td><td>지침은 대응의 <code>target</code>·<code>level</code> 범위까지 · 없으면 비움 · <b>목표 시간 안 넣음</b></td>
+    <td>목표 시간은 기준 ③의 <b>경로 시험</b>을 못 넘는다(모델·공식 기준·원장 어디에도 없다). 지어내면 훈련이 채점이 된다.
+      <b>단, 재난안전법 시행령·현장조치 행동매뉴얼에 있을 수 있으므로 정본의 `남은 확인`에 남긴다</b></td>
+    <td class="yes">채택</td></tr>
+
+  <tr><td class="n">E-3</td><td>훈련 시나리오(정지점·조건·발동 규정)를 사건마다 적고, 없으면 훈련 불가</td>
+    <td>Phase 2는 창원천 하나지만 구조는 사건마다여야 확장된다. 준비 안 된 사건을 조용히 다른 것으로 대체하지 않는 것은 IA §5.2 예외 처리와 같다</td>
+    <td class="yes">채택</td></tr>
+
+  <tr><td class="n">E-4</td><td>조치 가능 시각은 대응의 선택지에만 적고 정지점과 겹치는 것만 뜬다</td>
+    <td>CLAUDE.md "두 벌이 된 것은 위로 올린다". 같은 시각을 두 곳에 적으면 한쪽만 고쳐져 조용히 어긋난다</td>
+    <td class="yes">채택</td></tr>
+
+  <tr><td class="n">E-5</td><td class="part"><b>고쳐서 채택</b> — 판 id <b>와</b> 보고서용 표시값을 <b>둘 다</b> 저장한다</td>
+    <td>처음 안(판 id만)은 <b>틀렸다.</b> 판을 고치거나 실개발에서 모델을 교체하면 과거 훈련의 결과가 소급해서 바뀐다.
+      "그때 이렇게 나왔다"는 기록이 아니게 된다. <b>다시 열기는 판 id로, 보고서는 저장된 값으로</b> 읽는다 —
+      지금 <code>AnalysisResult</code> 가 <code>restore</code> + <code>compareRows</code> 로 쓰는 문법과 같다</td>
+    <td class="part">수정</td></tr>
+
+  <tr><td class="n">E-6</td><td>훈련 기록과 분석 결과는 다른 물건. 분석 결과는 전망 탭에 남긴다</td>
+    <td>저장 단위가 다르다(훈련 한 회 = 조치 여러 건 + 조건 + 강평 / 분석 한 건 = 조건 하나 + 비교).
+      <b>다만 개선 항목은 한 목록이다</b>(README §2.3) — 출처만 `훈련`·`검증`으로 갈린다</td>
+    <td class="yes">채택</td></tr>
+
+  <tr><td class="n">E-7</td><td>조합 판은 빌드 때 미리 27벌(조건 3 × 방류 3 × 통제 3)</td>
+    <td>훈련 중에 계산하면 화면이 값을 만드는 셈이라 "사전 작성 판을 쓰고 실시간 계산처럼 부르지 않는다"와 부딪힌다.
+      지금 <code>COMBOS</code> 루프와 같은 방식이라 새 구조가 아니다. 둔치 통제(S1)는 결과판이 없어 조합에 안 들어간다</td>
+    <td class="yes">채택</td></tr>
+
+  <tr><td class="n">E-8</td><td>규칙으로 만든 판은 근거 카드에 "규칙 계산"이라고 적는다</td>
+    <td>기준 ③의 신뢰 조건. 지금 <code>roadOn</code> 이 이미 그렇게 적고 있다</td>
+    <td class="yes">채택</td></tr>
+
+  <tr><td class="n">E-9</td><td><code>WhatIfDrill</code> 과 v1 화면 코드를 지운다</td>
+    <td>v2에 질문 고르기가 없다. <b>단 코드 단계에서 한 번에 교체한다</b> — 지금 지우면 화면이 깨진 채로 남는다</td>
+    <td class="yes">채택</td></tr>
+
+  <tr><td class="n">E-10</td><td class="yes"><b>추가</b> — 훈련 진행 상태는 <b>세션</b>이 들고, 사건·조건은 <b>주소</b>가 든다</td>
+    <td>지금까지 정하지 않았다. 내 조치 목록과 지금 정지점은 길고 자주 바뀌어 주소에 싣지 않는다.
+      <b>새로고침하면 훈련이 처음으로 돌아간다</b> — 데모에서 수용하고 문서에 적는다. 사건·조건은 주소가 들어 링크로 열 수 있다(IA §5.2)</td>
+    <td class="yes">결정</td></tr>
+
+  <tr><td class="n">E-11</td><td class="yes"><b>추가</b> — 안 한 조치는 <code>actions</code> 에 안 넣는다. "실제와 같게"는 기준 판이 표현한다</td>
+    <td>미실시를 따로 기록하면 "안 함"이라는 상태가 생기고, 그 결과를 보여줄 판이 없다.
+      훈련의 질문은 "할까 말까"가 아니라 "언제 할까"다(README §2.3). 기준 판이 곧 "실제와 같은 시각에 한 것"이다</td>
+    <td class="yes">결정</td></tr>
+</table>
+
+<h3>결정하지 않고 남기는 것</h3>
+<table>
+  <tr><th style="width:190px">무엇</th><th>왜 남기나</th></tr>
+  <tr><td>SOP 단계별 목표 시간</td><td>근거를 못 찾았다. 재난안전법 시행령·현장조치 행동매뉴얼 확인 대상. 정본 `남은 확인`에 적는다</td></tr>
+  <tr><td>훈련 중단·재개</td><td>Phase 2에서 정의하지 않는다. 나가면 훈련이 끝난다</td></tr>
+  <tr><td>창원천 외 사건의 훈련 시나리오</td><td>I4 선택 범위. 구조는 사건마다 적게 열어 둔다</td></tr>
+  <tr><td>유사 사례 조회(①-4)</td><td>유사 판단 기준이 없다. Phase 2에서 뺀다</td></tr>
+</table>
+
+<p class="lede" style="margin-top:16px"><b>다음:</b> 이 결정을 정본에 옮긴다 →
+03 §26 을 v2 구조로 다시 쓰고, IA §15 에 <code>TrainingScenario</code>·<code>TrainingRun</code>·<code>kind</code> 를 세우고,
+README §2.3 기준 ①② 에 "어디에 구현됐나" 열을 붙인다. 그다음 코드.</p>
+
+</div>
+</body>
+</html>

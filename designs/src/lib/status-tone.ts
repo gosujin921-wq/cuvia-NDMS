@@ -63,12 +63,12 @@ export type DistrictStatus = "심각" | "경계" | "주의" | "정상";
 /** 점·글자·CSS 색·테두리·후광이 한 상태에서 같은 색이다. 지도 핀·목록 줄·범례·지구 현황이 이 표 하나를 문다.
  *  심각·경계·주의는 RISK_GRADE_TONE 과 같은 토큰이라 사건 카드의 등급 색과 일치한다 */
 export const DISTRICT_STATUS_TONE: Record<DistrictStatus, { dot: string; text: string; color: string; stroke: string; halo: string; meaning: string }> = {
-  심각: { dot: "bg-risk-lv5", text: "text-risk-lv5", color: "var(--color-risk-lv5)", stroke: "border-risk-lv5", halo: "ring-risk-lv5/30", meaning: "진행 중인 심각 사건이 있는 지구" },
-  경계: { dot: "bg-risk-lv4", text: "text-risk-lv4", color: "var(--color-risk-lv4)", stroke: "border-risk-lv4", halo: "ring-risk-lv4/30", meaning: "진행 중인 경계 사건이 있는 지구" },
-  주의: { dot: "bg-risk-lv3", text: "text-risk-lv3", color: "var(--color-risk-lv3)", stroke: "border-risk-lv3", halo: "ring-risk-lv3/30", meaning: "진행 중인 주의 사건·후보가 있는 지구" },
+  심각: { dot: "bg-risk-lv5", text: "text-risk-lv5", color: "var(--color-risk-lv5)", stroke: "border-risk-lv5", halo: "ring-risk-lv5/30", meaning: "심각 사건이나 심각 알림이 있는 지구" },
+  경계: { dot: "bg-risk-lv4", text: "text-risk-lv4", color: "var(--color-risk-lv4)", stroke: "border-risk-lv4", halo: "ring-risk-lv4/30", meaning: "경계 사건이나 경계 알림이 있는 지구" },
+  주의: { dot: "bg-risk-lv3", text: "text-risk-lv3", color: "var(--color-risk-lv3)", stroke: "border-risk-lv3", halo: "ring-risk-lv3/30", meaning: "주의 사건·후보나 주의 알림이 있는 지구" },
   /* 정상은 색을 세우지 않는다 · 12곳이 전부 초록이면 색이 신호가 아니라 배경이 된다. 지도 점과 목록 점이 같은 회색이다
      (사용자 결정, 2026-09-14 · 초록 ↔ 회색 중 회색) */
-  정상: { dot: "bg-foreground-subtle", text: "text-foreground-muted", color: "var(--color-foreground-subtle)", stroke: "border-border", halo: "ring-border/30", meaning: "진행 중인 사건이 없는 지구" },
+  정상: { dot: "bg-foreground-subtle", text: "text-foreground-muted", color: "var(--color-foreground-subtle)", stroke: "border-border", halo: "ring-border/30", meaning: "진행 중인 사건·알림이 없는 지구" },
 };
 export const DISTRICT_STATUS_ORDER: DistrictStatus[] = ["심각", "경계", "주의", "정상"];
 
@@ -160,3 +160,21 @@ export const BAND_LABEL: Record<string, string> = {
 export function bandLabel(band: string): string {
   return BAND_LABEL[band] ?? band;
 }
+
+/* ── 이력·통계 축 (IA §10 · 2026-09-16) ──
+   처리상태 여섯을 읽는 쪽 넷으로 접은 것(model/records RecordStatus). 진행 중만 살아 있는 색이고 나머지는 닫힌 색이다 */
+
+import type { RecordStatus } from "../model/records";
+
+export const RECORD_STATUS_TONE: Record<RecordStatus, { badge: "live" | "done" | "offline"; meaning: string }> = {
+  "진행 중": { badge: "live", meaning: "아직 닫히지 않은 사건" },
+  종료: { badge: "done", meaning: "종료 조건을 채우고 닫힌 사건" },
+  오탐: { badge: "offline", meaning: "시험·오경보로 닫힌 사건" },
+  병합: { badge: "offline", meaning: "기준 사건에 흡수된 사건" },
+};
+
+/** 조치·전파 결과 뱃지 — 이력의 대응 절과 경과 타임라인이 같은 색을 쓴다. 실패·미응답만 위험색 */
+import type { ActionStatus } from "../model/response";
+export const ACTION_RESULT_BADGE: Partial<Record<ActionStatus, "green" | "red" | "yellow" | "gray" | "blue">> = {
+  성공: "green", 실패: "red", 미응답: "red", 확인대기: "yellow", 대체됨: "gray", 취소: "gray", 진행중: "blue",
+};

@@ -24,6 +24,7 @@ import { DISTRICTS, type DistrictKind } from "../../demo/districts";
 import { districtStatusAt, incidentsAt, riskCountsAt, topIncidentByDistrictAt, watchTargetsAt, type FeedItem } from "../../model/selectors";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import {
+  AGENT_PILL_WIDTH,
   CENTER_LEFT,
   CENTER_RIGHT,
   EDGE,
@@ -299,7 +300,7 @@ export function OverviewDashboardPage() {
         className="pointer-events-none absolute z-30 flex justify-center"
         style={{ left: CENTER_LEFT, right: CENTER_RIGHT, bottom: ABOVE_STRIP }}
       >
-        <div ref={pillRef} id={PILL_SLOT_ID} className="pointer-events-auto w-full max-w-[680px]" />
+        <div ref={pillRef} id={PILL_SLOT_ID} className="pointer-events-auto w-full" style={{ maxWidth: AGENT_PILL_WIDTH }} />
       </div>
 
       {/* 하단 중앙: 주요 CCTV 스트립 (03 §1 · 04 §2-5). 좌우 레일 사이에만 선다 —

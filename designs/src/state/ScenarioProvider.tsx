@@ -35,10 +35,9 @@ import { answerMessage, matchQuery, unknownMessage } from "../demo/ai";
 import { seaTempOnce } from "../demo/sea-temp";
 import type { DemoStage, DemoStageSpec, DemoTick } from "../model/stage";
 import { DEMO_STAGE_SPECS } from "../model/stage";
-import type { TrainingRun, TrainingScenario, TrainingScenarioRequest, TrainingEntry } from "../model/training";
-import { DEMO_USER } from "../demo/user";
 import { HERO_INCIDENT_ID } from "../fixtures";
-import { buildTrainingScenario, ticksOf } from "../model/selectors";
+import { ticksOf } from "../model/selectors";
+import type { AnalysisResult, TrainingRun, ImprovementItem } from "../model/whatif";
 
 /** 세계 틱 한 칸 간격 — 승인 뒤 결과가 "도착하는" 느낌. CSMS 자동조치 0.7초보다 길게, 읽을 시간을 준다 */
 const WORLD_TICK_MS = 1800;
@@ -256,6 +255,16 @@ interface ScenarioContextValue {
   logPhoneReport: () => void;
   /* ── AI 패널 (03 §6). 열림 여부와 대화는 시연 중 변하므로 엔진이 소유한다 ── */
   /** 패널이 열려 있나 */
+  /** 분석 결과 — 모의훈련 분석의 저장 단위(03 §26.9). 사건에 연결되지만 사건 원장을 고치지 않는다 */
+  analyses: AnalysisResult[];
+  saveAnalysis: (draft: Omit<AnalysisResult, "analysisId" | "savedAt">) => AnalysisResult;
+  /** 훈련 한 회의 기록 — 분석 결과와 다른 물건이다(03 §26.9) */
+  trainingRuns: TrainingRun[];
+  saveTrainingRun: (draft: Omit<TrainingRun, "runId" | "finishedAt">) => TrainingRun;
+  /** 개선 항목 — 훈련이 남기는 것. 예측 검증과 한 목록으로 쓴다(README §2.3) */
+  improvements: ImprovementItem[];
+  addImprovement: (draft: Omit<ImprovementItem, "id" | "createdAt" | "source">) => void;
+  removeImprovement: (id: string) => void;
   agentOpen: boolean;
   /** 쌓인 대화. 새로고침 = 리셋이라 대화도 함께 비워진다 */
   agentMessages: AgentMessage[];
@@ -315,17 +324,6 @@ interface ScenarioContextValue {
   nextTick: () => void;
   /** 다음 tick 이 시간 경과인가 */
   nextIsWorld: boolean;
-  /** D8 훈련 시나리오 생성 — 스냅샷을 묶어 목록에 넣는다(IA §13.1). 원 사건은 바뀌지 않는다 */
-  trainingScenarios: TrainingScenario[];
-  createTrainingScenario: (req: TrainingScenarioRequest) => TrainingScenario | null;
-  /** 훈련 실행 이력 — 시나리오별 TrainingRun(IA §13.1). 훈련 중 결정·조치·결과는 여기만 쌓이고 원 사건은 바뀌지 않는다 */
-  trainingRuns: TrainingRun[];
-  /** 훈련 시작 — 준비 → 진행중. 시작 시각은 엔진 시계다 */
-  startTrainingRun: (scenarioId: string) => TrainingRun;
-  /** 훈련 중 기록 — `at` 은 훈련 축 위 시각(상대시간 재생)이라 호출부가 넘긴다 */
-  recordTrainingEntry: (runId: string, kind: "decisions" | "actions" | "outcomes", entry: TrainingEntry) => void;
-  /** 훈련 종료 — 회고 한 줄과 함께 완료로 */
-  endTrainingRun: (runId: string, retrospective?: string) => void;
 }
 
 const ScenarioContext = createContext<ScenarioContextValue | null>(null);
@@ -349,11 +347,50 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
   const heroIncidentId = HERO_INCIDENT_ID;
   const ticks = useMemo(() => ticksOf(heroIncidentId), [heroIncidentId]);
   const [tickIndex, setTickIndex] = useState(0);
-  const [trainingScenarios, setTrainingScenarios] = useState<TrainingScenario[]>([]);
+  /* 분석 결과 — 세션 안에서만 쌓인다. 실개발에서는 저장소로 간다 */
+  const [analyses, setAnalyses] = useState<AnalysisResult[]>([]);
+  /** 저장 번호 — 목록에서 지워도 번호가 겹치지 않게 순번은 따로 센다 */
+  const analysisSeq = useRef(0);
+  const saveAnalysis = useCallback(
+    (draft: Omit<AnalysisResult, "analysisId" | "savedAt">): AnalysisResult => {
+      analysisSeq.current += 1;
+      const saved: AnalysisResult = { ...draft, analysisId: `A-${analysisSeq.current.toString().padStart(3, "0")}`, savedAt: new Date().toISOString() };
+      setAnalyses((prev) => [...prev, saved]);
+      return saved;
+    },
+    [],
+  );
+
+  /* 훈련 기록 — 훈련 한 회(03 §26.9). 판 id 와 보고서용 표시값을 둘 다 담아
+     판을 고쳐도 과거 훈련 결과가 소급해서 바뀌지 않게 한다 */
+  const [trainingRuns, setTrainingRuns] = useState<TrainingRun[]>([]);
+  const runSeq = useRef(0);
+  const saveTrainingRun = useCallback((draft: Omit<TrainingRun, "runId" | "finishedAt">): TrainingRun => {
+    runSeq.current += 1;
+    const saved: TrainingRun = { ...draft, runId: `TR-${runSeq.current.toString().padStart(3, "0")}`, finishedAt: new Date().toISOString() };
+    setTrainingRuns((prev) => [saved, ...prev]);
+    return saved;
+  }, []);
+
+  /* 개선 항목 — 훈련이 남기는 것(README §2.3). 사람이 쓰고 시스템은 맥락만 붙인다.
+     실개발에서는 사건 원장 옆 저장소로 가고, 승인 뒤에만 SOP·기준에 반영한다 */
+  const [improvements, setImprovements] = useState<ImprovementItem[]>([]);
+  const improvementSeq = useRef(0);
+  const addImprovement = useCallback((draft: Omit<ImprovementItem, "id" | "createdAt" | "source">) => {
+    improvementSeq.current += 1;
+    setImprovements((prev) => [
+      ...prev,
+      { ...draft, id: `IMP-${improvementSeq.current.toString().padStart(3, "0")}`, source: "훈련", createdAt: new Date().toISOString() },
+    ]);
+  }, []);
+  const removeImprovement = useCallback((id: string) => setImprovements((prev) => prev.filter((x) => x.id !== id)), []);
+
   /* 세계 틱 자동 진행 (2026-09-14 사용자 지적 "대체조치했는데 또 9를 눌러야 함").
-     담당자가 조작하면(승인·대체조치·통제 전환) 그 뒤에 이어지는 세계 틱(결과 도착·악화)은 타이머가 한 칸씩 민다.
-     다음 담당자 칸에서 멈춘다 — 세상은 알아서 굴러가고 사람이 할 일 앞에서만 기다린다. 시연 시작(d0→d1)은 발표자가
-     `9` 로 연다. 9 는 리허설 복구용으로 남는다 */
+     담당자가 조작하면(승인·안정 전환) 그 뒤에 이어지는 세계 틱(결과 도착·악화)은 타이머가 한 칸씩 민다
+     다음 담당자 칸에서 멈춘다 — 세상은 알아서 굴러가고 사람이 할 일 앞에서만 기다린다. 시연 시작(d0→d1)은 발표자
+     `9` 로 연다. 9 는 리허설 복구용으로 남는다.
+     D7 은 승인 한 번이면 [안정으로 전환]까지 세계 틱 두 칸이 알아서 흐른다. 대체조치·추가 승인은 시나리오가 기록한다
+     (2026-09-16 · fixtures incident.ts) */
   const [autoPlay, setAutoPlay] = useState(false);
   const advanceTick = useCallback(
     (tickId: string) => {
@@ -374,45 +411,6 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
   const nextTick = useCallback(() => {
     setTickIndex((prev) => Math.min(prev + 1, ticks.length - 1));
   }, [ticks.length]);
-  const createTrainingScenario = useCallback(
-    (req: TrainingScenarioRequest) => {
-      const scenario = buildTrainingScenario(req, new Date(ticks[tickIndex].at));
-      if (scenario) setTrainingScenarios((prev) => (prev.some((x) => x.scenarioId === scenario.scenarioId) ? prev : [...prev, scenario]));
-      return scenario;
-    },
-    [ticks, tickIndex],
-  );
-  const [trainingRuns, setTrainingRuns] = useState<TrainingRun[]>([]);
-  const startTrainingRun = useCallback(
-    (scenarioId: string): TrainingRun => {
-      const run: TrainingRun = {
-        trainingRunId: `TR-${scenarioId}-${Date.now().toString(36)}`,
-        scenarioId,
-        status: "진행중",
-        participants: [DEMO_USER.name],
-        startedAt: ticks[tickIndex].at,
-        decisions: [],
-        actions: [],
-        outcomes: [],
-      };
-      setTrainingRuns((prev) => [...prev, run]);
-      return run;
-    },
-    [ticks, tickIndex],
-  );
-  const recordTrainingEntry = useCallback(
-    (runId: string, kind: "decisions" | "actions" | "outcomes", entry: TrainingEntry) => {
-      setTrainingRuns((prev) => prev.map((r) => (r.trainingRunId === runId && r.status === "진행중" ? { ...r, [kind]: [...r[kind], entry] } : r)));
-    },
-    [],
-  );
-  const endTrainingRun = useCallback(
-    (runId: string, retrospective?: string) => {
-      const endedAt = ticks[tickIndex].at;
-      setTrainingRuns((prev) => prev.map((r) => (r.trainingRunId === runId && r.status === "진행중" ? { ...r, status: "완료", endedAt, retrospective } : r)));
-    },
-    [ticks, tickIndex],
-  );
 
   const selectDevice = useCallback((deviceId: string | null) => {
     setSelectedDeviceId(deviceId);
@@ -791,12 +789,13 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
       advanceTick,
       nextTick,
       nextIsWorld: ticks[tickIndex + 1]?.driver === "세계",
-      trainingScenarios,
-      createTrainingScenario,
+      analyses,
+      saveAnalysis,
       trainingRuns,
-      startTrainingRun,
-      recordTrainingEntry,
-      endTrainingRun,
+      saveTrainingRun,
+      improvements,
+      addImprovement,
+      removeImprovement,
       agentOpen,
       agentMessages,
       agentResponding,
@@ -838,12 +837,13 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     tickIndex,
     advanceTick,
     nextTick,
-    trainingScenarios,
-    createTrainingScenario,
+    analyses,
+    saveAnalysis,
     trainingRuns,
-    startTrainingRun,
-    recordTrainingEntry,
-    endTrainingRun,
+    saveTrainingRun,
+    improvements,
+    addImprovement,
+    removeImprovement,
     agentOpen,
     agentMessages,
     agentResponding,

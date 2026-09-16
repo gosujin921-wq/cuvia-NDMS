@@ -9,7 +9,7 @@
  * ───────────────────────────────────────────── */
 
 import type { EventClass, EventEnvelope, EventType, ProducerRole } from "../../model/event";
-import type { HazardAssessment, StatusChange, WorkflowStatus } from "../../model/incident";
+import type { HazardAssessment, IncidentPhase, StatusChange, WorkflowStatus } from "../../model/incident";
 import type { Action, ActionStatus, CapMessage, Decision, Dissemination, DisseminationResult, Outcome, Recommendation, Report } from "../../model/response";
 import { DRAINAGE_BASIN_ID, SUBJECTS } from "./subjects";
 import { FIXTURE_GENERATED_AT, INCIDENT_ID, SCENARIO_RULE, t } from "./incident";
@@ -33,7 +33,7 @@ function statusChange(id: string, at: string, from: WorkflowStatus, to: Workflow
   return work<StatusChange>({ id, type: "INCIDENT_STATUS_CHANGED", at, actor: OFFICER, summary: `${from} → ${to}`, payload: { from, to, reason, recordedAt: at }, references });
 }
 /** 대응중 안의 국면 전환 — 상태는 그대로, phase 만 바뀐다 */
-function phaseChange(id: string, at: string, phase: "통제", reason: string, references: string[]): EventEnvelope {
+function phaseChange(id: string, at: string, phase: IncidentPhase, reason: string, references: string[]): EventEnvelope {
   return work<StatusChange>({ id, type: "INCIDENT_STATUS_CHANGED", at, actor: OFFICER, summary: `대응중 · ${phase} 국면`, payload: { from: "대응중", to: "대응중", phase, reason, recordedAt: at }, references });
 }
 
@@ -179,13 +179,14 @@ export const W_RECOMMENDATION_AUTO = work<Recommendation>({
   },
 });
 
-/* D6 영향 기반 대응 — 담당자가 고른 전망으로 권고 갱신 → 승인 → 조치 배정 → 전파 요청 */
+/* D6 영향 기반 대응 — 담당자가 전망 탭에서 고른 시각의 기준 전망으로 권고 갱신 → 승인 → 조치 배정 → 전파 요청.
+   대응을 바꿔 본 비교는 디지털트윈이 맡고 실행 경로가 아니다(2026-09-16) — 권고의 기준은 기준 전망이다 */
 export const W_RECOMMENDATION = work<Recommendation>({
   id: "EV-W-07", type: "RECOMMENDATION_UPDATED", eventClass: "분석", producerRole: "CUVIA 규칙", at: t("17:44"), actor: "CUVIA",
-  summary: "SOP 조치안 갱신 · 담당자가 고른 18:00 도로 통제 전망 기준", derivedFrom: ["EV-W-06", "EV-E8-01"], references: ["EV-W-07A"],
+  summary: "SOP 조치안 갱신 · 담당자가 고른 18:00 전망 기준", derivedFrom: ["EV-W-06", "EV-E8-01"], references: ["EV-W-07A"],
   payload: {
     recommendationId: "RC-01", incidentId: INCIDENT_ID, status: "변경", proposedLevel: "선제 통제",
-    basis: { forecastId: FORECAST_BASE_ID, validAt: t("18:00"), alternativeId: "road-control" },
+    basis: { forecastId: FORECAST_BASE_ID, validAt: t("18:00"), alternativeId: "baseline" },
     reasons: ["18:00 해안도로 통행 불가 전망 (최대 0.32 m)", "17:52 도달 예상 · 통제 완료까지 남은 시간 8분 미만", "지하차도 진입부 유입 전망"],
     counterReasons: ["도로수위 현재 17 cm · 통행 가능 수준", "펌프 2호기 복구 시 침수심 0.22 m 로 감소 전망"],
     proposedActions: [
@@ -219,7 +220,7 @@ export const W_DISSEMINATION = work<Dissemination>({
   payload: { disseminationId: "DS-01", incidentId: INCIDENT_ID, decisionId: "DC-02", channels: ["알림톡", "마을방송", "전광판", "기관 통보"], recipients: "신포동 주민 알림톡 등록자 · 해안도로 전광판 2기 · 마산합포구청 · 경찰서 교통과", message: CAP },
 });
 
-/* D7 실행 결과 — 채널별 결과, 한 채널 실패와 대체조치, 조치 결과, 통제 전환 */
+/* D7 실행 결과 — 채널별 결과, 한 채널 실패와 대체조치, 조치 결과, 상황 안정 전환 */
 function dissResult(id: string, at: string, r: DisseminationResult): EventEnvelope<DisseminationResult> {
   return work<DisseminationResult>({ id, type: "DISSEMINATION_RESULT_RECORDED", producerRole: "시스템", at, actor: "CUVIA", summary: `${r.channel} ${r.status}${r.fallback ? ` · 대체 ${r.fallback.channel}` : ""}`, references: ["EV-W-10"], payload: r });
 }
@@ -230,6 +231,9 @@ export const W_DISS_RESULTS = [
   dissResult("EV-W-12-4", t("17:58"), { disseminationId: "DS-01", channel: "기관 통보", status: "확인대기", detail: "마산합포구청 접수 · 경찰서 확인 대기" }),
   dissResult("EV-W-12-5", t("18:04"), { disseminationId: "DS-01", channel: "기관 통보", status: "성공", detail: "경찰서 교통과 수신 확인" }),
 ];
+/* 대체조치는 실패 직후(17:56) 시나리오가 기록하고 발표자가 누르지 않는다 (2026-09-16 사용자 지시 "승인하면 알아서 완료").
+   유선 연락 완료(18:09)는 도로 통제 완료(18:06) 뒤라, 주민 전파는 현장 대응 결과가 들어온 다음에 끝난다
+   (같은 날 "주민전파를 하기 전에 다른 대응들은 완료되고 있으면") */
 export const W_ACTION_FALLBACK = work<Action>({
   id: "EV-W-13", type: "ACTION_ASSIGNED", at: t("17:56"), actor: OFFICER, subject: "신포동 통장", summary: "대체 조치 배정 · 유선 연락 (마을방송 실패)", references: ["EV-W-12-3"],
   payload: { actionId: "AC-04", incidentId: INCIDENT_ID, kind: "대피 안내", target: "신포동 통장 6명", organization: "재난안전 상황실", assignee: OFFICER, summary: "유선 연락으로 저지대 주민 안내", decisionId: "DC-02" },
@@ -298,7 +302,7 @@ export const ACTIONS_ESCALATE: Action[] = [
 ];
 export const W_ACTIONS_ASSIGNED_2 = ACTIONS_ESCALATE.map((a, i) => work<Action>({ id: `EV-W-09B-${i + 1}`, type: "ACTION_ASSIGNED", at: t("18:08"), actor: APPROVER, subject: a.target, summary: `${a.kind} 배정 · ${a.target} · ${a.organization}`, references: ["EV-W-08B"], payload: a }));
 
-/* 18:38 하향 — 만조가 지나고 펌프가 돌아 경계로 내린다. 통제 국면 전환의 판단 근거 */
+/* 18:38 하향 — 만조가 지나고 펌프가 돌아 경계로 내린다. 상황 안정 전환의 판단 근거 */
 export const W_ASSESSMENT_CONTROL = work<HazardAssessment>({
   id: "EV-W-06D", type: "ASSESSMENT_UPDATED", eventClass: "분석", producerRole: "CUVIA 규칙", at: t("18:38"), actor: "CUVIA",
   summary: "위험도 갱신 · 경계 하향 · 만조 경과 · 배수 재개", derivedFrom: ["EV-E5A-13", "EV-E6A-02", "EV-E8-02"],
@@ -332,7 +336,7 @@ export const W_ASSESSMENT_CONTROL = work<HazardAssessment>({
 export const W_ACTION_STATUSES = [
   actionStatus("EV-W-14-1", t("17:49"), "AC-01", "진행중", "교통과 현장반 출동"),
   actionStatus("EV-W-14-2", t("17:50"), "AC-02", "진행중", "하수과 설비반 점검 착수"),
-  actionStatus("EV-W-14-3", t("17:58"), "AC-04", "성공", "통장 6명 연락 완료"),
+  actionStatus("EV-W-14-3", t("18:09"), "AC-04", "성공", "통장 6명 연락 완료"),
   actionStatus("EV-W-14-4", t("18:06"), "AC-01", "성공", "양방향 통제 완료 · 현장 보고 확인", ["EV-E9-01"]),
   actionStatus("EV-W-14-5", t("18:15"), "AC-03", "성공", "지하차도 진입부 유입 없음 · 진입 통제 유지"),
   actionStatus("EV-W-14-6", t("18:36"), "AC-02", "성공", "펌프 2호기 재가동", ["EV-E6A-02"]),
@@ -341,7 +345,7 @@ export const W_ACTION_STATUSES = [
   actionStatus("EV-W-14-9", t("18:16"), "AC-05", "성공", "지하차도 진입부 차단 · 우회 안내 완료"),
   actionStatus("EV-W-14-10", t("18:20"), "AC-06", "성공", "12동 안내 완료 · 6가구 상층 이동"),
 ];
-export const W_STATUS_CONTROLLED = phaseChange("EV-W-15", t("18:40"), "통제", "도로 통제·펌프 재가동 완료 · 수위 정체 · 감시 유지", ["EV-W-14-4", "EV-W-14-6", "EV-E8-02"]);
+export const W_STATUS_CONTROLLED = phaseChange("EV-W-15", t("18:40"), "안정","도로 통제·펌프 재가동 완료 · 수위 정체 · 감시 유지", ["EV-W-14-4", "EV-W-14-6", "EV-E8-02"]);
 
 /* D8 종료와 검증 */
 export const W_OUTCOME = work<Outcome>({
@@ -349,14 +353,34 @@ export const W_OUTCOME = work<Outcome>({
   references: ["EV-E5A-11", "EV-E9-01", "EV-E9-02", "EV-W-14-4", "EV-W-14-6", "EV-E8-01"],
   payload: {
     outcomeId: "OC-01", incidentId: INCIDENT_ID,
-    verification: { available: true, forecastId: FORECAST_BASE_ID, predictedDepthM: 0.32, observedDepthM: 0.27, predictedArrivalAt: t("17:52"), observedArrivalAt: t("17:50"), verdict: "과대예측" },
+    verification: {
+      available: true, forecastId: FORECAST_BASE_ID,
+      predictedDepthM: 0.32, observedDepthM: 0.27,
+      predictedArrivalAt: t("17:52"), observedArrivalAt: t("17:50"), verdict: "과대예측",
+      observedGeometryId: "GEO-FLOOD-ACT",
+      /* 예측판 대상(forecasts.ts targetsBase)과 같은 id. 통제된 대상은 침수하지 않은 것이 아니라 사람이 들어가지 않은 것이다 */
+      observedTargets: [
+        { id: SUBJECTS.coastRoad, label: "해안도로 저지대 구간", exposure: "노출", at: t("17:50"), eventId: "EV-E5A-11" },
+        { id: SUBJECTS.underpass, label: "신포 지하차도", exposure: "통제됨", at: t("18:16"), eventId: "EV-W-14-9" },
+        { id: "BLD-SH-LOW", label: "저지대 건물 10동", exposure: "노출", at: t("18:10"), eventId: "EV-E9-01" },
+        /* 도로는 17:50 에 잠겼고 통제는 18:06 에야 끝났다 — 그 사이 16분 동안 들어간 수 */
+        { id: "VEH-SH-COAST", label: "침수 구간 진입 차량 9대", exposure: "노출", at: t("17:50"), eventId: "EV-E9-01" },
+        { id: "POP-SH-COAST", label: "노출 인원 22명", exposure: "노출", at: t("17:50"), eventId: "EV-E9-01" },
+      ],
+    },
     milestones: [
       { label: "최초 징후", at: t("17:10"), eventId: "EV-E4B-01" }, { label: "복합 알림", at: t("17:13"), eventId: "EV-E8-01" }, { label: "후보 생성", at: t("17:14"), eventId: "EV-W-01" },
       { label: "확인", at: t("17:30"), eventId: "EV-W-05" }, { label: "승인", at: t("17:46"), eventId: "EV-W-08" }, { label: "전파", at: t("17:47"), eventId: "EV-W-10" },
-      { label: "통제 완료", at: t("18:06"), eventId: "EV-W-14-4" }, { label: "통제 상태", at: t("18:40"), eventId: "EV-W-15" }, { label: "물 빠짐 확인", at: t("20:50"), eventId: "EV-E9-02" },
+      { label: "도로 통제 완료", at: t("18:06"), eventId: "EV-W-14-4" }, { label: "상황 안정", at: t("18:40"), eventId: "EV-W-15" }, { label: "물 빠짐 확인", at: t("20:50"), eventId: "EV-E9-02" },
     ],
     referencedEventIds: ["EV-E5A-11", "EV-E9-01", "EV-E9-02", "EV-W-12-3", "EV-W-14-6"],
-    improvements: ["관로 변화율 기준 30 cm/10분의 조기 감지 여부 검토", "마을방송 장비 응답 실패 원인 점검", "침수예측판 과대예측 5 cm 원인 검토 (펌프 재가동 반영 여부)", "매트릭스 강우 지표의 지연 대체 규칙 검토"],
+    improvements: [
+      { area: "모델", text: "침수예측판 과대예측 5 cm 원인 검토 · 펌프 재가동 반영 여부" },
+      { area: "모델", text: "도달 시각이 예측보다 2분 빨랐던 구간의 편차 검토" },
+      { area: "데이터", text: "입력 도로수위 갱신주기 확인 · 강우 지연 대체 구간(17:16~17:34) 영향" },
+      { area: "임계치", text: "관로 변화율 기준 30 cm/10분의 조기 감지 여부 검토" },
+      { area: "SOP", text: "마을방송 장비 응답 실패 원인 점검 · 대체 조치 진입 시점" },
+    ],
   },
 });
 export const W_REPORT = work<Report>({

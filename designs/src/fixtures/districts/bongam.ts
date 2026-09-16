@@ -30,7 +30,7 @@ export const BONGAM: DistrictFixture = {
   ],
   alerts: [
     {
-      alertId: "AL-B01", kind: "공식 상황", demoRole: "사전 감시 알림", grade: "주의", status: "생성", createdAt: t("16:40"), updatedAt: t("16:40"),
+      alertId: "AL-B01", title: "호우경보 · 배수취약 구역", kind: "공식 상황", demoRole: "사전 감시 알림", grade: "주의", status: "생성", createdAt: t("16:40"), updatedAt: t("16:40"),
       target: { kind: "구역", displayAnchor: [128.601, 35.219], affectedGeometryId: "GEO-BASIN-BA-01", label: "봉암천 배수구역" }, task: "감시 우선구역 · 카메라 1 · 센서 3 우선 확인 · 지하차도 진입부 주시",
       evidenceEventIds: ["EV-E2-02", "EV-E1-01"], forecastIds: [], reason: "호우경보가 내려졌고 예측강우가 올라가는데, 지하차도 저지대가 있는 배수취약 권역이라 먼저 봐야 한다", ruleId: "AR-WATCH", ruleVersion: "0.1",
       suppression: { windowMin: 120, releaseCondition: "특보 해제 또는 예측강우 하향" },

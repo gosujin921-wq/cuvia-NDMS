@@ -28,6 +28,11 @@ interface UseMapLibreOptions {
   pitch?: number;
   /** 오버레이에 가려지는 폭 (px). 중심·줌 맞춤이 남은 영역 기준으로 잡힌다 */
   padding?: { top: number; bottom: number; left: number; right: number };
+  /**
+   * 캔버스를 그린 뒤에도 버퍼를 남긴다 — `getCanvas().toDataURL()` 로 지도를 한 장 뜨려면 필요하다.
+   * 기본은 꺼짐이다(프레임마다 비용이 붙는다). 디지털트윈처럼 저장이 지도 이미지를 남기는 화면에서만 켠다.
+   */
+  capture?: boolean;
 }
 
 export function useMapLibre(
@@ -67,6 +72,8 @@ export function useMapLibre(
         bearing: MAP_VIEW_DEFAULTS.bearing,
         attributionControl: false,
         interactive: true,
+        /* MapLibre 5 는 컨텍스트 속성을 여기로 받는다 (4 의 최상위 preserveDrawingBuffer 자리) */
+        ...(options.capture ? { canvasContextAttributes: { preserveDrawingBuffer: true } } : {}),
       });
 
       /* 지도는 화면 전체를 쓰지만 좌우 패널에 가려진다. padding 을 주면 중심 맞춤이

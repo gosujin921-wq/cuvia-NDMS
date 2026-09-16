@@ -55,7 +55,10 @@ export function ProfileView({ profile, validAt, compareAt, collapsed, onToggle }
   const levels = profile.levelsByMark[validAt] ?? profile.levelsByMark[Object.keys(profile.levelsByMark)[0]] ?? [];
   const kms = profile.stations.map((s) => s.km);
   const minKm = Math.min(...kms), maxKm = Math.max(...kms);
-  const allY = [...profile.stations.map((s) => s.bed), ...Object.values(profile.levelsByMark).flat(), profile.threshold];
+  /* 기준 수위 — 관측소마다 다르면 하상을 따라 기울어진 선, 같으면 수평선 */
+  const thresholds = profile.stations.map((s) => s.threshold ?? profile.threshold);
+  const sloped = profile.stations.some((s) => s.threshold !== undefined);
+  const allY = [...profile.stations.map((s) => s.bed), ...Object.values(profile.levelsByMark).flat(), ...thresholds];
   const minY = Math.min(...allY) - 0.3, maxY = Math.max(...allY) + 0.3;
   const x = (km: number) => PAD.l + ((km - minKm) / Math.max(maxKm - minKm, 1e-9)) * (W - PAD.l - PAD.r);
   const y = (v: number) => H - PAD.b - ((v - minY) / Math.max(maxY - minY, 1e-9)) * (H - PAD.t - PAD.b);
@@ -63,15 +66,21 @@ export function ProfileView({ profile, validAt, compareAt, collapsed, onToggle }
   const bedPath = path(profile.stations.map((s) => s.bed));
   const levelPath = path(levels);
   const area = `${levelPath} ${profile.stations.slice().reverse().map((s) => `L${x(s.km).toFixed(1)},${y(s.bed).toFixed(1)}`).join(" ")} Z`;
-  const over = levels.map((v) => v >= profile.threshold);
+  const over = levels.map((v, i) => v >= thresholds[i]);
+  const thresholdPath = path(thresholds);
 
   return (
-    <AuxSection title="종단도 · 상류 → 하류" meta={<>{formatClock(validAt)} · 기준 수위 EL.{profile.threshold.toFixed(1)} m</>} label="종단도" collapsed={collapsed} onToggle={onToggle}>
+    <AuxSection title="종단도 · 상류 → 하류" meta={<>{formatClock(validAt)} · {sloped ? "기준 수위 = 관측소별 둑 높이" : `기준 수위 EL.${profile.threshold.toFixed(1)} m`}</>} label="종단도" collapsed={collapsed} onToggle={onToggle}>
       <div ref={ref} className="w-full">
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block" role="img" aria-label="하천 종단 수위" fontSize={FONT}>
-          {/* 기준 수위선 */}
-          <line x1={PAD.l} x2={W - PAD.r} y1={y(profile.threshold)} y2={y(profile.threshold)} className="stroke-danger" strokeDasharray="4 3" strokeWidth={1.2} />
-          <text x={W - PAD.r} y={y(profile.threshold) - 5} textAnchor="end" className="fill-danger">기준 수위</text>
+          {/* 기준 수위선 — 관측소별이면 관측소를 잇는 선, 하나면 수평선 */}
+          {sloped ? (
+            <path d={thresholdPath} className="fill-none stroke-danger" strokeDasharray="4 3" strokeWidth={1.2} />
+          ) : (
+            <line x1={PAD.l} x2={W - PAD.r} y1={y(profile.threshold)} y2={y(profile.threshold)} className="stroke-danger" strokeDasharray="4 3" strokeWidth={1.2} />
+          )}
+          {/* 관측소별 기준이면 머리 한 줄("기준 수위 = 관측소별 둑 높이")이 말한다 — 선 끝 글자는 마지막 관측소 값과 겹쳤다 */}
+          {!sloped && <text x={W - PAD.r} y={y(profile.threshold) - 5} textAnchor="end" className="fill-danger">기준 수위</text>}
           {/* 대안 비교 — 기준 예측판 수위를 옅게 */}
           {compareAt && <path d={path(compareAt)} className="fill-none stroke-foreground-subtle" strokeWidth={1.5} strokeDasharray="3 3" />}
           {/* 수면 */}

@@ -110,11 +110,16 @@ export interface ProfileStation {
   km: number;
   /** 하상고 EL.m */
   bed: number;
+  /**
+   * 이 관측소의 기준 수위 EL.m — 하천은 상류와 하류의 하상이 10 m 넘게 달라 기준선이 수평일 수 없다(창원천).
+   * 안 주면 SceneProfile.threshold 하나를 쓴다(저수지처럼 짧은 구간).
+   */
+  threshold?: number;
 }
 
 export interface SceneProfile {
   stations: ProfileStation[];
-  /** 기준 수위(월류 시작) EL.m */
+  /** 기준 수위(월류 시작) EL.m — 관측소마다 threshold 가 있으면 그것이 이긴다 */
   threshold: number;
   /** 눈금(validAt) → 관측소별 수위 EL.m */
   levelsByMark: Record<string, number[]>;

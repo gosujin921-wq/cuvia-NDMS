@@ -1,12 +1,13 @@
 /* ─────────────────────────────────────────────
  * 사건 카드 — 실시간 주요 사건(scr-01)이 쓴다. CSMS components/SituationCard 문법 그대로
  *
- * 위험도 배지 · 제목 · (감지 · 확인 필요 · 오인 배지) / 지구 · 장비 · 시각 / SOP 진행률 또는 상태 문구.
+ * 위험도 배지 · 제목 · (감지 · 확인 필요 · 오인 배지) / 지구 · 장비 · 시각 / SOP 진행률(배정된 사건만).
+ * 카드는 어느 지역에 무슨 일이 일어났나만 든다. 할 일·판단 경위·상태 문구는 사건 작업공간 몫이다.
+ * 카드에 두면 두세 줄로 접혀 목록이 읽히지 않고, 처리상태는 오른쪽 배지와 같은 말을 되풀이했다(2026-09-16 지적).
  * 카드 자체는 깜빡이지 않는다. 메인 사건이 진행 중인 동안 위험도 색 1px 테두리 + 반투명 후광만.
  * 판단 전(등급 없음)은 위험도 배지를 그리지 않는다 — 값을 지어내지 않는다(platform_web toRiskLevel 규칙).
  * ───────────────────────────────────────────── */
 
-import { Icon } from "@iconify/react";
 import { Badge, StatusBadge, cn } from "@ds";
 import type { FeedItem } from "../model/selectors";
 import { RISK_GRADE_TONE, PROCESS_BADGE, processBucket } from "../lib/status-tone";
@@ -41,14 +42,7 @@ export function IncidentCard({ item, highlighted, onOpen }: { item: FeedItem; hi
         <span className="shrink-0 text-foreground-subtle">·</span>
         <span className="shrink-0 font-mono">{formatClock(item.at)}</span>
       </span>
-      {item.sop ? (
-        <SopProgress done={item.sop.done} total={item.sop.total} />
-      ) : (
-        <span className="flex items-center gap-1 text-caption text-foreground-muted">
-          {item.kind === "감지" && <Icon icon="mdi:radar" className="size-3 shrink-0 text-primary-text" aria-hidden />}
-          {item.statusText}
-        </span>
-      )}
+      {item.sop && <SopProgress done={item.sop.done} total={item.sop.total} />}
     </button>
   );
 }

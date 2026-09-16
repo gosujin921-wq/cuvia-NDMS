@@ -28,7 +28,7 @@ export const GUHANG: DistrictFixture = {
   ],
   alerts: [
     {
-      alertId: "AL-G01", kind: "품질·연계", demoRole: "품질·대체 확인 알림", grade: "주의", status: "생성", createdAt: t("16:38"), updatedAt: t("16:38"),
+      alertId: "AL-G01", title: "수위계 결측", kind: "품질·연계", demoRole: "품질·대체 확인 알림", grade: "주의", status: "생성", createdAt: t("16:38"), updatedAt: t("16:38"),
       target: S["WL-GH-01"].loc, task: "방파제 수위계 결측 · 조위계·CCTV 로 대체 확인 · 현장 점검 요청 검토",
       evidenceEventIds: ["EV-GH-Q-01"], forecastIds: [], reason: "만조(18:24) 전에 방파제 수위계가 끊겨 월류 감시를 판단할 수 없다. 조위계와 CCTV로 대신 본다", ruleId: "AR-QUALITY", ruleVersion: "0.1",
       suppression: { windowMin: 15, releaseCondition: "수신 복구" },

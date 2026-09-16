@@ -13,7 +13,7 @@
  *   (없음)          판단 — 위험도 · 전망 · 대응 요약 · 이력 · 바닥 액션 바
  *   panel=twin      전망 — 같은 지도가 예측 모드로 (IA-03). 대안 · 유효 시각 · 영향 · 근거·한계. 유효 전망이 있을 때만
  * 대응 실행 팝업(ResponsePopup)은 레일 [대응 실행] · 마커 [이 사건 대응하기] · 전망 [이 전망으로 대응 검토] 셋이 같은 것을
- * 연다. 열림은 UI 상태라 URL 에 넣지 않는다(IA §5.2). 승인·대체조치·통제 전환은 그 위의 중첩 확인창이 tick 을 옮긴다.
+ * 연다. 열림은 UI 상태라 URL 에 넣지 않는다(IA §5.2). 승인·안정 전환은 그 위의 중첩 확인창이 tick 을 옮긴다.
  *
  * 담당자 조작(검토 인수·확인·전망 열기·대응 검토·승인·통제)은 상태를 쓰지 않는다 — 엔진 tick 을 옮긴다.
  * 선택(panel · forecastId · validAt · alternativeId · evidenceId · alertId)은 query 가 정본이다(IA §5.2).
@@ -36,22 +36,27 @@ import { MapPopup } from "../../components/MapPopup";
 import { CctvBigView } from "../../components/CctvBigView";
 import { CCTV_DOCK, CENTER_LEFT, CENTER_RIGHT, EDGE, LEFT_RAIL, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP, utilStripStyle } from "../../lib/layout";
 import { useScenario } from "../../state/ScenarioProvider";
-import { useTrainingEntry } from "../../state/useTrainingEntry";
 import { formatClock, formatElapsed } from "../../lib/datetime";
 import { ALERT_GRADE_TONE, alertRoleLabel, statusTone } from "../../lib/status-tone";
 import type { Device } from "../../demo/devices";
 import type { Facility } from "../../demo/facilities";
 import type { EventEnvelope } from "../../model/event";
-import type { Forecast, AlternativeId } from "../../model/forecast";
+import type { Forecast } from "../../model/forecast";
 import {
-  alternativesOf, chainStagesAt, channelsOfScope, currentForecastsOf, dataFaultsAt, decisionsAt, derivedFlagOf, disseminationsAt, districtViewAt,
+  chainStagesAt, channelsOfScope, currentForecastsOf, dataFaultsAt, decisionsAt, derivedFlagOf, disseminationsAt, districtViewAt, findWhatIfCase,
   districtAlertAt, riskEvidenceIdsOf, incidentViewAt, incidentsAt, isActiveStatus, recommendationsAt, relatedEventsAt, resolveForecast, sopItemsAt, watchViewAt, type CctvChannelView,
 } from "../../model/selectors";
 import { GEOMETRIES, SCOPE_ZOOM, SUBJECTS, deviceOfSubject, facilityOfSubject, isFacilitySubject, isSensorSubject } from "../../fixtures";
 import { DISTRICTS } from "../../demo/districts";
 import { ForecastRail } from "./widgets/ForecastRail";
 import { ALTERNATIVE_LABEL } from "../../model/forecast";
-import { depthLevel, extentPaint, scopePaint, upsertPolygonLayer } from "../../lib/map-polygon";
+import { cssColor, depthLevel, extentPaint, scopePaint, upsertPolygonLayer } from "../../lib/map-polygon";
+import { ensureFloodSurface, setFloodSurface } from "../../lib/flood-surface";
+import { loadTerrainFine, type TerrainGrid, type TerrainPatch } from "../../lib/terrain-grid";
+import { floodSurfaceOf } from "../../lib/flood-surfaces";
+import { SceneLayers, raiseSceneLayers } from "../../components/twin/SceneLayers";
+import { mergeScene } from "../../model/scene";
+import { previewScene } from "../../lib/twin-preview";
 import { DeviceMarkers, type SubjectPin } from "./widgets/DeviceMarkers";
 import { FacilityMarkers } from "./widgets/FacilityMarkers";
 import { DevicePopup } from "./widgets/DevicePopup";
@@ -82,13 +87,12 @@ export function EarlyWarningPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const { demoNow: now, ticks, tickIndex, advanceTick, agentOpen, selectDistrict, heroIncidentId, falsePositiveIds, markFalsePositive } = useScenario();
-  const training = useTrainingEntry();
   /* URL 의 지구를 엔진의 선택 지구로 비춘다 — 종합상황으로 돌아가면 이 지구의 이름표·줄이 선택 상태로 선다 */
   useEffect(() => {
     if (districtId) selectDistrict(districtId);
   }, [districtId, selectDistrict]);
-  /* 실행 결과가 도착한 뒤에만 통제 전환 — 결과 tick 이전의 담당자 조작으로 시계가 결과를 건너뛰지 않게 */
-  const resultsArrived = tickIndex >= ticks.findIndex((t) => t.id === "d7-pump");
+  /* 실행 결과가 도착한 뒤에만 안정 전환 —결과 tick 이전의 담당자 조작으로 시계가 결과를 건너뛰지 않게 */
+  const resultsArrived = tickIndex >= ticks.findIndex((t) => t.id === "d7-results");
   const panel = params.get("panel");
   const mode: Mode = panel === "twin" ? "twin" : "judge";
   /* 대응 실행 팝업 — 열림은 UI 상태. 긴급 경로(판단·전망 전) 여부는 여는 순간의 상태로 정한다 */
@@ -192,14 +196,42 @@ export function EarlyWarningPage() {
   const resolution = useMemo(() => (forecastId ? resolveForecast(forecastId, now) : null), [forecastId, now]);
   const twinForecast: Forecast | null = resolution?.kind === "ok" ? resolution.forecast : null;
   const selectedMark = twinForecast ? twinForecast.marks.find((m) => m.validAt === validAt) ?? twinForecast.marks.find((m) => new Date(m.validAt) >= now) ?? twinForecast.marks[0] : null;
+  /* 장면 층 — 도로 상태 선 · 차단 지점 · 우회로 · 시설 상태. 디지털트윈과 같은 부품이다(03 §24).
+     대안은 비교라 "통제됨"을 "통제 시"로 바꿔 올린다(lib/twin-preview) */
+  const sceneLayers = useMemo(
+    () => (mode === "twin" && twinForecast ? previewScene(mergeScene(twinForecast.scene, selectedMark?.scene)) : []),
+    [mode, twinForecast, selectedMark],
+  );
+  /* 고해상 지형 — 침수면을 지형을 따라 채운다. 전망 탭에서, 고른 눈금의 침수면이 구운 것일 때만 읽는다(lib/flood-surfaces) */
+  const surfaceGeometryId = mode === "twin" && selectedMark && extentOn ? selectedMark.extentGeometryId : null;
+  const surfaceEntry = useMemo(() => floodSurfaceOf(surfaceGeometryId), [surfaceGeometryId]);
+  const [fineGrid, setFineGrid] = useState<TerrainGrid | null>(null);
+  useEffect(() => {
+    if (!surfaceEntry || fineGrid) return;
+    let cancelled = false;
+    loadTerrainFine().then((g) => { if (!cancelled) setFineGrid(g); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [surfaceEntry, fineGrid]);
+  const finePatch: TerrainPatch | null = surfaceEntry && fineGrid ? fineGrid.patches[surfaceEntry.patchId] ?? null : null;
+
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance || !scope) return;
     const ring = scope.scope.affectedGeometryId ? GEOMETRIES[scope.scope.affectedGeometryId] : null;
     const extentRing = mode === "twin" && selectedMark && extentOn ? GEOMETRIES[selectedMark.extentGeometryId] : null;
     upsertPolygonLayer(instance, SCOPE_SOURCE, ring, scopePaint());
-    upsertPolygonLayer(instance, EXTENT_SOURCE, extentRing, extentPaint(depthLevel(selectedMark?.maxDepthM)));
-  }, [map, ready, scope, mode, selectedMark, extentOn]);
+    /* 지형에서 구운 수위가 있으면 면 대신 지형을 채운 수면이 선다. 굽지 않은 지구는 폴리곤 그대로 */
+    const paint = extentPaint(depthLevel(selectedMark?.maxDepthM));
+    ensureFloodSurface(instance);
+    if (surfaceEntry && finePatch) {
+      setFloodSurface(instance, finePatch, surfaceEntry.spec, true);
+      upsertPolygonLayer(instance, EXTENT_SOURCE, extentRing, { ...paint, opacity: 0 });
+    } else {
+      setFloodSurface(instance, null, null, false);
+      upsertPolygonLayer(instance, EXTENT_SOURCE, extentRing, paint);
+    }
+    raiseSceneLayers(instance);
+  }, [map, ready, scope, mode, selectedMark, extentOn, finePatch, surfaceEntry]);
 
   /* 패널에서 고른 주체 — 지도도 그 주체로 끌어온다 */
   const focusDevice = useCallback(
@@ -242,15 +274,11 @@ export function EarlyWarningPage() {
     next.set("forecastId", id);
     setParams(next);
   };
-  const pickAlternative = (id: AlternativeId) => {
-    const target = alternativesOf(incidentId, now).find((a) => a.id === id);
-    if (!target) return;
-    advanceTick("d5");
-    const next = new URLSearchParams(params);
-    next.set("forecastId", target.forecast.forecastId);
-    next.set("alternativeId", id);
-    setParams(next);
-  };
+  /* 대응을 바꾸면? — 디지털트윈이 답한다(03 §25 · 2026-09-16). 전망 탭은 기준만 보이고 대안 비교는 트윈으로 넘긴다.
+     시연 시계는 "대안 비교" 칸으로 옮긴다. 이 사건의 대응 분석이 준비되지 않았으면 버튼을 닫는다(데이터가 답한다) */
+  const compareInTwin = findWhatIfCase(incidentId)
+    ? () => { advanceTick("d5"); navigate(`/scr-05?incident=${encodeURIComponent(incidentId)}`); }
+    : null;
   const pickValidAt = (at: string) => {
     const next = new URLSearchParams(params);
     next.set("validAt", at);
@@ -269,8 +297,9 @@ export function EarlyWarningPage() {
   const toJudge = () => setParams(setPanel(new URLSearchParams(params), "judge"));
   const openResponse = () => setResponseOpen(true);
   /* 종료 검토 — D8 종료 tick 으로 시계를 옮기고 기록·검증으로 간다(02 D8 "종료 조건 확인 → 종료"). 종료된 사건은 읽기 전용이 되고
-     이 지구 작업공간에는 훈련 시나리오 진입점이 선다 */
-  const closeReview = () => { setResponseOpen(false); advanceTick("d8-close"); navigate("/scr-04"); };
+     이 지구 작업공간은 읽기 전용 기록으로 열린다 */
+  /* 종료 → 이력. 그 사건의 기록 창이 예측 검증 탭으로 열린 채 도착한다 (IA §10.1 · §13.1 · 2026-09-16) */
+  const closeReview = () => { setResponseOpen(false); advanceTick("d8-close"); navigate(`/scr-07?incident=${encodeURIComponent(incidentId)}&view=case`); };
   /* 탭 직접 클릭 — 마지막 맥락(forecastId · validAt · alternativeId)은 query 에 남아 있어 그대로 이어진다.
      전망 탭을 처음 열면 기준 전망을 고른다(다른 전망을 자동 선택하는 것이 아니라 아직 고른 것이 없을 때만) */
   const onTab = (value: string) => {
@@ -288,12 +317,9 @@ export function EarlyWarningPage() {
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const confirmAction = () => {
     if (!confirm) return;
-    if (confirm.kind === "approve") {
-      /* 대응 중 악화로 항목이 늘면 두 번째 승인 — 틱은 지금 어디까지 왔는지가 정한다 */
-      const escalated = tickIndex >= ticks.findIndex((t) => t.id === "d7-escalate");
-      advanceTick(escalated ? "d7-escalate-approve" : "d6-approve");
-    }
-    if (confirm.kind === "fallback") advanceTick("d7-fallback");
+    /* 발표자가 누르는 승인은 첫 승인 하나다. 추가 승인·대체조치는 시나리오가 기록해 세계 tick 에 실려 온다
+       (2026-09-16 "승인하면 알아서 완료" · fixtures incident.ts). 그래서 fallback 확인은 옮길 tick 이 없다 */
+    if (confirm.kind === "approve") advanceTick("d6-approve");
     if (confirm.kind === "control") advanceTick("d7-control");
     if (confirm.kind === "dismiss" && incident) { markFalsePositive(incident.incidentId); setResponseOpen(false); }
     setConfirm(null);
@@ -307,14 +333,11 @@ export function EarlyWarningPage() {
     : view.workflowStatus === "병합됨" && view.mergedInto
       ? { title: "병합된 사건", body: `${all.find((v) => v.incident.incidentId === view.mergedInto)?.incident.title ?? view.mergedInto}에 병합됐습니다. 원 사건은 기록으로만 남습니다.`, to: `/scr-02/${all.find((v) => v.incident.incidentId === view.mergedInto)?.incident.legacyDistrictId ?? districtId}`, label: "대상 사건 열기" }
       : view.workflowStatus === "오탐" || view.workflowStatus === "종료"
-        ? { title: `${view.workflowStatus === "오탐" ? "오탐" : "종료된"} 사건`, body: "읽기 전용 기록입니다. 현재 사건으로 되살리지 않습니다.", to: "/scr-04", label: "기록·검증에서 보기" }
+        ? { title: `${view.workflowStatus === "오탐" ? "오탐" : "종료된"} 사건`, body: "읽기 전용 기록입니다. 현재 사건으로 되살리지 않습니다.", to: `/scr-07?incident=${encodeURIComponent(view.incident.incidentId)}`, label: "이력에서 보기" }
         : null;
 
   const tone = view ? statusTone(view.workflowStatus) : null;
 
-  /* D8 진입점 (02 D8 · IA §13.1) — 종료된 사건의 대응 이력으로 훈련 시나리오 스냅샷을 만든다(state/useTrainingEntry) */
-  const closed = view?.workflowStatus === "종료";
-  const existingScenario = incident ? training.existingFor(incident.incidentId) : null;
 
   /* 검토 인수는 버튼이 아니라 여는 순간이다 (2026-09-14 사용자 지적 "검토 인수와 사건 확인이 같은 뎁스").
      후보를 연 담당자가 곧 인수자다 — 종합상황의 `확인 필요` 카드를 눌러 들어오면 확인중이 되고 이력에 인수가 남는다.
@@ -329,6 +352,7 @@ export function EarlyWarningPage() {
         <div ref={(el) => { mapContainer.current = el; }} className="h-full w-full" />
         {!exception && (
           <>
+            <SceneLayers map={map} ready={ready} layers={sceneLayers} />
             <DeviceMarkers map={map} ready={ready} pins={pins} selectedId={selectedId} onSelect={(d) => setSelectedId(d.id)} />
             <FacilityMarkers map={map} ready={ready} facilities={facilities} cctvOf={cctvOfFacility} />
             {selectedChannel && (
@@ -367,7 +391,7 @@ export function EarlyWarningPage() {
               title: "영향 표현",
               items: [
                 /* 전망 탭에서만 — 지금 지도가 그리는 그 면이 무엇인지 목록에 있어야 한다 */
-                ...(mode === "twin" && twinForecast && selectedMark ? [{ id: "forecast-extent", label: `침수 전망 범위 · ${formatClock(selectedMark.validAt)} · ${ALTERNATIVE_LABEL[twinForecast.alternativeId]}`, color: extentPaint(depthLevel(selectedMark.maxDepthM)).fill, icon: "mdi:waves", shape: "area" as const, visible: extentOn }] : []),
+                ...(mode === "twin" && twinForecast && selectedMark ? [{ id: "forecast-extent", label: `예측 침수 범위 · ${formatClock(selectedMark.validAt)} · ${ALTERNATIVE_LABEL[twinForecast.alternativeId]}`, color: cssColor("--color-primary-text", "#60a5fa"), icon: "mdi:waves", shape: "area" as const, visible: extentOn }] : []),
                 ...SAFEMAP_LAYERS.map((spec) => ({ id: spec.id, label: spec.label, color: spec.color, icon: spec.icon, shape: "area" as const, visible: safemapOn[spec.id] ?? false })),
                 ...weatherLayerItems(weather),
               ],
@@ -436,13 +460,6 @@ export function EarlyWarningPage() {
         {exception ? (
           <GlassPanel className="pointer-events-auto shrink-0 p-3">
             <Notice variant={exception.title.includes("찾을 수") ? "danger" : "warning"} title={exception.title} description={exception.body} action={<Button size="sm" onClick={() => navigate(exception.to)}>{exception.label}</Button>} />
-            {closed && (
-              /* D8 — 이 사건의 대응 이력으로 대응 모의훈련 시나리오 후보를 만드는 진입점 (02 D8) */
-              <Button size="sm" variant="secondary" className="mt-2 w-full" onClick={() => incident && training.open(incident, forecastId)}>
-                <Icon icon="mdi:school-outline" className="size-4" aria-hidden />
-                {existingScenario ? "디지털트윈에서 훈련 열기" : "이 사건으로 훈련 스냅샷 만들기"}
-              </Button>
-            )}
           </GlassPanel>
         ) : (
           <>
@@ -569,12 +586,12 @@ export function EarlyWarningPage() {
               resolution={resolution}
               forecast={twinForecast}
               mark={selectedMark}
-              alternatives={alternativesOf(incidentId, now)}
-              onPickAlternative={pickAlternative}
+              repick={forecasts.filter((f) => f.alternativeId === "baseline")}
               onPickValidAt={pickValidAt}
               onBack={toJudge}
               onReview={reviewResponse}
               onRepick={(id) => setParams({ panel: "twin", forecastId: id })}
+              onCompare={compareInTwin}
             />
           )}
 

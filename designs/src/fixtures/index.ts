@@ -13,7 +13,11 @@ import type { DemoTick } from "../model/stage";
 import type { SopCatalogItem } from "./seohang-flood/sop";
 import { INCIDENT, INCIDENT_ID, DEMO_TICKS, t } from "./seohang-flood/incident";
 import { SOURCE_EVENTS } from "./seohang-flood/events";
-import { FORECASTS, FORECAST_EVENTS } from "./seohang-flood/forecasts";
+import { FORECASTS, FORECAST_EVENTS, FORECAST_SH_RECORD, WHATIF_FORECASTS as SEOHANG_WHATIF_FORECASTS } from "./seohang-flood/forecasts";
+import { SEOHANG_WHATIF } from "./seohang-flood/whatif";
+import { CHANGWONCHEON_FORECASTS, CHANGWONCHEON_GEOMETRIES, CHANGWONCHEON_WHATIF } from "./changwoncheon/whatif";
+import { PAST_FORECASTS, PAST_GEOMETRIES, PAST_WHATIF_CASES } from "./past";
+import type { WhatIfCase } from "../model/whatif";
 import { WORKFLOW_EVENTS } from "./seohang-flood/workflow";
 import { SEOHANG_CENTER } from "./seohang-flood/subjects";
 
@@ -38,7 +42,7 @@ export const DISTRICT_FIXTURES: DistrictFixture[] = [BONGAM, JUNAM, GUHANG, YANG
 const DISTRICT_SUBJECTS: Record<string, SubjectSpec> = Object.assign({}, ...DISTRICT_FIXTURES.map((d) => d.subjects));
 
 export const SUBJECT_LOCATION: Record<string, SpatialRef> = { ...SEOHANG_LOCATION, ...Object.fromEntries(Object.entries(DISTRICT_SUBJECTS).map(([id, s]) => [id, s.loc])) };
-export const GEOMETRIES: Record<string, [number, number][]> = { ...SEOHANG_GEOMETRIES, ...BONGAM_GEOMETRIES, ...YANGDEOK_GEOMETRIES, ...TRAINING_GEOMETRIES };
+export const GEOMETRIES: Record<string, [number, number][]> = { ...SEOHANG_GEOMETRIES, ...BONGAM_GEOMETRIES, ...YANGDEOK_GEOMETRIES, ...CHANGWONCHEON_GEOMETRIES, ...PAST_GEOMETRIES };
 export const CCTV_CHANNELS: CctvChannelT[] = [...SEOHANG_CCTV, ...DISTRICT_FIXTURES.flatMap((d) => d.cctv)];
 export const ALERTS: AttentionAlert[] = [...SEOHANG_ALERTS, ...DISTRICT_FIXTURES.flatMap((d) => d.alerts)];
 
@@ -63,7 +67,6 @@ export { ALTERNATIVE_FORECAST_IDS } from "./seohang-flood/workflow";
 export { ALERT_RULES, RISK_MATRIX_SPEC } from "./seohang-flood/rules";
 export { type SopCatalogItem, type SopBinding } from "./seohang-flood/sop";
 import { SOP_CATALOG as SEOHANG_SOP } from "./seohang-flood/sop";
-import { CONDITION_FORECASTS, TRAINING_CONDITION_SETS, TRAINING_GEOMETRIES, TRAINING_REGIONS } from "./training";
 
 const MERGED_ID = "INC-2024-0921-SH02";
 const FALSE_ID = "INC-2024-0921-SH03";
@@ -91,8 +94,10 @@ export const EVENTS: EventEnvelope[] = [...SOURCE_EVENTS, ...FORECAST_EVENTS, ..
   (a, b) => a.observedAt.localeCompare(b.observedAt) || CLASS_ORDER[a.eventClass] - CLASS_ORDER[b.eventClass],
 );
 
-export const ALL_FORECASTS: Forecast[] = [...FORECASTS, ...CONDITION_FORECASTS];
-export { TRAINING_CONDITION_SETS, TRAINING_REGIONS };
+export const ALL_FORECASTS: Forecast[] = [...FORECASTS, ...SEOHANG_WHATIF_FORECASTS, FORECAST_SH_RECORD, ...CHANGWONCHEON_FORECASTS, ...PAST_FORECASTS];
+
+/** 디지털트윈 대응 What-if 가 열리는 사건들 (03 §26). 사건이 없는 장면은 여기 서지 않는다 */
+export const WHATIF_CASES: WhatIfCase[] = [SEOHANG_WHATIF, CHANGWONCHEON_WHATIF, ...PAST_WHATIF_CASES];
 export const DEMO_TICKS_BY_INCIDENT: Record<string, DemoTick[]> = { [INCIDENT_ID]: DEMO_TICKS };
 /** 사건별 SOP 카탈로그 — 권고가 만드는 항목 목록. 카탈로그가 없는 사건(예외 경로 검증용)은 SOP 가 없다 */
 export const SOP_CATALOG_BY_INCIDENT: Record<string, SopCatalogItem[]> = { [INCIDENT_ID]: SEOHANG_SOP };

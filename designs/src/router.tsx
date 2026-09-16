@@ -5,8 +5,9 @@ import { useEffect } from "react";
  * 사건 중심 재편은 URL 교체가 아니라 기존 화면 안의 정보 구조와 패널 역할을 바꾸는 것이다.
  *   /scr-01              IA-01 종합상황 (재편됨)
  *   /scr-02/:districtId  IA-02 사건 작업공간 + IA-04 우측 대응 패널 (재편됨). 대응·전망은 query `panel`
- *   /scr-04 · /scr-07    IA-05 기록·검증 (재편 전)
- *   /scr-05              IA-T01 대응 모의훈련 · 사전 조건분석 (재편됨). 시나리오·대안·시각은 query
+ *   /scr-04              IA-06 통계 — 사건 원장 집계 (2026-09-16)
+ *   /scr-07              IA-05 이력 — [사건] 사건 기록 · [보고서]. 창·탭은 query (2026-09-16 보고서 메뉴를 바꿈)
+ *   /scr-05              디지털트윈 · 조건 기반 예측 시뮬레이션. 유형·조건·대안·시각은 query
  *   /scr-05/:districtId  같은 화면, 그 지구 원 사건의 시나리오로 좁힘 (Phase 1 진입점 호환)
  *   /scr-06              IA-G01 AI 보조
  * D0~D8 단계와 시계는 URL 이 아니라 엔진(ScenarioProvider)이 든다.
@@ -20,7 +21,7 @@ import { EarlyWarningPage } from "./pages/scr-02/EarlyWarningPage";
 import { StatisticsPage } from "./pages/scr-04/StatisticsPage";
 import { DigitalTwinPage } from "./pages/scr-05/DigitalTwinPage";
 import { AiSearchPage } from "./pages/scr-06/AiSearchPage";
-import { ReportPage } from "./pages/scr-07/ReportPage";
+import { HistoryPage } from "./pages/scr-07/HistoryPage";
 import { incidentsAt, isActiveStatus } from "./model/selectors";
 import { toast } from "@ds";
 import { useScenario } from "./state/ScenarioProvider";
@@ -53,14 +54,14 @@ export const router = createBrowserRouter([
       // 구 상황대응 — /scr-02 의 대응 패널로 통합 (IA §5.2)
       { path: "/scr-03", element: <HeroDistrictRedirect /> },
       { path: "/scr-04", element: <StatisticsPage /> },
-      // 대응 모의훈련 — D8 [훈련 시나리오 만들기]가 `?scenarioId=` 로 들어온다. 메뉴로 들어오면 첫 시나리오 (IA §13.1)
+      // 디지털트윈 — 사건 기반 대응 What-if. 메뉴로 들어오면 사건 목록, `?incident=` 로 그 사건의 트윈(03 §26)
       { path: "/scr-05", element: <DigitalTwinPage /> },
-      // Phase 1 진입점 호환 — 그 지구 원 사건의 시나리오만 (IA §5.2)
+      // Phase 1 진입점 호환 — 그 지구의 사건 트윈으로 넘긴다. 없으면 사건 목록 (IA §5.2)
       { path: "/scr-05/:districtId", element: <DigitalTwinPage /> },
       // 대시보드 질의 바에서 `?q={질의 ID}` 로 들어온다. 못 알아들은 문장만 `?ask=` (03 §6)
       { path: "/scr-06", element: <AiSearchPage /> },
-      // SCR-04 [보고서 생성]이 `?event=` 로 사건을 들고 온다. 레일로 들어오면 최근 사건이 선다
-      { path: "/scr-07", element: <ReportPage /> },
+      // 이력 — 사건 게시판이 기본. `?incident=` 는 그 사건의 기록 창(D8 종료가 `&view=case` 로 온다), `?tab=report` 는 보고서
+      { path: "/scr-07", element: <HistoryPage /> },
     ],
   },
 ]);

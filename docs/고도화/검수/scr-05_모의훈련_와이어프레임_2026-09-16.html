@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SCR-05 모의훈련 와이어프레임 v2 · 2026-09-16</title>
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --card:#1b212a; --raised:#222a35;
+    --line:#2b3542; --line2:#3a4756;
+    --fg:#e6ebf2; --fg-muted:#9aa7b8; --fg-sub:#6b7a8d;
+    --primary:#3b82f6; --primary-text:#60a5fa;
+    --warn:#f59e0b; --ok:#22c55e; --danger:#ef4444;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.62 -apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+    word-break:keep-all}
+  .wrap{max-width:1240px;margin:0 auto;padding:28px 20px 90px}
+  h1{font-size:23px;margin:0 0 4px}
+  h2{font-size:18px;margin:44px 0 12px;padding-top:16px;border-top:1px solid var(--line)}
+  h3{font-size:14px;margin:22px 0 8px;color:var(--fg-muted)}
+  p{margin:8px 0}
+  .lede{color:var(--fg-muted);margin:0 0 18px}
+  .quote{border-left:2px solid var(--primary-text);background:var(--surface);padding:10px 14px;margin:12px 0;color:var(--fg-muted);font-size:13px}
+  .quote b{color:var(--fg)}
+  .old{border-left-color:var(--danger)}
+  code{font-family:var(--mono);font-size:12px;background:var(--surface);padding:1px 5px;border-radius:4px;color:var(--primary-text)}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--surface);color:var(--fg-muted);font-weight:600}
+  td.n{width:40px;text-align:center;color:var(--fg-sub);font-family:var(--mono)}
+  .yes{color:var(--ok)} .no{color:var(--danger)} .part{color:var(--warn)}
+
+  .bone{display:flex;flex-direction:column;gap:6px;margin:14px 0}
+  .bone div{background:var(--card);border:1px solid var(--line);border-radius:7px;padding:8px 12px;font-size:13px}
+  .bone div b{color:var(--fg)}
+  .bone .src{float:right;font-size:11px;color:var(--primary-text);font-family:var(--mono)}
+
+  /* 화면 */
+  .scr{margin:22px 0 10px}
+  .scr>.cap{font-size:12.5px;color:var(--fg-sub);margin-bottom:7px;font-family:var(--mono)}
+  .frame{background:var(--surface);border:1px solid var(--line2);border-radius:10px;overflow:hidden}
+  .topbar{display:flex;gap:10px;align-items:center;padding:7px 12px;background:var(--bg);border-bottom:1px solid var(--line);font-size:11.5px;color:var(--fg-sub)}
+  .topbar b{color:var(--fg-muted)}
+  .body{display:flex;min-height:430px}
+  .map{flex:1;background:repeating-linear-gradient(135deg,#131a22 0 14px,#111821 14px 28px);position:relative;border-right:1px solid var(--line);min-width:200px;padding:12px}
+  .map .mlbl{font-size:11.5px;color:var(--fg-sub);line-height:1.7}
+  .map .flood{position:absolute;left:14%;top:38%;width:46%;height:26%;border:1px dashed var(--primary-text);
+    background:linear-gradient(120deg,rgba(59,130,246,.30),rgba(59,130,246,.10));border-radius:40% 55% 45% 60%}
+  .map .flood.big{left:10%;top:30%;width:62%;height:40%;background:linear-gradient(120deg,rgba(59,130,246,.45),rgba(59,130,246,.18))}
+  .map .pin{position:absolute;font-size:10px;color:var(--fg-muted);background:var(--bg);border:1px solid var(--line2);border-radius:4px;padding:1px 4px}
+  .clock{position:absolute;left:12px;bottom:12px;right:12px;background:var(--bg);border:1px solid var(--line2);border-radius:7px;padding:8px 10px}
+  .clock .row{display:flex;align-items:center;gap:8px;font-size:11.5px}
+  .clock .t{font-family:var(--mono);font-size:15px;font-weight:700}
+  .clock .bar{flex:1;height:4px;background:var(--line);border-radius:2px;position:relative}
+  .clock .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--primary);border-radius:2px}
+  .clock .bar u{position:absolute;top:-4px;width:2px;height:12px;background:var(--fg-sub)}
+  .clock .btn{border:1px solid var(--primary);color:var(--primary-text);border-radius:5px;padding:3px 9px;font-size:11.5px}
+
+  .rail{width:290px;background:var(--surface);padding:9px;display:flex;flex-direction:column;gap:8px}
+  .rail.wide{width:330px}
+  .box{background:var(--card);border:1px solid var(--line);border-radius:7px;padding:8px 9px;font-size:12px;line-height:1.5}
+  .box .h{display:flex;justify-content:space-between;gap:6px;font-weight:700;font-size:12.5px;margin-bottom:4px}
+  .box .h .meta{font-weight:400;color:var(--fg-sub);font-size:11px}
+  .sub{color:var(--fg-muted)} .dim{color:var(--fg-sub)}
+  .box.act{border-color:var(--warn)}
+  .box.done{opacity:.62}
+  .box.q{border-color:var(--primary)}
+  .row2{display:flex;gap:5px;margin-top:6px}
+  .b{flex:1;text-align:center;border:1px solid var(--line2);border-radius:5px;padding:5px;font-size:11.5px;color:var(--fg-muted)}
+  .b.on{border-color:var(--primary);color:var(--primary-text);background:rgba(59,130,246,.10)}
+  .b.ghost{color:var(--fg-sub)}
+  .tag{display:inline-block;border:1px solid var(--line2);border-radius:4px;padding:1px 5px;font-size:10px;color:var(--fg-sub);margin-right:3px}
+  .tag.on{border-color:var(--primary);color:var(--primary-text)}
+  .tag.w{border-color:var(--warn);color:var(--warn)}
+  .tag.g{border-color:var(--ok);color:var(--ok)}
+  .slider{margin:7px 0 2px}
+  .slider .track{height:4px;background:var(--line);border-radius:2px;position:relative;margin:12px 6px 6px}
+  .slider .track u{position:absolute;top:-4px;width:2px;height:12px;background:var(--line2)}
+  .slider .track i{position:absolute;top:-6px;width:14px;height:14px;border-radius:50%;background:var(--primary);border:2px solid var(--bg)}
+  .slider .ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--fg-sub);font-family:var(--mono)}
+  .log{font-size:11.5px;line-height:1.7}
+  .log .li{display:flex;gap:7px}
+  .log .li .tm{font-family:var(--mono);color:var(--fg-sub);width:40px;flex:none}
+  .grid3{display:grid;grid-template-columns:1fr .8fr .8fr;gap:4px;font-size:11.5px;margin-top:5px}
+  .grid3 .hd{color:var(--fg-sub);text-align:right;font-weight:700}
+  .grid3 .hd.b{color:var(--primary-text)}
+  .grid3 .rl{color:var(--fg-muted)}
+  .grid3 .v{text-align:right;font-family:var(--mono);color:var(--fg-muted)}
+  .grid3 .v.b{color:var(--ok);font-weight:700}
+  .grid3 .v.w{color:var(--warn);font-weight:700}
+  .note{font-size:11.5px;margin-top:6px}
+  .note.warn{color:var(--warn)} .note.ok{color:var(--ok)}
+  .from{font-size:10.5px;color:var(--primary-text);font-family:var(--mono);float:right}
+
+  .chk th,.chk td{border:1px solid var(--line);padding:7px 9px;vertical-align:top}
+  .chk td.c{width:112px;text-align:center;white-space:nowrap}
+  .chk td.src{width:150px;font-size:11.5px;color:var(--fg-sub)}
+  .chk input{accent-color:var(--primary);margin:0 3px 0 0}
+  .chk label{font-size:11.5px;color:var(--fg-muted);cursor:pointer;margin-right:7px}
+  .chk tr.sec td{background:var(--surface);font-weight:700;color:var(--fg-muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>SCR-05 모의훈련 · 와이어프레임 v2.3</h1>
+<p class="lede">2026-09-16 · 구현 전 계획. <b>v1(기존 비교 화면에 잠금을 씌운 안)은 폐기합니다.</b><br />v2.2에서 고친 것: 준비 화면의 전개 누설 · 강평의 비교 기준 · 양호/지연 판정 제거 · 첫 정지점 위계 · 숫자를 fixture 실측값으로 교체 ·<br /><b>판단 국면과 결과 국면 분리</b>(정지점에 방류 판이 없던 구멍) · <code>조치 안 함</code> → <code>실제와 같게</code> · 조건별 관측값을 만들지 않음.<br />v2.3: 사건 고르는 자리 추가 · 한 정지점에서 여러 건 처리하는 흐름 · 화면 사이 숫자 통일 · 조합 판이 없어 못 그리는 자리를 표시.</p>
+
+<div class="quote old">
+  <b>v1을 폐기하는 이유.</b> Phase 1에 이미 있던 "예측판 두 벌 비교"에 잠금과 질문 하나를 얹고 모의훈련이라 불렀습니다.
+  초반에 정리한 벤치마킹 아홉 항목 중 셋만 화면에 있었고, 없는 여섯이 전부 훈련을 훈련이게 만드는 것이었습니다.
+  기존 구현에서 출발한 것이 원인입니다.
+</div>
+
+<h2>1. 초반에 정리한 것과 지금(v1)의 대조</h2>
+<table>
+  <tr><th style="width:52px">번호</th><th>가져오기로 한 것</th><th style="width:170px">출처</th><th style="width:90px">v1</th><th style="width:150px">v2에서 어디에</th></tr>
+  <tr><td class="n">①-1</td><td>SOP 시나리오 구성·템플릿</td><td>RINO p.4·5</td><td class="no">없음</td><td>시작 화면 시나리오 · 진행 중 SOP 카드</td></tr>
+  <tr><td class="n">①-2</td><td>단계별 응대 지침 · 조치 결과 입력</td><td>XEUS SIREN p.22</td><td class="no">없음</td><td>진행 중 [실행] · [보류]</td></tr>
+  <tr><td class="n">①-3</td><td>대응 이력 자동 저장 · 리포트</td><td>XEUS SIREN p.22</td><td class="yes">있음</td><td>강평 · 훈련 보고서</td></tr>
+  <tr><td class="n">①-4</td><td>과거 이력 · 유사 사례 조회</td><td>복합재난감시 p.6 · AI플랫폼 p.11</td><td class="no">없음</td><td>시작 화면 "이 사건과 닮은 사건"</td></tr>
+  <tr><td class="n">②-1</td><td>모의훈련 자체</td><td>자사 비교표 ◎</td><td class="part">부분</td><td>화면 전체</td></tr>
+  <tr><td class="n">②-2</td><td>실제 사건이 훈련 시나리오가 된다</td><td>제안서 p.16</td><td class="yes">있음</td><td>시작 화면 시나리오 출처</td></tr>
+  <tr><td class="n">②-3</td><td>단일 시나리오를 조합한 복합 재난</td><td>제안서 p.15</td><td class="no">없음</td><td>시작 화면 조건 설정(강우·만조·펌프)</td></tr>
+  <tr><td class="n">②-4</td><td><b>트윈 위에서 시나리오가 전개된다</b></td><td>완료보고 p.39·40</td><td class="no">없음</td><td><b>진행 중 화면 · 지도가 움직인다</b></td></tr>
+  <tr><td class="n">②-5</td><td>결과가 개선 항목으로 이어진다</td><td></td><td class="yes">있음</td><td>강평</td></tr>
+</table>
+
+<h2>2. 훈련의 뼈대</h2>
+<div class="bone">
+  <div><span class="src">②-4</span><b>시나리오가 시간에 따라 전개된다</b> · 지도에서 물이 번지고 시계가 흐른다</div>
+  <div><span class="src">①-1</span>&nbsp;&nbsp;└ <b>단계마다 규정이 뜬다</b> · 센서 임계가 SOP 항목을 띄운다</div>
+  <div><span class="src">①-2</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ <b>조치를 입력한다</b> · 지금 실행할지, 보류할지</div>
+  <div><span class="src">②-4</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ <b>시간이 흐르고 결과가 나온다</b> · 내 조치가 반영된 트윈</div>
+  <div><span class="src">①-3 ②-5</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ <b>강평 · 개선 항목 · 보고서</b></div>
+</div>
+<p class="lede">v1은 가운데 셋이 통째로 없고 그 자리를 "판단 1회 + 표 비교"가 대신했습니다.</p>
+
+<h2>3. 화면 다섯</h2>
+
+<!-- 화면 1 -->
+<div class="scr">
+  <div class="cap">화면 1 · 훈련 준비 (사건을 고르고 조건을 정한다)</div>
+  <div class="frame">
+    <div class="topbar"><b>모의훈련</b><span>훈련하기 | 지난 훈련</span></div>
+    <div class="body">
+      <div class="map">
+        <div class="mlbl">창원천 하류 · 사건 범위<br /><span class="dim">훈련 시작 전이라 상태 없음</span></div>
+        <div class="flood" style="opacity:.25"></div>
+      </div>
+      <div class="rail wide">
+        <div class="box"><div class="h"><span>어느 사건으로 훈련할까</span><span class="meta">준비된 사건 1</span></div>
+          <div class="pick on" style="border:1px solid var(--primary-text);border-radius:5px;padding:5px 6px;background:rgba(59,130,246,.10)">
+            <b style="font-size:11.5px">창원천 하류 범람</b><span style="color:var(--fg-sub);font-size:10.5px"> · 2024.08.28 · 하천범람</span></div>
+          <div class="dim" style="margin-top:4px">구항 월류 · 무학산 산불 · 교방동 변위 외 3건은 <b>훈련 시나리오가 아직 없습니다</b>
+            <span class="from">D-6</span></div></div>
+
+        <div class="box"><div class="h"><span>창원천 하류 범람</span><span class="meta">2024.08.28</span></div>
+          <div class="sub">상류 강우 급증 → 합류부 기준 수위 초과 → 하구 천변도로 침수. 3시간 20분.</div>
+          <div class="dim" style="margin-top:4px">실제 사건 원장에서 만든 시나리오 <span class="from">②-2</span></div></div>
+
+        <div class="box"><div class="h"><span>훈련 구조</span><span class="meta">14:35 시작 · 17:40 종료</span></div>
+          <div class="sub">판단 지점 <b>4</b> · 발동하는 규정 <b>3건</b></div>
+          <div class="dim" style="margin-top:4px">언제 무엇이 일어나는지는 <b>진행하면서</b> 열립니다. 시작 전에는 사건 개요와 훈련 구조까지만 봅니다 <span class="from">①-1</span></div></div>
+
+        <div class="box q"><div class="h"><span>조건</span><span class="meta">더 어렵게 할 수 있습니다</span></div>
+          <div class="sub">강우</div>
+          <div class="slider"><div class="track"><u style="left:0"></u><u style="left:50%"></u><u style="left:100%"></u><i style="left:50%"></i></div>
+            <div class="ticks"><span>당시 35</span><span>+20% 42</span><span>+50% 53 mm/h</span></div></div>
+          <div class="dim" style="margin-top:5px">판이 있는 값에만 멈춥니다. 만조 중첩·펌프 정전은 확장 <span class="from">②-3</span></div></div>
+
+        <div class="b on" style="padding:9px">▶ 훈련 시작</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 화면 2 -->
+<div class="scr">
+  <div class="cap">화면 2 · 판단 국면 (물이 오기 전 · 정지점 14:35 · 14:55)</div>
+  <div class="frame">
+    <div class="topbar"><b>모의훈련</b><span>창원천 하류 범람 · 강우 +20% · 진행 중</span></div>
+    <div class="body">
+      <div class="map">
+        <div class="mlbl">둔치 가장자리 물참<br /><span class="dim">아직 천변도로는 정상</span></div>
+        <div class="flood" style="opacity:.5;width:30%;height:16%"></div>
+        <div class="pin" style="left:20%;top:30%">상류 12.4 m</div>
+        <div class="pin" style="left:52%;top:64%">합류부 1.3 m</div>
+        <div class="clock">
+          <div class="row"><span class="t">14:35</span>
+            <span class="bar"><i style="width:6%"></i><u style="left:6%"></u><u style="left:30%"></u><u style="left:64%"></u><u style="left:94%"></u></span>
+            <span class="btn">▶ 다음 단계</span></div>
+          <div class="row dim" style="margin-top:4px">
+            <span style="color:var(--warn)">판단 14:35 · 14:55</span><span style="flex:1"></span><span>결과 15:30 · 16:00</span></div>
+        </div>
+      </div>
+      <div class="rail wide">
+        <div class="box act"><div class="h"><span>지금 해야 할 조치</span><span class="meta">14:35 · 3건 발동</span></div>
+          <div class="dim" style="margin-bottom:5px">범람 예측 발생 · 합류부 기준 수위 2.5 m 초과 예측</div>
+
+          <div style="border:1px solid var(--warn);border-radius:6px;padding:6px 7px">
+            <div style="font-weight:700">S2 상류 저류지 방류 <span class="tag w">핵심</span></div>
+            <div class="sub">이 판단이 합류부 수위와 도달 시각을 바꿉니다</div>
+            <div class="sub" style="margin-top:4px;border-top:1px solid var(--line);padding-top:4px"><b>지침</b> 사전 방류로 저류 여유 확보 <span class="from">①-2</span></div>
+            <div class="row2"><span class="b on">지금 실행</span><span class="b">다음 단계로</span></div>
+          </div>
+
+          <div class="sub" style="margin-top:6px">함께 발동한 조치 2건</div>
+          <div class="row2" style="margin-top:3px"><span class="b">S1 둔치 통제</span><span class="b">S3 천변도로 통제</span></div>
+          <div class="dim" style="margin-top:3px">핵심을 먼저 정하고, 나머지는 눌러서 폅니다. 세 장을 한꺼번에 던지면 시험지가 됩니다</div>
+          <div class="dim" style="margin-top:5px;border-top:1px solid var(--line);padding-top:4px">
+            <b>한 정지점에서 여러 건을 실행할 수 있습니다.</b> 실행한 카드는 아래 기록으로 내려가고,
+            남은 카드가 그 자리에 오릅니다. 모두 정하거나 [다음 단계]를 누르면 시계가 갑니다</div>
+        </div>
+
+        <div class="box"><div class="h"><span>지금 상태</span><span class="meta">14:35</span></div>
+          <div class="grid3">
+            <span class="rl">합류부 수위</span><span class="v">1.3 m</span><span class="v dim">기준 2.5</span>
+            <span class="rl">상류 강우계</span><span class="v">28 mm/h</span><span class="v dim"></span>
+            <span class="rl">상류 저류지</span><span class="v">현행 운영</span><span class="v dim"></span>
+          </div>
+          <div class="dim" style="margin-top:4px"><span class="tag w">강우 +20% 적용 중</span> 관측값은 당시 기록 그대로입니다. 조건별 관측값은 만들지 않습니다</div></div>
+
+        <div class="box"><div class="h"><span>내 조치 기록</span><span class="meta">0건</span></div>
+          <div class="dim">실행한 조치가 시각과 함께 쌓입니다 <span class="from">①-3</span></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 화면 2b · 결과 국면 -->
+<div class="scr">
+  <div class="cap">화면 3 · 결과 국면 (물이 온다 · 조치는 끝났다)</div>
+  <div class="frame">
+    <div class="topbar"><b>모의훈련</b><span>창원천 하류 범람 · 강우 +20% · 진행 중</span></div>
+    <div class="body">
+      <div class="map">
+        <div class="mlbl">천변도로 잠김 · 합류부로 번짐<br /><span class="dim">내 조치가 반영된 트윈</span></div>
+        <div class="flood" style="width:52%;height:32%"></div>
+        <div class="pin" style="left:52%;top:64%">합류부 2.4 m</div>
+        <div class="pin" style="left:36%;top:44%">천변도로 통제됨</div>
+        <div class="clock">
+          <div class="row"><span class="t">15:30</span>
+            <span class="bar"><i style="width:64%"></i><u style="left:6%"></u><u style="left:30%"></u><u style="left:64%"></u><u style="left:94%"></u></span>
+            <span class="btn">▶ 다음 단계</span></div>
+          <div class="row dim" style="margin-top:4px"><span class="dim">판단 끝 · 결과를 봅니다</span><span style="flex:1"></span><span>다음 16:00</span></div>
+        </div>
+      </div>
+      <div class="rail wide">
+        <div class="box"><div class="h"><span>지금 일어나는 일</span><span class="meta">15:30</span></div>
+          <div class="grid3">
+            <span class="rl">합류부 수위</span><span class="v w">2.4 m</span><span class="v dim">기준 2.5</span>
+            <span class="rl">하구 천변도로</span><span class="v">통제됨</span><span class="v dim">내 조치</span>
+            <span class="rl">합류부 간선도로</span><span class="v w">부분 침수</span><span class="v dim"></span>
+          </div></div>
+
+        <div class="box done"><div class="h"><span>내 조치 기록</span><span class="meta">3건 · 마감</span></div>
+          <div class="log">
+            <div class="li"><span class="tm">14:35</span><span class="sub">S2 저류지 방류 <span class="tag g">실행</span></span></div>
+            <div class="li"><span class="tm">14:55</span><span class="sub">S1 둔치 통제 <span class="tag g">실행</span></span></div>
+            <div class="li"><span class="tm">14:55</span><span class="sub">S3 천변도로 통제 <span class="tag g">실행</span></span></div>
+          </div>
+          <div class="dim" style="margin-top:3px">조치 창이 닫혔습니다. 안 한 조치는 <b>실제와 같은 시각</b>에 한 것으로 봅니다</div></div>
+
+        <div class="box"><div class="h"><span>남은 단계</span></div>
+          <div class="sub">16:00 최고 수위 → 종료·강평</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 화면 3 -->
+<div class="scr">
+  <div class="cap">화면 4 · 훈련 종료 (강평) · 값은 fixture 실측</div>
+  <div class="frame">
+    <div class="topbar"><b>모의훈련</b><span>창원천 하류 범람 · 강우 +20% · 종료</span></div>
+    <div class="body">
+      <div class="map">
+        <div class="mlbl">최종 범람 범위<br /><span class="dim">[내 훈련] [실제와 같게 했다면] 전환</span></div>
+        <div class="flood big"></div>
+        <div class="pin" style="left:56%;top:70%">합류부 최고 2.7 m</div>
+        <div class="clock"><div class="row"><span class="t">17:40</span>
+          <span class="bar"><i style="width:100%"></i></span><span class="btn">↺ 다시 보기</span></div></div>
+      </div>
+      <div class="rail wide">
+        <div class="box q"><div class="h"><span>내 조치가 만든 차이</span><span class="meta">둘 다 강우 +20%</span></div>
+          <div class="dim" style="margin-bottom:4px">기준은 <b>실제와 같은 시각에 했을 때</b>입니다(방류 15:05 · 통제 15:22). 아무 조치도 안 한 판은 만들지 않습니다</div>
+          <div class="grid3">
+            <span></span><span class="hd">실제와 같게</span><span class="hd b">내 훈련</span>
+            <span class="rl">합류부 최고 수위</span><span class="v w">3.6 m</span><span class="v b">2.7 m</span>
+            <span class="rl">기준 초과 시각</span><span class="v w">15:10</span><span class="v b">15:40</span>
+            <span class="rl">합류부 간선도로</span><span class="v w">중단</span><span class="v b">부분 중단</span>
+            <span class="rl">합류부 저지대 건물</span><span class="v w">노출</span><span class="v b">영향 없음</span>
+          </div>
+          <div class="note ok">방류를 14:35에 한 결과입니다. <b>조건은 둘 다 강우 +20%</b>라 차이는 조치에서만 왔습니다</div>
+          <div class="dim" style="margin-top:5px;border-top:1px solid var(--line);padding-top:5px">
+            참고 · 당시 강우에서 실제 대응(방류 15:05): 최고 3.2 m · 초과 15:22</div>
+          <div class="note warn" style="margin-top:5px">⚠ 이 표의 값은 <b>방류 14:35 판</b>의 실측값입니다.
+            통제까지 함께 고른 조합 판(<code>강우+20% × 방류 14:35 × 통제 14:55</code>)은 아직 없습니다 —
+            천변도로 이용자 상태가 이 표에 못 서는 이유입니다(§5 D-2)</div></div>
+
+        <div class="box"><div class="h"><span>발동에서 조치까지</span><span class="meta">실제와 견줌</span></div>
+          <div class="log">
+            <div class="li"><span class="tm">S2</span><span class="sub">저류지 방류 · <b>0분</b> <span class="dim">실제 30분</span></span></div>
+            <div class="li"><span class="tm">S1</span><span class="sub">둔치 통제 · <b>20분</b> <span class="dim">실제 15분</span></span></div>
+            <div class="li"><span class="tm">S3</span><span class="sub">천변도로 통제 · <b>20분</b> <span class="dim">실제 47분</span></span></div>
+          </div>
+          <div class="dim" style="margin-top:3px">목표 시간 기준이 없어 <b>양호·지연으로 판정하지 않습니다</b>. 실제와의 차이만 적습니다</div></div>
+
+        <div class="box"><div class="h"><span>고칠 거리</span><span class="meta">훈련이 남기는 것</span></div>
+          <div><span class="tag">임계치</span><span class="tag on">데이터</span><span class="tag">SOP</span></div>
+          <div class="sub" style="border:1px solid var(--line2);border-radius:5px;padding:5px 6px;margin-top:4px">무엇을 고칠지 한 줄로　［남기기］</div>
+          <div class="dim" style="margin-top:4px">근거 · 강우 +20% · S3 통제 20분 <span class="from">②-5</span></div></div>
+
+        <div class="row2"><span class="b">훈련 보고서</span><span class="b on">훈련 저장</span></div>
+        <div class="dim" style="text-align:center;font-size:11px">조건을 바꿔 다시 훈련할 수 있습니다</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 화면 4 -->
+<div class="scr">
+  <div class="cap">화면 5 · 지난 훈련 (목록 · 이력)</div>
+  <div class="frame">
+    <div class="topbar"><b>모의훈련</b><span>훈련하기 | <b>지난 훈련</b></span></div>
+    <div class="body" style="min-height:230px">
+      <div class="rail wide" style="width:100%;background:var(--surface)">
+        <table style="margin:0">
+          <tr><th>훈련</th><th style="width:110px">조건</th><th style="width:90px">결과</th><th style="width:120px">고칠 거리</th><th style="width:90px">한 일</th></tr>
+          <tr><td>창원천 하류 범람</td><td>강우 +20%</td><td class="yes">기준 초과 15:40</td><td>2건</td><td>보고서 · 다시</td></tr>
+          <tr><td>창원천 하류 범람</td><td>당시 조건</td><td class="yes">기준 초과 없음</td><td>1건</td><td>보고서 · 다시</td></tr>
+          <tr><td class="dim" colspan="5">같은 사건을 조건만 바꿔 여러 번 훈련하면 "어디까지 버티나"가 목록에서 읽힙니다 <span class="from">①-3</span></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>4. v1과 무엇이 달라지나</h2>
+<table>
+  <tr><th style="width:130px"></th><th>v1 (폐기)</th><th>v2</th></tr>
+  <tr><td>화면의 주인공</td><td>우측 레일의 표</td><td><b>지도와 시계</b>. 물이 번지는 것을 보며 판단한다</td></tr>
+  <tr><td>사용자가 하는 일</td><td>선택지 둘 중 하나 고르기 (1회)</td><td><b>시나리오를 따라가며 조치를 실행·보류</b> (여러 번)</td></tr>
+  <tr><td>조건 변경</td><td>결과를 본 뒤 접힘에서 카드로 고름</td><td><b>훈련 시작 전에 난이도로 정함</b> (슬라이더)</td></tr>
+  <tr><td>결과</td><td>예측판 두 벌의 값 비교</td><td><b>같은 조건에서 조치 안 함 ↔ 내 조치.</b> 실제 사건은 참고 줄</td></tr>
+  <tr><td>여러 번 하기</td><td>같은 화면에서 조합을 바꿔 봄</td><td><b>조건을 바꿔 다시 훈련.</b> 이력이 쌓인다</td></tr>
+  <tr><td>Phase 1 재사용</td><td>전망 탭 비교 화면을 그대로 씀</td><td>범람면·예측판·원장만 재사용하고 화면은 새로 짬</td></tr>
+</table>
+
+<h2>5. 데이터 실측 (2026-09-16 · dev 서버에서 fixture 직접 읽음)</h2>
+<p class="lede">와이어프레임의 숫자는 <b>지어낸 값이 아니라 실측값</b>입니다. 강우 +20% 조건에서 방류 시각만 바꾼 판들입니다.</p>
+<table>
+  <tr><th>판</th><th style="width:90px">기준 초과</th><th style="width:110px">최고 수위</th><th>영향 대상</th></tr>
+  <tr><td class="dim" colspan="4">당시 조건</td></tr>
+  <tr><td>실제 대응 (재현)</td><td>15:22</td><td>3.2 m @16:00</td><td>간선도로 부분 중단 · 저지대 건물 노출</td></tr>
+  <tr><td>방류 14:35</td><td class="yes">없음</td><td>2.3 m</td><td>건물 영향 없음 · 이용자 통제됨</td></tr>
+  <tr><td class="dim" colspan="4"><b>강우 +20%</b> · 훈련 조건</td></tr>
+  <tr><td><b>조치 안 함</b>(실제 대응 그대로)</td><td class="no">15:10</td><td class="no">3.6 m</td><td>간선도로 <b>중단</b> · 건물 노출</td></tr>
+  <tr><td><b>방류 14:35</b> (알린 직후)</td><td class="yes">15:40</td><td class="yes">2.7 m</td><td>부분 중단 · 건물 <b>영향 없음</b></td></tr>
+  <tr><td>방류 14:45</td><td>15:26</td><td>2.9 m</td><td>부분 중단 · 건물 영향 없음</td></tr>
+  <tr><td>방류 14:55</td><td>15:17</td><td>3.2 m</td><td>부분 중단 · 건물 노출</td></tr>
+  <tr><td class="dim" colspan="4">강우 +50%</td></tr>
+  <tr><td>조치 안 함</td><td class="no">15:02</td><td class="no">4.1 m</td><td>간선도로 중단 · 건물 노출</td></tr>
+  <tr><td>방류 14:35</td><td>15:17</td><td>3.2 m</td><td>부분 중단 · 건물 노출</td></tr>
+</table>
+<p class="lede"><b>방류 시각에 따라 단계적으로 달라집니다.</b> 훈련의 결과가 값으로 읽힙니다.
+강우 +50%면 알린 직후 방류해도 기준을 넘습니다 — "우리 규정으로 버틸 수 없는 조건"이 보입니다.</p>
+
+<h3>정지점 설계 (조치 가능 시각과 눈금을 맞춘다)</h3>
+<p class="lede">앞서 정지점을 예측판 눈금(15:00·15:30·16:00·16:30)에 두려 했으나, <b>그 시각에는 방류 판이 없습니다</b>
+(방류는 14:35·14:45·14:55). 14:35에 넘기면 다음 기회에 판이 없어 훈련이 성립하지 않습니다. 그래서 국면을 나눕니다.</p>
+<table>
+  <tr><th style="width:90px">정지점</th><th style="width:80px">국면</th><th>그 시점에 할 수 있는 것</th><th style="width:150px">지도</th></tr>
+  <tr><td><b>14:35</b></td><td class="part">판단</td><td>방류·통제·둔치 통제 모두 가능(알린 직후). 규정 3건이 함께 발동</td><td>물 오기 전 · 거의 안 바뀜</td></tr>
+  <tr><td><b>14:55</b></td><td class="part">판단</td><td>방류 마지막 기회(문턱). 통제도 가능</td><td>둔치 가장자리</td></tr>
+  <tr><td><b>15:30</b></td><td class="yes">결과</td><td>조치 창 닫힘. 안 한 조치는 <b>실제와 같은 시각</b>에 한 것으로 본다</td><td>천변도로 잠김</td></tr>
+  <tr><td><b>16:00</b></td><td class="yes">결과</td><td>최고 수위 → 종료·강평</td><td>최대 범람</td></tr>
+</table>
+<p class="lede"><b>판단 2회 · 결과 2회로 훈련 한 회가 4스텝</b>입니다. 판단할 때 지도가 거의 안 바뀌는 것은 정직한 표현입니다 —
+실제로도 판단은 물이 오기 전에 합니다. "시계가 흐르며 지도가 바뀐다"는 결과 국면의 약속입니다.</p>
+
+<h3>남은 데이터 과제</h3>
+<table>
+  <tr><th style="width:40px"></th><th>확인할 것</th><th style="width:250px">상태</th></tr>
+  <tr><td class="n">D-1</td><td>정지점은 <b>예측판 눈금</b>에만 둔다(15:00 · 15:30 · 16:00 · 16:30) + 시작 14:35</td><td class="yes">눈금 확인됨. 원장 시각(15:05·15:22)에 두면 지도가 안 바뀐다</td></tr>
+  <tr><td class="n">D-2</td><td>방류 × 통제를 <b>둘 다</b> 고른 판</td><td class="part"><b>지금 없음.</b> <code>roadOn(방류판, 통제시각)</code> 규칙으로 생성 가능 · 생성 코드 필요</td></tr>
+  <tr><td class="n">D-3</td><td>조건 × 조치 조합 수</td><td class="yes">규칙 생성이라 폭발 아님. 현재 38벌이 이미 생성돼 있음</td></tr>
+  <tr><td class="n">D-4</td><td>SOP 지침 · 목표 시간</td><td class="no">지침은 <code>target</code>·<code>level</code>까지만. <b>목표 시간은 근거 없음 → 안 씀</b></td></tr>
+  <tr><td class="n">D-5</td><td>S1(둔치 통제) 결과판</td><td class="part">없음. 조치 시각만 기록하고 수위 결과는 안 보인다</td></tr>
+  <tr><td class="n">D-6</td><td>훈련 시나리오(<code>sop</code>)가 있는 사건</td><td class="part"><b>창원천 하나.</b> 나머지 6건은 목록에서 "훈련 준비 안 됨"으로 구분</td></tr>
+</table>
+
+<h2>6. 검수</h2>
+<p class="lede">항목마다 <b>맞음 / 고칠 것 / 보류</b>를 고르고, 다르면 번호로 알려 주세요.</p>
+<table class="chk">
+  <tr><th style="width:44px">#</th><th>확인할 것</th><th class="c">판정</th><th class="src">근거</th></tr>
+
+  <tr class="sec"><td colspan="4">A. 뼈대</td></tr>
+  <tr><td class="n">A-1</td><td>v1(기존 비교 화면 + 잠금)을 폐기하고 <b>시나리오 전개형</b>으로 다시 짠다</td>
+    <td class="c"><label><input type="radio" name="a1">맞음</label><label><input type="radio" name="a1">고칠 것</label><label><input type="radio" name="a1">보류</label></td><td class="src">②-4</td></tr>
+  <tr><td class="n">A-2</td><td>화면의 주인공은 <b>지도와 시계</b>다. 물이 번지는 것을 보며 판단한다</td>
+    <td class="c"><label><input type="radio" name="a2">맞음</label><label><input type="radio" name="a2">고칠 것</label><label><input type="radio" name="a2">보류</label></td><td class="src">②-4</td></tr>
+  <tr><td class="n">A-3</td><td>사용자가 하는 일은 <b>조치의 실행·보류</b>이지 선택지 고르기가 아니다</td>
+    <td class="c"><label><input type="radio" name="a3">맞음</label><label><input type="radio" name="a3">고칠 것</label><label><input type="radio" name="a3">보류</label></td><td class="src">①-2</td></tr>
+  <tr><td class="n">A-4</td><td>훈련은 <b>시작 → 진행 → 종료 → 강평</b>으로 닫힌다. 한 회가 분명하다</td>
+    <td class="c"><label><input type="radio" name="a4">맞음</label><label><input type="radio" name="a4">고칠 것</label><label><input type="radio" name="a4">보류</label></td><td class="src">①-3</td></tr>
+
+  <tr class="sec"><td colspan="4">B. 화면</td></tr>
+  <tr><td class="n">B-1</td><td>조건(강우)은 <b>훈련 시작 전</b>에 슬라이더로 정한다. 훈련 중에는 안 바꾼다</td>
+    <td class="c"><label><input type="radio" name="b1">맞음</label><label><input type="radio" name="b1">고칠 것</label><label><input type="radio" name="b1">보류</label></td><td class="src">②-3</td></tr>
+  <tr><td class="n">B-2</td><td>진행 중 우측은 <b>지금 해야 할 조치</b>가 맨 위, 그 아래 완료 목록과 지금 상태</td>
+    <td class="c"><label><input type="radio" name="b2">맞음</label><label><input type="radio" name="b2">고칠 것</label><label><input type="radio" name="b2">보류</label></td><td class="src">①-2</td></tr>
+  <tr><td class="n">B-3</td><td>조치 카드에 <b>지침</b>(무엇을 어떻게)이 있다</td>
+    <td class="c"><label><input type="radio" name="b3">맞음</label><label><input type="radio" name="b3">고칠 것</label><label><input type="radio" name="b3">보류</label></td><td class="src">①-2 · D-4 확인</td></tr>
+  <tr><td class="n">B-4</td><td>강평은 <b>내 훈련 대 실제 사건</b>을 견준다(예측판끼리가 아니라)</td>
+    <td class="c"><label><input type="radio" name="b4">맞음</label><label><input type="radio" name="b4">고칠 것</label><label><input type="radio" name="b4">보류</label></td><td class="src">②-2</td></tr>
+  <tr><td class="n">B-5</td><td>지난 훈련 목록에서 <b>같은 사건 여러 회차</b>가 조건별로 쌓인다</td>
+    <td class="c"><label><input type="radio" name="b5">맞음</label><label><input type="radio" name="b5">고칠 것</label><label><input type="radio" name="b5">보류</label></td><td class="src">①-3</td></tr>
+
+  <tr class="sec"><td colspan="4">C. 범위 (가장 중요)</td></tr>
+  <tr><td class="n">C-1</td><td>Phase 2는 <b>창원천 한 사건</b>만. 다른 사건은 훈련 시나리오를 안 만든다</td>
+    <td class="c"><label><input type="radio" name="c1">맞음</label><label><input type="radio" name="c1">고칠 것</label><label><input type="radio" name="c1">보류</label></td><td class="src">범위</td></tr>
+  <tr><td class="n">C-2</td><td>조합은 <b>규칙으로 생성</b>한다(<code>roadOn</code>이 임의의 판 위에 통제만 얹는다). 조건 3단계를 다 쓴다.<br />
+    근거 카드에 <b>"규칙 계산"</b>임을 그대로 적는다. 방류 × 통제 조합 판 생성 코드만 추가하면 된다</td>
+    <td class="c"><label><input type="radio" name="c2">맞음</label><label><input type="radio" name="c2">고칠 것</label><label><input type="radio" name="c2">보류</label></td><td class="src">D-3</td></tr>
+  <tr><td class="n">C-3</td><td>정지점은 원장의 주요 시각 <b>5개</b>(14:20 · 14:35 · 15:00 · 15:22 · 16:05)로 고정한다</td>
+    <td class="c"><label><input type="radio" name="c3">맞음</label><label><input type="radio" name="c3">고칠 것</label><label><input type="radio" name="c3">보류</label></td><td class="src">D-1</td></tr>
+  <tr><td class="n">C-4</td><td>SOP 지침·목표 시간의 <b>근거를 못 찾으면</b> 지침 줄은 비우고 목표 시간도 안 쓴다(지어내지 않는다)</td>
+    <td class="c"><label><input type="radio" name="c4">맞음</label><label><input type="radio" name="c4">고칠 것</label><label><input type="radio" name="c4">보류</label></td><td class="src">기준 ③</td></tr>
+  <tr><td class="n">C-5</td><td>자동 재생(시계가 스스로 흐름)은 안 만든다. <b>[다음 단계]</b> 버튼으로만 넘어간다</td>
+    <td class="c"><label><input type="radio" name="c5">맞음</label><label><input type="radio" name="c5">고칠 것</label><label><input type="radio" name="c5">보류</label></td><td class="src">범위</td></tr>
+  <tr><td class="n">C-6</td><td>점수·등급은 없다. 규정 준수는 <b>양호 / 지연</b>까지만</td>
+    <td class="c"><label><input type="radio" name="c6">맞음</label><label><input type="radio" name="c6">고칠 것</label><label><input type="radio" name="c6">보류</label></td><td class="src">기준</td></tr>
+
+  <tr><td class="n">C-7</td><td>준비 화면은 <b>사건 개요와 훈련 구조까지만</b> 보여준다. 시각별 전개(15:22 초과 · 16:05 최고)는 진행하면서 열린다</td>
+    <td class="c"><label><input type="radio" name="c7">맞음</label><label><input type="radio" name="c7">고칠 것</label><label><input type="radio" name="c7">보류</label></td><td class="src">지적 1</td></tr>
+  <tr><td class="n">C-8</td><td>강평의 <b>주 비교는 같은 조건 안에서</b>다(강우 +20% 조치 안 함 ↔ 강우 +20% 내 조치). 조건과 조치를 동시에 바꾼 비교로 원인을 말하지 않는다. 당시 조건 실제 대응은 참고 줄</td>
+    <td class="c"><label><input type="radio" name="c8">맞음</label><label><input type="radio" name="c8">고칠 것</label><label><input type="radio" name="c8">보류</label></td><td class="src">지적 2 · 03 §26.7</td></tr>
+  <tr><td class="n">C-9</td><td>규정 준수는 <b>양호·지연으로 판정하지 않는다.</b> 발동 후 몇 분에 했는지와 실제와의 차이만 적는다</td>
+    <td class="c"><label><input type="radio" name="c9">맞음</label><label><input type="radio" name="c9">고칠 것</label><label><input type="radio" name="c9">보류</label></td><td class="src">지적 3 · D-4</td></tr>
+  <tr><td class="n">C-10</td><td>첫 정지점에서 조치 3건이 함께 발동하면 <b>핵심(현상 대응)을 펴고 나머지는 접는다</b></td>
+    <td class="c"><label><input type="radio" name="c10">맞음</label><label><input type="radio" name="c10">고칠 것</label><label><input type="radio" name="c10">보류</label></td><td class="src">추가 지적 ③</td></tr>
+  <tr><td class="n">C-11</td><td>Phase 2에서 <b>빼는 것</b>: 닮은 사건(유사 기준 없음) · 만조 중첩·펌프 정전 토글(강우 슬라이더만)</td>
+    <td class="c"><label><input type="radio" name="c11">맞음</label><label><input type="radio" name="c11">고칠 것</label><label><input type="radio" name="c11">보류</label></td><td class="src">범위</td></tr>
+
+  <tr><td class="n">C-12</td><td>훈련을 <b>판단 국면(14:35 · 14:55)과 결과 국면(15:30 · 16:00)</b>으로 나눈다. 판단할 때 지도는 거의 안 바뀐다</td>
+    <td class="c"><label><input type="radio" name="c12">맞음</label><label><input type="radio" name="c12">고칠 것</label><label><input type="radio" name="c12">보류</label></td><td class="src">정지점 불일치</td></tr>
+  <tr><td class="n">C-13</td><td><b>안 한 조치는 "실제와 같은 시각에 한 것"</b>으로 본다. 아무 조치도 안 한 판은 만들지 않는다. 그래서 강평의 기준 열 이름은 <code>실제와 같게</code>다</td>
+    <td class="c"><label><input type="radio" name="c13">맞음</label><label><input type="radio" name="c13">고칠 것</label><label><input type="radio" name="c13">보류</label></td><td class="src">판 실사</td></tr>
+  <tr><td class="n">C-14</td><td>조건을 바꿔도 <b>관측값(상태 줄)은 당시 기록 그대로</b> 두고 조건 배지만 단다. 조건별 관측값을 지어내지 않는다</td>
+    <td class="c"><label><input type="radio" name="c14">맞음</label><label><input type="radio" name="c14">고칠 것</label><label><input type="radio" name="c14">보류</label></td><td class="src">기준 ③</td></tr>
+
+  <tr class="sec"><td colspan="4">D. 버릴 것</td></tr>
+  <tr><td class="n">D-1</td><td>v1의 잠금·훈련 분기·내 판단 카드·결과 표는 <b>버린다</b>(코드도)</td>
+    <td class="c"><label><input type="radio" name="dd1">맞음</label><label><input type="radio" name="dd1">고칠 것</label><label><input type="radio" name="dd1">보류</label></td><td class="src">A-1</td></tr>
+  <tr><td class="n">D-2</td><td>지금 <code>/scr-05</code>의 [지난 사건][저장된 분석] 탭은 <b>[훈련하기][지난 훈련]</b>으로 바뀐다</td>
+    <td class="c"><label><input type="radio" name="dd2">맞음</label><label><input type="radio" name="dd2">고칠 것</label><label><input type="radio" name="dd2">보류</label></td><td class="src">화면 1·4</td></tr>
+  <tr><td class="n">D-3</td><td>사건의 시간·공간을 자유 탐색하는 기능은 이 화면에서 없앤다(사건 작업공간이 맡는다)</td>
+    <td class="c"><label><input type="radio" name="dd3">맞음</label><label><input type="radio" name="dd3">고칠 것</label><label><input type="radio" name="dd3">보류</label></td><td class="src">역할 분리</td></tr>
+</table>
+
+<p class="lede" style="margin-top:14px">검수에서 A-1이 <b>맞음</b>이면 v1 코드를 걷고 이 구조로 새로 짭니다. <b>고칠 것</b>이면 어디가 다른지 알려 주세요.</p>
+
+</div>
+</body>
+</html>

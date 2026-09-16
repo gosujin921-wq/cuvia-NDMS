@@ -23,12 +23,25 @@ export function formatClock(input: string | Date): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** 목록 일시 — "09.21 17:14". 게시판 줄의 발생·종료·생성 칸.
+ *  게시판마다 같은 함수를 손으로 적고 있었다(scr-05 IncidentBoard · SavedAnalysisBoard 는 아직 제 것을 쓴다 · 옮길 대상) */
+export function formatStamp(input: string | Date): string {
+  const d = toDate(input);
+  if (!d) return "-";
+  return `${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** 경과 시간 — "32분" · "1시간 32분" · "2시간". 두 시각 사이의 길이 표기. */
 export function formatElapsed(from: string | Date, to: string | Date): string {
   const a = toDate(from);
   const b = toDate(to);
   if (!a || !b) return "-";
-  const min = Math.max(0, Math.round((b.getTime() - a.getTime()) / 60_000));
+  return formatMinutes((b.getTime() - a.getTime()) / 60_000);
+}
+
+/** 길이 — 분 수를 "32분" · "1시간 32분" · "2시간"으로. 평균처럼 두 시각이 없는 길이에 쓴다 */
+export function formatMinutes(minutes: number): string {
+  const min = Math.max(0, Math.round(minutes));
   if (min < 60) return `${min}분`;
   const rest = min % 60;
   return rest === 0 ? `${Math.floor(min / 60)}시간` : `${Math.floor(min / 60)}시간 ${rest}분`;

@@ -5,7 +5,6 @@ export * from "./alert";
 export * from "./risk-matrix";
 export * from "./forecast";
 export * from "./response";
-export * from "./training";
 export * from "./stage";
 export * from "./sop";
 export * from "./selectors";

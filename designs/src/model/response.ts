@@ -7,7 +7,7 @@
  *   쓰지 않는다 — 시설 점검·운영 요청은 Action 이다.
  * ───────────────────────────────────────────── */
 
-import type { AlternativeId } from "./forecast";
+import type { AlternativeId, ImpactTarget } from "./forecast";
 
 /** 대응 수준 — 권고·승인이 고르는 대응안의 세기. 사건 국면(통제)과 다른 축이라 이름을 겹치지 않게 둔다 (2026-09-14) */
 export type ResponseLevel = "감시 강화" | "현장 확인" | "선제 통제 검토" | "선제 통제" | "종료 검토";
@@ -99,15 +99,46 @@ export interface DisseminationResult {
   fallback?: { channel: ChannelId; actionId?: string; detail: string };
 }
 
+/** 예측판 영향 대상 하나의 실제 상태 — 예측 대 실제의 "적중 여부"를 세우는 자리 (IA §13.1) */
+export interface ObservedTarget {
+  /** 예측판 ImpactTarget 과 같은 id */
+  id: string;
+  /** 실제로 확인된 이름표. 수가 적힌 대상은 실측 수를 든다 — "저지대 건물 10동" */
+  label: string;
+  exposure: ImpactTarget["exposure"];
+  /** 실제 도달·전환 시각 */
+  at?: string;
+  /** 무엇으로 확인했나 */
+  eventId?: string;
+}
+
 export interface Outcome {
   outcomeId: string;
   incidentId: string;
   verification:
-    | { available: true; forecastId: string; predictedDepthM: number; observedDepthM: number; predictedArrivalAt: string; observedArrivalAt: string; verdict: "과대예측" | "과소예측" | "일치" }
+    | {
+        available: true;
+        forecastId: string;
+        predictedDepthM: number;
+        observedDepthM: number;
+        predictedArrivalAt: string;
+        observedArrivalAt: string;
+        verdict: "과대예측" | "과소예측" | "일치";
+        /** 실측 침수 범위 — 예측 범위와 겹쳐 본다(geometry.generated.ts) */
+        observedGeometryId?: string;
+        /** 예측판 대상별 실제 상태. 비면 대상 적중은 "확인 못 함"이다 */
+        observedTargets?: ObservedTarget[];
+      }
     | { available: false; reason: string; requiredObservations: string[] };
   milestones: { label: string; at: string; eventId: string }[];
   referencedEventIds: string[];
-  improvements: string[];
+  improvements: Improvement[];
+}
+
+/** 사후 개선 과제 — 축은 IA §10 의 임계치·모델·데이터·SOP 넷이다. 점수를 매기지 않는다 */
+export interface Improvement {
+  area: "임계치" | "모델" | "데이터" | "SOP";
+  text: string;
 }
 
 export interface Report {
