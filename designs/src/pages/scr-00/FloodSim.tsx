@@ -218,8 +218,8 @@ export function FloodSim() {
         </div>
       )}
 
-      {/* 하단 중앙 — 시간축. 오른쪽은 질의 버튼 자리를 비워 둔다 */}
-      <div className="pointer-events-none absolute bottom-3 z-30" style={{ left: CENTER_LEFT, right: CENTER_RIGHT + FAB_SIZE + EDGE }}>
+      {/* 하단 중앙 — 시간축 캡슐. 가운데에 좁게(최대 640) 서고, 오른쪽은 질의 버튼 자리를 비워 둔다 */}
+      <div className="pointer-events-none absolute bottom-3 z-30 flex justify-center px-3 [&>*]:w-full [&>*]:max-w-[640px]" style={{ left: CENTER_LEFT, right: CENTER_RIGHT + FAB_SIZE + EDGE }}>
         <TimeAxis
           origin={origin}
           end={end}

@@ -29,13 +29,14 @@ export function TimeAxis({ origin, end, ticks, minutes, onChange, playing, onTog
   const pct = (iso: string) => Math.min(100, Math.max(0, ((new Date(iso).getTime() - new Date(origin).getTime()) / 60_000 / span) * 100));
 
   return (
-    /* 한 줄이다 — 안내 문장 줄을 두지 않는다(대상·날짜는 좌측 레일이 말한다 · 2026-09-17 사용자 "타임라인 높이 줄여"). 눈금 라벨 몫으로 아래만 한 칸 */
-    <div className="pointer-events-auto rounded-lg border border-border bg-surface/95 px-3.5 pb-5 pt-2 backdrop-blur" aria-label="시간축">
+    /* 한 줄 캡슐이다 — 안내 문장 줄을 두지 않는다(대상·날짜는 좌측 레일이 말한다 · 2026-09-17 사용자). 눈금 라벨 몫으로 아래만 한 칸.
+       모양은 캡슐 카드 + 원형 재생 버튼(2026-09-17 사용자) */
+    <div className="pointer-events-auto rounded-full border border-border bg-surface/95 pb-5 pl-2 pr-4 pt-2 backdrop-blur" aria-label="시간축">
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={onTogglePlay}
-          className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-surface-raised text-foreground hover:bg-surface-hover"
+          className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground hover:opacity-90"
           aria-label={playing ? "재생 멈춤" : "재생"}
         >
           <Icon icon={playing ? "mdi:pause" : "mdi:play"} className="size-5" aria-hidden />
