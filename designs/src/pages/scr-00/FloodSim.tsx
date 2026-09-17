@@ -40,7 +40,6 @@ import { FacilityMarkers } from "./widgets/FacilityMarkers";
 import type { ScenePoint } from "../../model/scene";
 import { FloodResult } from "./widgets/FloodResult";
 import { TimeAxis } from "./widgets/TimeAxis";
-import { ACTION_STYLE } from "./widgets/action-style";
 
 const TWIN_ZOOM = SCOPE_ZOOM.구역 + 0.8;
 const FIT_MARGIN = 32;
@@ -281,7 +280,7 @@ export function FloodSim() {
           origin={origin}
           end={end}
           ticks={ticks}
-          events={actions.map((a) => ({ at: a.at, label: a.kind === "규정" ? `규정 해당 · ${a.label}` : a.label, icon: ACTION_STYLE[a.kind].icon }))}
+          events={actions.map((a) => ({ at: a.at, label: a.kind === "규정" ? `규정 해당 · ${a.label}` : a.label }))}
           minutes={minutes}
           onChange={(m) => { setPlaying(false); setMinutes(m); }}
           playing={playing}

@@ -13,13 +13,16 @@ import { Tag, cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
 import type { SimScenario, SimSop, StateRow } from "../../../model/sim/flood";
 import { HEAT_ADVISORY, HEAT_WARNING, HOT_HOURS, type HeatSummary } from "../../../model/sim/heat";
+import type { ShelterSummary } from "../../../model/sim/shelters";
 import { ACTION_STYLE, SOP_ICON } from "./action-style";
+
+const num = (n: number) => n.toLocaleString("ko-KR");
 
 type Stage = "none" | "advisory" | "warning";
 const LEVEL_LABEL = { advisory: "주의보", warning: "경보", evacuate: "대피" } as const;
 const RANK = { none: 0, advisory: 1, warning: 2, evacuate: 3 } as const;
 
-export function HeatResult({ scenarios, selected, onSelect, summaries, at, rows, hotShareNow, stage, sop, range, basis }: {
+export function HeatResult({ scenarios, selected, onSelect, summaries, at, rows, hotShareNow, stage, shelters, sop, range, basis }: {
   scenarios: SimScenario[];
   selected: SimScenario;
   onSelect: (id: string) => void;
@@ -28,6 +31,8 @@ export function HeatResult({ scenarios, selected, onSelect, summaries, at, rows,
   rows: StateRow[];
   hotShareNow: number;
   stage: Stage;
+  /** 무더위쉼터 원장 집계(그 시각) · 아직 못 읽었으면 null */
+  shelters: ShelterSummary | null;
   sop: SimSop[];
   range: { min: number; max: number } | null;
   basis: string[];
@@ -56,7 +61,13 @@ export function HeatResult({ scenarios, selected, onSelect, summaries, at, rows,
               </button>
             ))}
             <span className="whitespace-nowrap text-foreground-muted">최고 체감온도</span>
-            {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.maxFeel.toFixed(1)}°C · ${formatClock(sum.maxFeelAt)}` : "-", worse(sum?.maxFeel, base?.maxFeel), s.id === selected.id)}</span>)}
+            {/* 값과 시각을 두 줄로 — 열이 셋 넘으면 한 줄엔 안 든다 */}
+            {cols.map(({ s, sum }) => (
+              <span key={s.id} className="flex flex-col items-end leading-tight">
+                {cell(sum ? `${sum.maxFeel.toFixed(1)}°C` : "-", worse(sum?.maxFeel, base?.maxFeel), s.id === selected.id)}
+                {sum && <span className="whitespace-nowrap font-mono text-foreground-subtle">{formatClock(sum.maxFeelAt)}</span>}
+              </span>
+            ))}
             <span className="whitespace-nowrap text-foreground-muted">{HEAT_ADVISORY}°C↑ 시간</span>
             {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.advisoryHours}시간` : "-", worse(sum?.advisoryHours, base?.advisoryHours), s.id === selected.id)}</span>)}
             <span className="whitespace-nowrap text-foreground-muted">{HEAT_WARNING}°C↑ 시간</span>
@@ -95,6 +106,34 @@ export function HeatResult({ scenarios, selected, onSelect, summaries, at, rows,
           </p>
         )}
       </section>
+
+      {shelters && (
+        <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="무더위쉼터">
+          <header className="flex items-baseline justify-between gap-2">
+            <h2 className="text-body font-semibold text-foreground">무더위쉼터 · 그 시각</h2>
+            <span className="shrink-0 text-caption text-foreground-subtle">행정안전부 원장 · 창원</span>
+          </header>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-border bg-card px-2.5 py-2 text-caption">
+            <div className="contents">
+              <dt className="truncate text-foreground-muted">전체 · 수용 인원</dt>
+              <dd className="text-right font-mono tabular-nums text-foreground">{num(shelters.total)}곳 · {num(shelters.capacity)}명</dd>
+            </div>
+            <div className="contents">
+              <dt className="truncate text-foreground-muted">운영시간 등록 {num(shelters.withHours)}곳 중 운영 중</dt>
+              <dd className={cn("text-right font-mono tabular-nums", shelters.closedNow > 0 ? "text-warning" : "text-foreground")}>
+                {num(shelters.openNow)}곳{shelters.closedNow > 0 && <span className="ml-1 font-sans text-foreground-subtle">종료 {num(shelters.closedNow)}</span>}
+              </dd>
+            </div>
+            <div className="contents">
+              <dt className="truncate text-foreground-muted">야간 개방</dt>
+              <dd className="text-right font-mono tabular-nums text-primary-text">{num(shelters.night)}곳</dd>
+            </div>
+          </dl>
+          <p className="break-keep text-caption leading-snug text-foreground-subtle">
+            운영시간이 등록되지 않은 {num(shelters.total - shelters.withHours)}곳은 세지 않습니다. 야간 개방은 지도에 큰 점으로 섭니다. 쉼터가 덮는 인원은 셈하지 않습니다
+          </p>
+        </section>
+      )}
 
       <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="관련 SOP">
         <header className="flex items-baseline justify-between gap-2">

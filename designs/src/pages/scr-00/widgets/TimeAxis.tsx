@@ -10,6 +10,7 @@
 import { Icon } from "@iconify/react";
 import { cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
+import { SOP_ICON } from "./action-style";
 
 export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, playing, onTogglePlay }: {
   /** 현재(시작) · 지평선 끝 */
@@ -17,8 +18,8 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
   end: string;
   /** 판의 눈금 시각 — 표시만 */
   ticks: string[];
-  /** 조치 눈금 — 트랙 위에 아이콘으로 서고, 지나면 채워진다 */
-  events?: { at: string; label: string; icon: string }[];
+  /** 조치 눈금 — 트랙 위에 서고, 지나면 채워진다. 아이콘은 종류 불문 SOP 표식 하나다(2026-09-17 사용자 "타임라인 위 아이콘 통일") — 무슨 조치인지는 호버·조치 이력이 말한다 */
+  events?: { at: string; label: string }[];
   /** 현재로부터 몇 분 뒤를 보고 있나 */
   minutes: number;
   onChange: (minutes: number) => void;
@@ -29,11 +30,11 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
   const m = Math.min(span, Math.max(0, minutes));
   const at = new Date(new Date(origin).getTime() + m * 60_000).toISOString();
   const pct = (iso: string) => Math.min(100, Math.max(0, ((new Date(iso).getTime() - new Date(origin).getTime()) / 60_000 / span) * 100));
-  /* 같은 분의 조치는 한 눈금 — 아이콘은 첫 건의 것 */
+  /* 같은 분의 조치는 한 눈금 */
   const grouped = (() => {
     const inRange = events.filter((e) => { const t = new Date(e.at).getTime(); return t >= new Date(origin).getTime() && t <= new Date(end).getTime(); });
-    const byMin = new Map<number, { at: string; icon: string; labels: string[] }>();
-    for (const e of inRange) { const k = Math.round(new Date(e.at).getTime() / 60_000); const g = byMin.get(k); if (g) g.labels.push(e.label); else byMin.set(k, { at: e.at, icon: e.icon, labels: [e.label] }); }
+    const byMin = new Map<number, { at: string; labels: string[] }>();
+    for (const e of inRange) { const k = Math.round(new Date(e.at).getTime() / 60_000); const g = byMin.get(k); if (g) g.labels.push(e.label); else byMin.set(k, { at: e.at, labels: [e.label] }); }
     return [...byMin.values()];
   })();
 
@@ -67,7 +68,7 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
             const passed = pct(g.at) <= (m / span) * 100 + 0.5;
             return (
               <span key={g.at} className={cn("absolute -top-3.5 flex h-4 min-w-4 -translate-x-1/2 items-center justify-center gap-0.5 rounded-full border px-0.5 font-mono text-[10px] font-bold", passed ? "border-primary bg-primary text-primary-foreground" : "border-primary-text bg-surface text-primary-text")} style={{ left: `${pct(g.at)}%` }} title={`${formatClock(g.at)} ${g.labels.join(" · ")}`} aria-hidden>
-                <Icon icon={g.icon} className="size-2.5" />
+                <Icon icon={SOP_ICON} className="size-2.5" />
                 {g.labels.length > 1 && <span>{g.labels.length}</span>}
               </span>
             );

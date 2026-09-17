@@ -25,6 +25,8 @@ import { ContextInset } from "../../components/twin/ContextInset";
 import { useHeatDomeData } from "../../components/heat-dome";
 import { scenariosOf } from "../../model/sim/flood";
 import { cellIndexOf, fieldRange, fieldValuesAt, heatSite, heatStateAt, hotCellRings, hotShareAt, HEAT_ADVISORY, HEAT_WARNING, offsetOf, summarizeHeat } from "../../model/sim/heat";
+import { loadShelters, sheltersGeoJson, summarizeShelters, type Shelter } from "../../model/sim/shelters";
+import { setCircleLayerVisible, upsertCircleLayer } from "../../lib/map-points";
 import { SimScenarios } from "./widgets/SimScenarios";
 import { HeatResult } from "./widgets/HeatResult";
 import { TimeAxis } from "./widgets/TimeAxis";
@@ -33,6 +35,7 @@ import { TimeAxis } from "./widgets/TimeAxis";
 const CITY_ZOOM = SCOPE_ZOOM.구역 - 3.2;
 const PLAY_MS_PER_MIN = 40;
 const HOT_SOURCE = "sim-heat-hot";
+const SHELTER_SOURCE = "sim-heat-shelters";
 const plusMin = (iso: string, m: number) => new Date(new Date(iso).getTime() + m * 60_000).toISOString();
 
 export function HeatSim() {
@@ -40,6 +43,9 @@ export function HeatSim() {
   const { agentOpen } = useScenario();
   const [field, setField] = useState<TemperatureField | null>(null);
   useEffect(() => { loadTemperatureField().then(setField).catch(() => undefined); }, []);
+  /* 무더위쉼터 — 행정안전부 원장(창원 967곳). 운영시간·야간 개방은 등록값 그대로, 효과는 셈하지 않는다 */
+  const [shelters, setShelters] = useState<Shelter[] | null>(null);
+  useEffect(() => { loadShelters().then((f) => setShelters(f.rows)).catch(() => undefined); }, []);
 
   const site = useMemo(() => heatSite(field), [field]);
   const sites = useMemo(() => [site], [site]);
@@ -86,11 +92,15 @@ export function HeatSim() {
   const stage: "none" | "advisory" | "warning" = state.feel === null ? "none" : state.feel >= HEAT_WARNING ? "warning" : state.feel >= HEAT_ADVISORY ? "advisory" : "none";
   const hotShareNow = field ? hotShareAt(field, offset, state.hourIndex) : 0;
   const range = useMemo(() => (field ? fieldRange(field) : null), [field]);
+  /* 쉼터는 시각(그 날의 몇 시 몇 분)만 본다 — 시나리오와 무관하다 */
+  const minuteOfDay = new Date(at).getHours() * 60 + new Date(at).getMinutes();
+  const shelterSummary = useMemo(() => (shelters ? summarizeShelters(shelters, minuteOfDay) : null), [shelters, minuteOfDay]);
+  const shelterGeo = useMemo(() => (shelters ? sheltersGeoJson(shelters, minuteOfDay) : null), [shelters, minuteOfDay]);
 
   /* ── 지도 — 체감온도 색면. 시각·시나리오가 바뀌면 같은 램프로 다시 칠한다 ── */
   const mapContainer = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(mapContainer, { center: site.anchor, zoom: CITY_ZOOM, pitch: 0, capture: true });
-  const [layers, setLayers] = useState({ temp: true, hot: true });
+  const [layers, setLayers] = useState({ temp: true, hot: true, shelter: true });
   useEffect(() => {
     const m = map.current;
     if (!ready || !m) return;
@@ -115,6 +125,18 @@ export function HeatSim() {
     upsertMultiPolygonLayer(m, HOT_SOURCE, hotRings, { fill: cssColor("--color-danger", "#ef4444"), line: cssColor("--color-danger", "#ef4444"), opacity: 0.2 }, 0);
     setPolygonLayerVisible(m, HOT_SOURCE, layers.hot);
   }, [map, ready, hotRings, layers.hot]);
+  /* 무더위쉼터 점 — 야간 개방은 primary 로 크게, 그 시각 문 닫은 곳은 옅게. 갈 수 있는지를 지도에서 바로 읽는다 */
+  useEffect(() => {
+    const m = map.current;
+    if (!ready || !m || !shelterGeo) return;
+    upsertCircleLayer(m, SHELTER_SOURCE, shelterGeo, {
+      color: ["case", ["==", ["get", "night"], 1], cssColor("--color-primary", "#3b82f6"), cssColor("--color-foreground-muted", "#6b7280")],
+      radius: ["case", ["==", ["get", "night"], 1], 5, 3],
+      opacity: ["case", ["==", ["get", "open"], 0], 0.3, 0.9],
+      stroke: cssColor("--color-surface", "#ffffff"),
+    });
+    setCircleLayerVisible(m, SHELTER_SOURCE, layers.shelter);
+  }, [map, ready, shelterGeo, layers.shelter]);
 
   const dome = useHeatDomeData(undefined, true);
   const ticks = useMemo(() => (field ? field.hours.map((_, h) => plusMin(origin, h * 60)) : []), [field, origin]);
@@ -124,7 +146,8 @@ export function HeatSim() {
     `특보 기준 = 일 최고 체감온도 주의보 ${HEAT_ADVISORY}°C · 경보 ${HEAT_WARNING}°C 이상(2일 이상 지속 예상). 하루치 자료라 도달만 판정`,
     "시나리오 A = 예보 기온 +2°C 균일 가정 · B = 예보 습도 +10 %p 균일 가정(100 % 상한). 도시 열환경(녹지·포장) 모델은 없어 저감 대책 비교는 두지 않는다",
     "열돔 인셋 = 상층(500 · 200 hPa) 지위고도 재분석 격자. 원인 맥락이며 결과 계산엔 쓰지 않는다",
-  ], [field, site.date]);
+    `무더위쉼터 = 행정안전부 원장(재난안전데이터 공유플랫폼 · 2026) 창원 ${shelters?.length ?? 967}곳. 운영시간·야간 개방은 등록값 그대로. 쉼터가 덮는 인원은 셈하지 않는다`,
+  ], [field, site.date, shelters]);
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -165,9 +188,10 @@ export function HeatSim() {
             items: [
               { id: "temp", label: "체감온도 색면", color: cssColor("--color-warning", "#eb6834"), icon: "mdi:thermometer", shape: "raster" as const, visible: layers.temp },
               { id: "hot", label: "고온 지속 지역", color: cssColor("--color-danger", "#ef4444"), icon: "mdi:vector-square", shape: "area" as const, visible: layers.hot },
+              { id: "shelter", label: "무더위쉼터", color: cssColor("--color-primary", "#3b82f6"), icon: "mdi:home-thermometer-outline", shape: "point" as const, count: shelters?.length, visible: layers.shelter },
             ],
             onToggle: (id) => setLayers((p) => ({ ...p, [id as keyof typeof p]: !p[id as keyof typeof p] })),
-            onSetAll: (visible) => setLayers({ temp: visible, hot: visible }),
+            onSetAll: (visible) => setLayers({ temp: visible, hot: visible, shelter: visible }),
           }]}
         />
       </div>
@@ -184,6 +208,7 @@ export function HeatSim() {
               rows={state.rows}
               hotShareNow={hotShareNow}
               stage={stage}
+              shelters={shelterSummary}
               sop={site.sop}
               range={range}
               basis={basis}
