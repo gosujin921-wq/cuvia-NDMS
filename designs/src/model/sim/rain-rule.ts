@@ -159,6 +159,15 @@ export function ruleForecast(c: RuleChoice, id: string, baseline: boolean): Fore
       ...FORECAST_BASE.basis,
       modelName: "누적 강우 규칙", modelVersion: "r1 · 2024-09-21 침수흔적 보정",
       baseTime: RULE_START, generatedAt: RULE_START,
+      /* 입력·품질·주체는 규칙의 것이다 — 사전 작성 판의 관측 시각을 물려받으면 기준시각과 어긋나 보인다(2026-09-17) */
+      calculationActor: "CUVIA 계산",
+      inputQuality: "정상",
+      observedFrom: RULE_START,
+      /* "까지"로 읽히므로 마지막 관측 시각이다 — RULE_END(자정)를 쓰면 "00:00까지"로 선다 */
+      inputs: [
+        { kind: "관측", label: `강우 격자 · ${RULE_DATE} 시간값`, at: hourIso(RAIN_SERIES[RAIN_SERIES.length - 1][0]) },
+        { kind: "관측", label: "침수흔적도 · 배수권역 안 면적", at: hourIso(RAIN_SERIES[RAIN_SERIES.length - 1][0]) },
+      ],
       assumptions: [
         `강우 = ${RULE_DATE} 기상청 국지예보모델 재분석 격자(배수권역 최근접 칸) × ${c.factor}`,
         `한계강우량 ${c.pLim} mm (24년 도시침수 완료보고 p.41 표)`,

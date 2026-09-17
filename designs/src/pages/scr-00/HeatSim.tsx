@@ -142,6 +142,9 @@ export function HeatSim() {
     const m = map.current;
     if (!ready || !m) return;
     upsertMultiPolygonLayer(m, HOT_SOURCE, hotRings, HOT_AREA_PAINT(), 0);
+    /* 격자는 창원 밖까지 뻗는다 — 면을 창원 마스크 **아래**로 내려 시 밖에서는 안 보이게 한다.
+       위에 두면 시 경계 밖에 빨간 격자와 검은 칸이 남는다(2026-09-17 사용자 "저 사각형은 뭐야") */
+    if (m.getLayer("city-mask")) for (const id of [`${HOT_SOURCE}-fill`, `${HOT_SOURCE}-line`]) if (m.getLayer(id)) m.moveLayer(id, "city-mask");
     setPolygonLayerVisible(m, HOT_SOURCE, layers.hot);
   }, [map, ready, hotRings, layers.hot]);
   /* 무더위쉼터 점 — 야간 개방은 primary 로 크게, 그 시각 문 닫은 곳은 옅게. 갈 수 있는지를 지도에서 바로 읽는다 */
@@ -168,18 +171,31 @@ export function HeatSim() {
     return Math.max(0, Math.min(n - 1, deepest - back));
   }, [dome.labels.length, dome.index, dome.lower, span, minutes]);
   const ticks = useMemo(() => (field ? field.hours.map((_, h) => plusMin(origin, h * 60)) : []), [field, origin]);
-  const basis = useMemo(() => [
-    `고온 지속 지역 = 체감 ${HEAT_ADVISORY}°C 이상이 ${HOT_HOURS}시간 넘게 이어지는 격자의 비율`,
-    `지도 색면은 체감온도 ${range ? `${range.min}~${range.max}°C` : ""} 한 램프. 시각과 시나리오를 바꿔도 같은 색은 같은 값`,
-    `${field?.source ?? "기상청(KMA) 국지예보모델"} · ${site.date} ${field?.hours[0] ?? 12}~${field?.hours[field.hours.length - 1] ?? 21}시 · 격자 ${field ? `${field.nx}×${field.ny} · ${field.step}°(약 1.5 km)` : "1.5 km"}`,
-    "체감온도 = 기상청 여름철 산식(습구온도 Stull 2011 입력) · 기온·상대습도 격자값으로 칸마다 계산",
-    `특보 기준 = 일 최고 체감온도 주의보 ${HEAT_ADVISORY}°C · 경보 ${HEAT_WARNING}°C 이상(2일 이상 지속 예상). 하루치 자료라 도달만 판정`,
-    "시나리오 A = 예보 기온 +2°C 균일 가정 · B = 예보 습도 +10 %p 균일 가정(100 % 상한). 도시 열환경(녹지·포장) 모델은 없어 저감 대책 비교는 두지 않는다",
-    "열돔 인셋 = 상층(500 · 200 hPa) 지위고도 재분석 격자. 원인 맥락이며 결과 계산엔 쓰지 않는다",
-    `무더위쉼터 = 행정안전부 원장(재난안전데이터 공유플랫폼 · 2026) 창원 ${shelters?.length ?? 967}곳. 운영시간·야간 개방은 등록값 그대로. 쉼터가 덮는 인원은 셈하지 않는다`,
-    `운영 중·종료는 운영시간이 등록된 ${shelterSummary ? shelterSummary.withHours : ""}곳만 센다. 등록이 없는 곳은 세지 않는다`,
-    "해당 규정은 이 조건이면 해당되는 기존 SOP다. 쉼터·살수차의 효과는 모델이 없어 계산하지 않는다",
-  ], [field, site.date, shelters, range, shelterSummary]);
+  const basis = useMemo(() => ({
+    input: [
+      { label: "기온·습도 격자", value: `${field?.source ?? "기상청(KMA) 국지예보모델"} · ${site.date} ${field?.hours[0] ?? 12}~${field?.hours[field.hours.length - 1] ?? 21}시 · ${field ? `${field.nx}×${field.ny} · ${field.step}°(약 1.5 km)` : "1.5 km"}` },
+      { label: "무더위쉼터", value: `행정안전부 원장(재난안전데이터 공유플랫폼) 창원 ${shelters?.length ?? 967}곳 · 운영시간·야간 개방은 등록값 그대로` },
+      { label: "열돔 인셋", value: "상층(500 · 200 hPa) 지위고도 재분석 격자. 원인 맥락이며 결과 계산에는 쓰지 않는다" },
+    ],
+    calc: [
+      { label: "체감온도", value: "기상청 여름철 산식(습구온도 Stull 2011 입력) · 기온·상대습도 격자값으로 칸마다 계산" },
+      { label: "고온 지속 지역", value: `체감 ${HEAT_ADVISORY}°C 이상이 ${HOT_HOURS}시간 넘게 이어지는 격자의 비율` },
+      { label: "특보 기준", value: `일 최고 체감온도 주의보 ${HEAT_ADVISORY}°C · 경보 ${HEAT_WARNING}°C 이상(2일 이상 지속 예상). 하루치 자료라 도달만 판정한다` },
+      { label: "쉼터 운영 판정", value: `운영시간이 등록된 ${shelterSummary ? shelterSummary.withHours : ""}곳만 센다. 등록이 없는 곳은 세지 않는다` },
+    ],
+    assume: [
+      "시나리오 A는 예보 기온에 2°C를 균일하게 더한 값이다",
+      "시나리오 B는 예보 습도에 10 %p를 균일하게 더한 값이다(100 % 상한)",
+    ],
+    limit: [
+      "도시 열환경(녹지·포장) 모델이 없어 저감 대책 전후 비교는 두지 않는다",
+      "쉼터·살수차의 효과는 모델이 없어 계산하지 않는다. 쉼터가 덮는 인원도 셈하지 않는다",
+    ],
+    read: [
+      `지도 색면은 체감온도 ${range ? `${range.min}~${range.max}°C` : ""} 한 램프다. 시각과 시나리오를 바꿔도 같은 색은 같은 값이다`,
+      "해당 규정은 이 조건이면 해당되는 기존 SOP다",
+    ],
+  }), [field, site.date, shelters, range, shelterSummary]);
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -260,7 +276,18 @@ export function HeatSim() {
       </div>
 
       {basisOpen && (
-        <SimBasisDialog title={site.label} onClose={() => setBasisOpen(false)} notes={[{ heading: "입력과 산식", lines: basis }]} />
+        <SimBasisDialog
+          title={site.label}
+          subtitle={site.dateLabel}
+          onClose={() => setBasisOpen(false)}
+          notes={[
+            { id: "input", rows: basis.input },
+            { id: "calc", rows: basis.calc },
+            { id: "assume", lines: basis.assume },
+            { id: "limit", lines: basis.limit },
+            { id: "read", lines: basis.read },
+          ]}
+        />
       )}
     </div>
   );

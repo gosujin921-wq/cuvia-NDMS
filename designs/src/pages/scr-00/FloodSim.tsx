@@ -410,26 +410,41 @@ export function FloodSim() {
       {basisOpen && (
         <SimBasisDialog
           title={site.label}
+          subtitle={site.dateLabel}
           forecast={forecast}
           onClose={() => setBasisOpen(false)}
           notes={[
-            { heading: "계산", lines: [
-              "수위 → 범위·수심은 지형 계산",
-              site.rule
+            { id: "input", rows: [
+              { label: "강우", value: site.rule
+                ? (site.id === "seohang" ? `${site.now.slice(0, 10)} 기상청 국지예보모델 재분석 격자 · 배수권역 최근접 칸` : "상류 강우계 시계열 · 사건 기록")
+                : "사전 작성 판의 강우 조건" },
+              { label: "지형", value: "10 m 수치표고 · 침수면은 여기서 채운다" },
+              { label: "한계강우량", value: "24년 도시침수 완료보고 p.41 표(40 · 50 · 70 mm)" },
+              ...(site.marks ? [{ label: "침수흔적도", value: `생활안전지도 IF_0092 · 범위 안 ${site.marks.areaHa.toFixed(1)} ha` }] : []),
+              ...site.observed.map((o) => ({ label: `실측 · ${o.label}`, value: o.value })),
+            ] },
+            { id: "calc", rows: [
+              { label: "수위 → 범위·수심", value: "지형 채우기. 수위(해발)를 넣으면 잠기는 면과 깊이가 지형에서 나온다" },
+              { label: "강우 → 수위", value: site.rule
                 ? (site.id === "seohang"
-                  ? "강우 → 수위는 규칙 계산. 2024-09-21 강우 실자료를 침수흔적으로 보정한 것이고 수리 모델이 연결되면 교체한다"
-                  : "강우 → 수위는 편집 판 3벌(당시 · +20% · +50%) 사이 보간. 실측 보정은 없고 수위 시계열이 오면 규칙으로 교체한다")
-                : "강우 → 수위는 사전 작성 판. 모델이 연결되면 교체한다. 이 사례의 수치는 편집값이다",
-              "그 시각 상태의 파란 값은 이 시나리오의 계산값, 주황 값은 조건대로 환산한 관측값, 나머지는 관측 기록",
+                  ? "누적 강우 규칙. 침수흔적 면적에 맞춰 보정했고 수리 모델이 오면 교체한다"
+                  : "편집 판 세 벌(당시 · +20% · +50%) 사이 보간. 실측 보정은 없고 수위 시계열이 오면 규칙으로 교체한다")
+                : "사전 작성 판. 모델이 오면 교체한다" },
+              { label: "침수 범위", value: `도로가 잠기는 수위 위만 센다${site.rule ? ` (${site.rule.levelLabel} ${site.rule.floodLevel} EL.m 기준)` : ""}` },
+              ...(site.id === "seohang" ? [{ label: "펌프 재가동", value: "켜면 그 시각부터 누적 강우에서 배수 환산량을 뺀다. 펌프 제원이 오면 그 값으로 바꾼다" }] : []),
             ] },
-            { heading: "자료", lines: [
-              ...site.observed.map((o) => `실측 · ${o.label} ${o.value}`),
+            { id: "assume", lines: [
+              "한계강우량 표의 값을 이 지점에 그대로 대응시킨다",
               ...(site.marks ? [site.marks.note] : []),
+              "통제·대피는 물을 바꾸지 않는다. 사람이 빠지는 것이라 결과는 도달 전 여유 시간 하나다",
             ] },
-            { heading: "규정", lines: [
-              "해당 규정은 이 조건이면 해당되는 기존 SOP다. 당시 실행 여부가 아니며 발령·전파는 승인 뒤에 한다",
-              "환경을 바꾸는 규정(방류 · 펌프)만 \"이 규정대로 하면\"으로 다시 계산한다. 전파·통제는 물을 바꾸지 않는다",
+            { id: "limit", lines: [
+              "하천·노면 수위 시계열, 펌프 제원과 가동 기록, 조위는 아직 반영하지 않았다",
               ...(site.sopNote ? [site.sopNote] : []),
+            ] },
+            { id: "read", lines: [
+              "그 시각 상태의 파란 값은 이 시나리오의 계산값, 주황 값은 조건대로 환산한 관측값, 나머지는 관측 기록이다",
+              "해당 규정은 이 조건이면 해당되는 기존 SOP다. 당시 실행 여부가 아니며 발령·전파는 승인 뒤에 한다",
             ] },
           ]}
         />
