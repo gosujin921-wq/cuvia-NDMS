@@ -15,6 +15,7 @@ import { Badge, Button, Tag, cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
 import { isPast, type ImpactObject, type ScenarioSummary, type SimAction, type SimScenario, type SimSop, type StateRow } from "../../../model/sim/flood";
 import type { AlertLevel } from "../../../demo/levels";
+import { ACTION_STYLE, SOP_ICON } from "./action-style";
 
 const LEVEL_LABEL: Record<AlertLevel, string> = { advisory: "주의보", warning: "경보", evacuate: "대피" };
 const LEVEL_RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
@@ -144,7 +145,7 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
                   onMouseLeave={() => onFocus(null)}
                   className={cn("flex items-baseline gap-2 rounded px-1 py-0.5", on && "bg-primary/10", done ? "text-foreground" : "text-foreground-subtle")}
                 >
-                  <Icon icon={done ? (a.kind === "환경" ? "mdi:play-circle" : a.kind === "규정" ? "mdi:clipboard-check" : "mdi:hand-back-left") : "mdi:circle-outline"} className={cn("size-3.5 shrink-0 self-center", done ? (a.kind === "규정" ? "text-warning" : "text-primary-text") : "text-border-light")} aria-hidden />
+                  <Icon icon={ACTION_STYLE[a.kind].icon} className={cn("size-3.5 shrink-0 self-center", done ? ACTION_STYLE[a.kind].text : "text-border-light")} aria-hidden />
                   <span className="shrink-0 font-mono">{formatClock(a.at)}</span>
                   <span className="min-w-0 break-keep">{a.kind === "규정" ? `규정 해당 · ${a.label}` : a.label}{done ? "" : " · 예정"}</span>
                   <span className="ml-auto shrink-0 text-foreground-subtle">{a.kind === "환경" ? "물이 달라진다" : a.kind === "규정" ? "매칭" : "노출만"}</span>
@@ -227,7 +228,7 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
               >
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="flex min-w-0 items-baseline gap-1.5">
-                    <Icon icon={hit ? "mdi:checkbox-blank-circle" : "mdi:checkbox-blank-circle-outline"} className={cn("size-2.5 shrink-0 self-center", hit ? "text-primary-text" : "text-border-light")} aria-hidden />
+                    <Icon icon={SOP_ICON} className={cn("size-3.5 shrink-0 self-center", hit ? ACTION_STYLE.규정.text : "text-border-light")} aria-hidden />
                     <span className="min-w-0 break-keep">{s.label}</span>
                     {/* 지도에 시설이 있는 규정 — 짚으면 그 시설이 켜진다 */}
                     {linked && <Icon icon="mdi:map-marker-outline" className="size-3.5 shrink-0 self-center text-foreground-subtle" aria-label="지도에 시설 있음" />}

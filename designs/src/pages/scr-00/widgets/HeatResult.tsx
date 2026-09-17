@@ -13,6 +13,7 @@ import { Tag, cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
 import type { SimScenario, SimSop, StateRow } from "../../../model/sim/flood";
 import { HEAT_ADVISORY, HEAT_WARNING, HOT_HOURS, type HeatSummary } from "../../../model/sim/heat";
+import { ACTION_STYLE, SOP_ICON } from "./action-style";
 
 type Stage = "none" | "advisory" | "warning";
 const LEVEL_LABEL = { advisory: "주의보", warning: "경보", evacuate: "대피" } as const;
@@ -109,7 +110,7 @@ export function HeatResult({ scenarios, selected, onSelect, summaries, at, rows,
               <li key={s.id} className={cn("flex flex-col gap-0.5 border-b border-border py-1 last:border-0", hit ? "text-foreground" : "text-foreground-subtle")}>
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="flex min-w-0 items-baseline gap-1.5">
-                    <Icon icon={hit ? "mdi:checkbox-blank-circle" : "mdi:checkbox-blank-circle-outline"} className={cn("size-2.5 shrink-0 self-center", hit ? "text-primary-text" : "text-border-light")} aria-hidden />
+                    <Icon icon={SOP_ICON} className={cn("size-3.5 shrink-0 self-center", hit ? ACTION_STYLE.규정.text : "text-border-light")} aria-hidden />
                     <span className="min-w-0 break-keep">{s.label}</span>
                   </span>
                   <span className="shrink-0 font-mono text-foreground-subtle">{LEVEL_LABEL[s.from]}부터</span>
