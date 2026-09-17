@@ -113,3 +113,31 @@ export function setTemperatureVisible(map: maplibregl.Map, visible: boolean) {
   if (!map.getLayer(TEMP_LAYER)) return;
   map.setLayoutProperty(TEMP_LAYER, "visibility", visible ? "visible" : "none");
 }
+
+/**
+ * 다른 값으로 다시 칠한다 — /scr-00 폭염 시뮬레이션이 시각·시나리오를 바꿀 때 쓴다(2026-09-17).
+ *   values   칠할 값 배열(iy*nx+ix). 기온일 수도, 체감온도일 수도 있다
+ *   range    램프 양끝을 고정한다 — 시각·시나리오를 견줄 때 색이 같은 뜻이어야 한다(시각마다 자동 범위면 +2°C 가 안 보인다)
+ * 캔버스 소스는 `animate: false` 라 한 번만 읽으므로, 다시 칠한 뒤 한 프레임 재생해 텍스처를 갱신한다.
+ */
+export function repaintTemperature(map: maplibregl.Map, field: TemperatureField, values: number[], range: { min: number; max: number }) {
+  const src = map.getSource(TEMP_SOURCE) as (maplibregl.CanvasSource & { getCanvas?: () => HTMLCanvasElement }) | undefined;
+  if (!src) return;
+  const canvas: HTMLCanvasElement | undefined = src.getCanvas?.() ?? (src as unknown as { canvas?: HTMLCanvasElement }).canvas;
+  if (!canvas) return;
+  const { nx, ny } = field;
+  const span = Math.max(range.max - range.min, 0.1);
+  const ctx = canvas.getContext("2d")!;
+  const image = ctx.createImageData(nx, ny);
+  for (let iy = 0; iy < ny; iy += 1) {
+    for (let ix = 0; ix < nx; ix += 1) {
+      const [r, g, b] = rampColor((values[iy * nx + ix] - range.min) / span);
+      const px = ((ny - 1 - iy) * nx + ix) * 4;
+      image.data[px] = r; image.data[px + 1] = g; image.data[px + 2] = b; image.data[px + 3] = 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  src.play();
+  map.triggerRepaint();
+  window.setTimeout(() => src.pause(), 80);
+}

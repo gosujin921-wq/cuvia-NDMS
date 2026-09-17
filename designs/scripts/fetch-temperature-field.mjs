@@ -68,7 +68,7 @@ async function fetchBatch(batch, label) {
       `${API}?latitude=${batch.map((p) => p[0]).join(",")}` +
       `&longitude=${batch.map((p) => p[1]).join(",")}` +
       `&start_date=${DATE}&end_date=${DATE}` +
-      `&hourly=temperature_2m&models=kma_seamless&timezone=Asia%2FSeoul`;
+      `&hourly=temperature_2m,relative_humidity_2m&models=kma_seamless&timezone=Asia%2FSeoul`;
     const res = await fetch(url);
     if (res.status === 429) {
       console.log(`${label} 429 — ${COOLDOWN_MS / 1000}초 쉬고 다시`);
@@ -81,8 +81,10 @@ async function fetchBatch(batch, label) {
   }
 }
 
-/* 시간 우선 배열 — temp[h][iy*nx+ix] (℃, 소수 1자리) */
+/* 시간 우선 배열 — temp[h][iy*nx+ix] (℃, 소수 1자리) · rh[h][…] (%, 정수)
+   습도는 체감온도(기상청 여름철 산식 · 습구온도 입력)를 계산하려고 같이 받는다(2026-09-17 · /scr-00 폭염) */
 const temp = HOURS.map(() => new Array(points.length));
+const rh = HOURS.map(() => new Array(points.length));
 
 for (let start = 0; start < points.length; start += BATCH) {
   const batch = points.slice(start, start + BATCH);
@@ -99,6 +101,8 @@ for (let start = 0; start < points.length; start += BATCH) {
           `자료 없음 — 지점 ${start + offset} ${hour}시. 날짜가 KMA 보관 범위(2024~) 밖인지 확인할 것`,
         );
       temp[h][start + offset] = Number(value.toFixed(1));
+      const humidity = point.hourly.relative_humidity_2m?.[hour];
+      rh[h][start + offset] = humidity == null ? null : Math.round(humidity);
     });
   });
   console.log(`${label} 수신`);
@@ -116,6 +120,8 @@ const out = {
   defaultHour: DEFAULT_HOUR,
   /** ℃ — [시간][iy*nx+ix] */
   temp,
+  /** % — [시간][iy*nx+ix]. 상대습도(2 m). 체감온도 계산 입력 */
+  rh,
 };
 
 await writeFile(OUT, JSON.stringify(out));

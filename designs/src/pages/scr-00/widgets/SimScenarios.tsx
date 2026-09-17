@@ -8,11 +8,11 @@
  * ───────────────────────────────────────────── */
 
 import { Tag, cn } from "@ds";
-import type { FloodSite, SimScenario } from "../../../model/sim/flood";
+import type { SimScenario, SimSiteBase } from "../../../model/sim/flood";
 
 export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelect }: {
-  sites: FloodSite[];
-  site: FloodSite;
+  sites: SimSiteBase[];
+  site: SimSiteBase;
   onSite: (id: string) => void;
   scenarios: SimScenario[];
   selected: SimScenario;
@@ -22,8 +22,8 @@ export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelec
     <div className="flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto overflow-x-hidden rounded-[inherit]">
       <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="대상">
         <header className="flex items-baseline justify-between gap-2">
-          <h2 className="text-body font-semibold text-foreground">대상</h2>
-          <span className="shrink-0 text-caption text-foreground-subtle">{site.dateLabel}</span>
+          <h2 className="shrink-0 text-body font-semibold text-foreground">대상</h2>
+          <span className="min-w-0 truncate text-caption text-foreground-subtle" title={site.dateLabel}>{site.dateLabel}</span>
         </header>
         <div className="flex flex-col gap-1">
           {sites.map((s) => (

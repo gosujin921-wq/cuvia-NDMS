@@ -49,10 +49,13 @@ export function TimeAxis({ origin, end, ticks, minutes, onChange, playing, onTog
           {/* 지나온 구간 */}
           <i className="absolute left-0 top-[11px] h-1 rounded-full bg-primary" style={{ width: `${(m / span) * 100}%` }} aria-hidden />
           <i className="absolute right-0 top-[11px] h-1 rounded-full bg-border" style={{ left: `${(m / span) * 100}%` }} aria-hidden />
-          {ticks.map((t) => (
+          {/* 눈금이 많으면(폭염 · 시간별 10개) 라벨은 띄엄띄엄 — 다 적으면 겹친다. 눈금 자체는 다 세운다 */}
+          {ticks.map((t, i) => (
             <span key={t} className="absolute top-[7px] flex -translate-x-1/2 flex-col items-center" style={{ left: `${pct(t)}%` }} aria-hidden>
               <u className={cn("h-3 w-0.5 rounded-sm", pct(t) <= (m / span) * 100 + 0.5 ? "bg-primary-text" : "bg-border-light")} />
-              <span className="mt-0.5 whitespace-nowrap font-mono text-caption text-foreground-subtle">{formatClock(t)}</span>
+              {(ticks.length <= 6 || i % Math.ceil(ticks.length / 5) === 0) && (
+                <span className="mt-0.5 whitespace-nowrap font-mono text-caption text-foreground-subtle">{formatClock(t)}</span>
+              )}
             </span>
           ))}
           <input

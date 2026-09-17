@@ -21,6 +21,8 @@ export interface TemperatureField {
   defaultHour: number;
   /** ℃ — [시간][iy*nx+ix] · iy 남→북, ix 서→동 */
   temp: number[][];
+  /** % — 상대습도(2 m). 체감온도 입력. 옛 굽기엔 없다(굽기를 다시 돌리면 생긴다) */
+  rh?: (number | null)[][];
 }
 
 let cache: Promise<TemperatureField> | null = null;

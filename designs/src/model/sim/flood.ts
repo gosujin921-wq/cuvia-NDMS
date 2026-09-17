@@ -47,20 +47,27 @@ export interface StateRow { label: string; value: string; note?: string }
  */
 export interface SimSop { id: string; label: string; detail: string; from: "advisory" | "warning" | "evacuate"; mode?: "auto" | "approval" }
 
-export interface FloodSite {
+/** 대상의 공통 뼈대 — 침수·폭염이 같은 좌측 레일(대상 · 시나리오 · 고른 조건)을 쓴다 */
+export interface SimSiteBase {
   id: string;
   label: string;
-  incidentId: string;
-  family: TwinFamily;
   status: "진행 중" | "재현";
-  anchor: LngLat;
-  scopeGeometryId?: string;
   /** 시뮬레이션의 "현재" — 진행 중 사건은 데모 시계, 재현은 그날의 판단 시각 */
   now: string;
   /** 재현 대상은 날짜를 화면에 명시한다 */
   dateLabel: string;
   conditions: SimCondition[];
   defaults: Record<string, string>;
+  /** 기준 시나리오의 이름 — 안 주면 재현은 "실제 사건 · 그날 조건 · 그날 조치", 진행 중은 "기준 전망" */
+  baselineTag?: string;
+  baselineLabel?: string;
+}
+
+export interface FloodSite extends SimSiteBase {
+  incidentId: string;
+  family: TwinFamily;
+  anchor: LngLat;
+  scopeGeometryId?: string;
   boardOf(choice: Record<string, string>): Forecast | null;
   /** 같은 조건에서 조치 축을 기본(실제)으로 둔 판 — 재시뮬레이션 비교의 기준 */
   baselineOf(choice: Record<string, string>): Forecast | null;
@@ -72,7 +79,7 @@ export interface FloodSite {
 }
 
 /** 사건이 든 규정 → 관련 SOP 줄. 대응 종류(현상 · 노출)로 해당 단계를 읽는다 */
-const sopOfCase = (wcase: WhatIfCase | null): SimSop[] =>
+export const sopOfCase = (wcase: WhatIfCase | null): SimSop[] =>
   (wcase?.sop ?? []).map((s) => {
     const kind = wcase?.responses.find((r) => r.responseId === s.responseId)?.kind;
     return { id: s.id, label: s.label, detail: s.trigger, from: kind === "현상" ? "advisory" : "warning", mode: "approval" };
@@ -197,12 +204,17 @@ export interface SimScenario {
   baseline: boolean;
 }
 
-export function scenariosOf(site: FloodSite): SimScenario[] {
+export function scenariosOf(site: SimSiteBase): SimScenario[] {
   const cond = site.conditions.find((c) => c.kind === "조건");
   const act = site.conditions.find((c) => c.kind === "조치");
   const altCond = cond?.options.find((o) => o.id !== site.defaults[cond.id]) ?? null;
   const altAct = act?.options.find((o) => o.id !== site.defaults[act.id]) ?? null;
-  const out: SimScenario[] = [{ id: "base", tag: site.status === "재현" ? "실제 사건" : "기준 전망", label: site.status === "재현" ? "그날 조건 · 그날 조치" : "예보대로 · 지금 상태", choice: { ...site.defaults }, baseline: true }];
+  const out: SimScenario[] = [{
+    id: "base",
+    tag: site.baselineTag ?? (site.status === "재현" ? "실제 사건" : "기준 전망"),
+    label: site.baselineLabel ?? (site.status === "재현" ? "그날 조건 · 그날 조치" : "예보대로 · 지금 상태"),
+    choice: { ...site.defaults }, baseline: true,
+  }];
   if (cond && altCond) out.push({ id: "A", tag: "A", label: `${cond.label} ${altCond.label}`, choice: { ...site.defaults, [cond.id]: altCond.id }, baseline: false });
   if (act && altAct) out.push({ id: "B", tag: "B", label: altAct.label, choice: { ...site.defaults, [act.id]: altAct.id }, baseline: false });
   if (cond && altCond && act && altAct) out.push({ id: "AB", tag: "A+B", label: `${altCond.label} · ${altAct.label}`, choice: { ...site.defaults, [cond.id]: altCond.id, [act.id]: altAct.id }, baseline: false });

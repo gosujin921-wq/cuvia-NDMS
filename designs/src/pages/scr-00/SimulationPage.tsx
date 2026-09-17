@@ -12,10 +12,11 @@
 
 import { useSearchParams } from "react-router-dom";
 import { Icon } from "@iconify/react";
-import { Notice, cn } from "@ds";
+import { cn } from "@ds";
 import { useFabSlot } from "../../layout/fab-slot";
 import { CENTER_LEFT, CENTER_RIGHT } from "../../lib/layout";
 import { FloodSim } from "./FloodSim";
+import { HeatSim } from "./HeatSim";
 
 type SimType = "flood" | "heat";
 const TYPES: { id: SimType; label: string; icon: string }[] = [
@@ -31,15 +32,7 @@ export function SimulationPage() {
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      {type === "flood" ? (
-        <FloodSim />
-      ) : (
-        <div className="flex h-full items-center justify-center p-6">
-          <div className="max-w-md">
-            <Notice variant="info" title="폭염 · 도시 열환경 시뮬레이션" description="기상청 예보 격자로 고온의 시간·공간 변화를 보고 폭염 단계에 따라 관련 SOP로 연결합니다. 다음 단계에서 붙입니다." />
-          </div>
-        </div>
-      )}
+      {type === "flood" ? <FloodSim /> : <HeatSim />}
 
       {/* 상단 중앙 유형 탭 */}
       <div className="pointer-events-none absolute top-3 z-30 flex justify-center" style={{ left: CENTER_LEFT, right: CENTER_RIGHT }}>
