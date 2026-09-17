@@ -72,6 +72,13 @@ export interface SimSiteBase {
   /** 기준 시나리오의 이름 — 안 주면 재현은 "실제 사건 · 그날 조건 · 그날 조치", 진행 중은 "기준 전망" */
   baselineTag?: string;
   baselineLabel?: string;
+  /** 직접 고른 조건(슬라이더)의 이름 — 앵커 밖 값을 시나리오 C 로 세울 때 */
+  describeChoice?(choice: Record<string, string>): string;
+  /**
+   * 연속 축 — 규칙 대상만. 계산은 연속이고 앵커는 눈금일 뿐이다(2026-09-17 "+20% 는 왜 20% 인가").
+   * 값은 그 조건의 선택지 id 가 아니라 배율("x:1.62")로 실린다
+   */
+  slider?: { condId: string; min: number; max: number; step: number; anchors: { value: number; label: string }[]; factorOf(choice: Record<string, string>): number };
 }
 
 export interface FloodSite extends SimSiteBase {
@@ -144,10 +151,15 @@ const seohangSite = (): FloodSite => {
     { id: "lim", label: "한계강우량", kind: "조건", options: LIM_OPTIONS },
   ];
   const defaults = { rain: "fc", lim: "50" };
+  /* 강우 선택지는 앵커 id 이거나 슬라이더가 준 직접 배율("x:1.62")이다 — 계산은 연속이고 앵커는 눈금일 뿐 */
   const ruleChoice = (c: Record<string, string>): RuleChoice => {
-    const r = rainOptions.find((o) => o.id === (c.rain ?? defaults.rain)) ?? rainOptions[0];
+    const rain = c.rain ?? defaults.rain;
+    const custom = rain.startsWith("x:") ? Number(rain.slice(2)) : null;
+    const r = rainOptions.find((o) => o.id === rain) ?? rainOptions[0];
+    const factor = custom ?? r.factor ?? 1;
     const lim = Number(c.lim ?? defaults.lim);
-    return { factor: r.factor ?? 1, pLim: lim, label: [r.factor !== 1 ? `강우 ${r.label}` : null, lim !== 50 ? `한계강우량 ${lim} mm` : null].filter(Boolean).join(" · ") };
+    const rainLabel = custom !== null ? `강우 실제 × ${custom}` : r.factor !== 1 ? `강우 ${r.label}` : null;
+    return { factor, pLim: lim, label: [rainLabel, lim !== 50 ? `한계강우량 ${lim} mm` : null].filter(Boolean).join(" · ") };
   };
   const minutesOf = (atIso: string) => (new Date(atIso).getTime() - new Date(RULE_START).getTime()) / 60_000;
   return {
@@ -164,7 +176,19 @@ const seohangSite = (): FloodSite => {
     baselineLabel: "그날 강우 · 한계강우량 50 mm",
     conditions,
     defaults,
-    boardOf: (c) => { const rc = ruleChoice(c); return ruleForecast(rc, `FC-SH-RULE-${c.rain ?? defaults.rain}-${c.lim ?? defaults.lim}`, rc.label === ""); },
+    boardOf: (c) => { const rc = ruleChoice(c); return ruleForecast(rc, `FC-SH-RULE-${rc.factor}-${rc.pLim}`, rc.label === ""); },
+    describeChoice: (c) => ruleChoice(c).label || "실제 그대로",
+    slider: {
+      condId: "rain",
+      min: 0.5, max: 2, step: 0.05,
+      /* 눈금은 근거 있는 값만 — 실제 · 호우주의보 · 호우경보(3시간 기준). 실제가 이미 넘은 기준은 1 아래에 선다 */
+      anchors: [
+        { value: 1, label: "실제" },
+        { value: factorForWarning(HEAVY_RAIN_ADVISORY_3H), label: "주의보" },
+        { value: factorForWarning(HEAVY_RAIN_WARNING_3H), label: "경보" },
+      ].filter((a) => a.value >= 0.5 && a.value <= 2),
+      factorOf: (c) => ruleChoice(c).factor,
+    },
     baselineOf: () => ruleForecast(ruleChoice(defaults), "FC-SH-RULE-fc-50", true),
     currentRows: () => [],
     stateRowsOf: (c, atIso) => {
@@ -285,7 +309,7 @@ export interface SimScenario {
   baseline: boolean;
 }
 
-export function scenariosOf(site: SimSiteBase): SimScenario[] {
+export function scenariosOf(site: SimSiteBase, custom?: Record<string, string> | null): SimScenario[] {
   /* A 는 첫 축, B 는 둘째 축 — 침수는 조건 · 조치, 폭염은 조건 · 조건(기온 · 습도)이다. 축의 종류가 아니라 순서가 열을 정한다 */
   const cond = site.conditions[0];
   const act = site.conditions[1];
@@ -302,6 +326,8 @@ export function scenariosOf(site: SimSiteBase): SimScenario[] {
   if (cond && altCond) out.push({ id: "A", tag: "A", label: nameOf(cond, altCond), choice: { ...site.defaults, [cond.id]: altCond.id }, baseline: false });
   if (act && altAct) out.push({ id: "B", tag: "B", label: nameOf(act, altAct), choice: { ...site.defaults, [act.id]: altAct.id }, baseline: false });
   if (cond && altCond && act && altAct) out.push({ id: "AB", tag: "A+B", label: `${nameOf(cond, altCond)} · ${nameOf(act, altAct)}`, choice: { ...site.defaults, [cond.id]: altCond.id, [act.id]: altAct.id }, baseline: false });
+  /* 슬라이더로 앵커 밖 값을 고르면 C 열이 선다 — 이름은 대상이 짓는다("강우 실제 × 1.62") */
+  if (custom) out.push({ id: "C", tag: "C", label: site.describeChoice?.(custom) ?? "직접", choice: { ...site.defaults, ...custom }, baseline: false });
   return out;
 }
 

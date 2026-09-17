@@ -60,7 +60,10 @@ export function FloodSim() {
   const sites = useMemo(() => floodSites(), []);
   /* `site` 로도, 사건 ID(`incident`)로도 연다 — 재난관제 전망 탭이 사건으로 넘긴다 */
   const site = sites.find((s) => s.id === params.get("site") || (params.get("incident") !== null && s.incidentId === params.get("incident"))) ?? sites[0];
-  const scenarios = useMemo(() => scenariosOf(site), [site]);
+  /* 슬라이더가 준 직접 배율(`rf`) — 규칙 대상에서 앵커 밖 값을 고르면 C 시나리오가 선다. 한계강우량 축은 그때 고른 것을 따른다(`rl`) */
+  const rf = site.slider ? params.get("rf") : null;
+  const custom = useMemo(() => (rf && site.slider ? { [site.slider.condId]: `x:${rf}`, ...(params.get("rl") ? { lim: params.get("rl") as string } : {}) } : null), [rf, site, params]);
+  const scenarios = useMemo(() => scenariosOf(site, custom), [site, custom]);
   const selected = scenarios.find((s) => s.id === params.get("sc")) ?? scenarios[0];
   const setQuery = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(window.location.search);
@@ -208,7 +211,11 @@ export function FloodSim() {
       {/* 좌측 레일 — 대상 · 시나리오 · 고른 조건, 아래로 광역 인셋과 범례 */}
       <div className={`${RAIL_BASE} left-3`} style={{ width: LEFT_RAIL }}>
         <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
-          <SimScenarios sites={sites} site={site} onSite={(id) => setQuery({ site: id, sc: null })} scenarios={scenarios} selected={selected} onSelect={(id) => setQuery({ sc: id })} />
+          <SimScenarios
+            sites={sites} site={site} onSite={(id) => setQuery({ site: id, sc: null, rf: null, rl: null })}
+            scenarios={scenarios} selected={selected} onSelect={(id) => setQuery({ sc: id })}
+            onSlide={site.slider ? (f) => setQuery({ rf: String(Number(f.toFixed(2))), rl: selected.choice.lim ?? null, sc: "C" }) : undefined}
+          />
         </GlassPanel>
         {insetKindOf(family) && (
           <ContextInset family={family} anchor={site.anchor} hour={new Date(at).getHours()} meta={formatClock(at)} />

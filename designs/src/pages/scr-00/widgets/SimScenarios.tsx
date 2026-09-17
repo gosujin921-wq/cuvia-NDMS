@@ -10,14 +10,18 @@
 import { Tag, cn } from "@ds";
 import type { SimScenario, SimSiteBase } from "../../../model/sim/flood";
 
-export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelect }: {
+export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelect, onSlide }: {
   sites: SimSiteBase[];
   site: SimSiteBase;
   onSite: (id: string) => void;
   scenarios: SimScenario[];
   selected: SimScenario;
   onSelect: (id: string) => void;
+  /** 연속 축 — 배율을 옮기면 대상이 C 시나리오를 세운다. 규칙 대상만 준다 */
+  onSlide?: (factor: number) => void;
 }) {
+  const slider = site.slider;
+  const factor = slider ? slider.factorOf(selected.choice) : null;
   return (
     <div className="flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto overflow-x-hidden rounded-[inherit]">
       <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="대상">
@@ -72,16 +76,48 @@ export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelec
         <h2 className="text-body font-semibold text-foreground">고른 조건</h2>
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-border bg-card px-2.5 py-2 text-caption">
           {site.conditions.map((c) => {
-            const o = c.options.find((x) => x.id === (selected.choice[c.id] ?? site.defaults[c.id]));
-            const changed = (selected.choice[c.id] ?? site.defaults[c.id]) !== site.defaults[c.id];
+            const raw = selected.choice[c.id] ?? site.defaults[c.id];
+            const o = c.options.find((x) => x.id === raw);
+            /* 슬라이더가 준 직접 배율은 선택지가 아니다 — "실제 × 1.62" 로 읽는다 */
+            const label = o?.label ?? (raw.startsWith("x:") ? `실제 × ${raw.slice(2)}` : raw);
+            const changed = raw !== site.defaults[c.id];
             return (
               <div key={c.id} className="contents">
                 <dt className="truncate text-foreground-muted">{c.label}</dt>
-                <dd className={cn("text-right", changed ? (c.kind === "조치" ? "font-semibold text-primary-text" : "font-semibold text-warning") : "text-foreground")}>{o?.label ?? "-"}</dd>
+                <dd className={cn("text-right", changed ? (c.kind === "조치" ? "font-semibold text-primary-text" : "font-semibold text-warning") : "text-foreground")}>{label}</dd>
               </div>
             );
           })}
         </dl>
+        {/* 연속 축 — 규칙 대상. 눈금은 근거 있는 앵커뿐이고 그 사이 어디든 멈춘다. 옮기면 C 열이 선다 */}
+        {slider && factor !== null && onSlide && (
+          <div className="flex flex-col gap-1 rounded-md border border-border bg-card px-2.5 py-2">
+            <div className="flex items-baseline justify-between text-caption">
+              <span className="text-foreground-muted">{site.conditions.find((c) => c.id === slider.condId)?.label ?? "조건"} 배율</span>
+              <span className={cn("font-mono font-semibold", factor === 1 ? "text-foreground" : "text-warning")}>실제 × {factor.toFixed(2)}</span>
+            </div>
+            <div className="relative h-7">
+              {slider.anchors.map((a) => {
+                const pct = ((a.value - slider.min) / (slider.max - slider.min)) * 100;
+                return (
+                  <span key={a.label} className="absolute top-0 flex -translate-x-1/2 flex-col items-center" style={{ left: `${pct}%` }} aria-hidden>
+                    <u className={cn("h-2 w-0.5 rounded-sm", Math.abs(a.value - factor) < 0.026 ? "bg-primary-text" : "bg-border-light")} />
+                    <span className="mt-3 whitespace-nowrap font-mono text-caption text-foreground-subtle">{a.label}</span>
+                  </span>
+                );
+              })}
+              <i className="absolute left-0 top-[6px] h-1 rounded-full bg-primary" style={{ width: `${((factor - slider.min) / (slider.max - slider.min)) * 100}%` }} aria-hidden />
+              <i className="absolute right-0 top-[6px] h-1 rounded-full bg-border" style={{ left: `${((factor - slider.min) / (slider.max - slider.min)) * 100}%` }} aria-hidden />
+              <input
+                type="range" min={slider.min} max={slider.max} step={slider.step} value={factor}
+                onChange={(e) => onSlide(Number(e.target.value))}
+                aria-label="강우 배율"
+                className="absolute inset-x-0 top-0 h-4 w-full cursor-pointer appearance-none bg-transparent opacity-0"
+              />
+            </div>
+            <p className="break-keep text-caption leading-snug text-foreground-subtle">계산은 연속입니다. 눈금은 근거 있는 값(실제 · 기상청 호우특보 3시간 기준)만 세웠습니다</p>
+          </div>
+        )}
         <p className="break-keep text-caption leading-snug text-foreground-subtle">
           환경을 바꾸는 조치만 다시 계산합니다. 전파·통제는 관련 SOP에서 봅니다
         </p>
