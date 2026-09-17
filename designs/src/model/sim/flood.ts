@@ -281,8 +281,9 @@ const seohangSite = (): FloodSite => {
       ];
     },
     observed: [{ label: "침수흔적도 · 권역 안 면적", value: `${OBS_AREA_HA} ha` }],
-    /* 물이 그릇 바닥에 고이기 시작하는 시각(누적 ≥ 한계강우량) 30분 전부터 — 아홉 시간 빈 지도를 보지 않게 */
-    playFrom: (c) => { const rc = ruleChoice(c); for (let m = 0; m <= 12 * 60; m += 1) if (cumulativeAt(m, rc.factor) >= rc.pLim) return new Date(new Date(RULE_START).getTime() + Math.max(0, m - 30) * 60_000).toISOString(); return null; },
+    /* 20:00 부터 재생한다(2026-09-17 사용자). 시간축 범위는 12~24시 그대로고 첫 위치와 되풀이의 시작만 여기다 —
+       그 앞은 누적 강우만 쌓이는 빈 지도라 볼 것이 없다 */
+    playFrom: () => `${RULE_DATE}T20:00:00+09:00`,
     marks: {
       areaHa: OBS_AREA_HA,
       floodedAt: (c) => { const rc = ruleChoice(c); for (let m = 0; m <= 12 * 60; m += 1) if (cumulativeAt(m, rc.factor) >= rc.pLim) return new Date(new Date(RULE_START).getTime() + m * 60_000).toISOString(); return null; },
