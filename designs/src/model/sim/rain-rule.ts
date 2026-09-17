@@ -43,6 +43,12 @@ export const RULE_MAX_3H = Number(Math.max(...RAIN_SERIES.map((_, i) => RAIN_SER
 /** 특보 기준에 닿는 배율 — 실제가 이미 넘었으면 1 아래로 내려온다(그때는 앵커로 안 쓴다) */
 export const factorForWarning = (mm3h: number) => Number((mm3h / RULE_MAX_3H).toFixed(2));
 
+/** m 분 시점의 강우 강도(mm/h) — 그 시간대의 값 × 배율 */
+export function rainRateAt(minutes: number, factor = 1): number {
+  const i = Math.min(RAIN_SERIES.length - 1, Math.max(0, Math.floor(minutes / 60)));
+  return (RAIN_SERIES[i]?.[1] ?? 0) * factor;
+}
+
 /** 시작부터 m 분 뒤의 누적 강우(mm) — 한 시간 안은 그 시간 강도로 직선 */
 export function cumulativeAt(minutes: number, factor = 1): number {
   const h = Math.max(0, minutes) / 60;

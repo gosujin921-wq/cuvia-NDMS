@@ -139,7 +139,11 @@ export function FloodSim() {
   /* 조치 — 이 시나리오에서 일어나는 것. 시간축 눈금 · 마커 배지 · 조치 이력이 같은 목록을 읽는다 */
   const actions = useMemo(() => site.actionsOf(selected.choice, forecast).sort((a, b) => a.at.localeCompare(b.at)), [site, selected, forecast]);
   /* 시설 = 장면의 점 + 대상의 장치. 마커는 DS 로 따로 그리므로 장면층에서는 점을 뺀다 */
-  const points = useMemo<ScenePoint[]>(() => [...sceneLayers.filter((l): l is ScenePoint => l.kind === "point"), ...site.extraFacilities], [sceneLayers, site]);
+  /* 계측 지점은 대상이 아는 값만 채운다(도로수위계 = 규칙 침수심 · 강우계 = 실자료 강도). 모르는 것은 "계측 미연계"로 남는다 */
+  const points = useMemo<ScenePoint[]>(() => [
+    ...sceneLayers.filter((l): l is ScenePoint => l.kind === "point"),
+    ...site.extraFacilities.map((p) => { const st = site.facilityStateOf?.(p.id, selected.choice, at); return st ? { ...p, state: st.state, tone: st.tone } : p; }),
+  ], [sceneLayers, site, selected, at]);
   const lineLayers = useMemo(() => sceneLayers.filter((l) => l.kind !== "point"), [sceneLayers]);
   /* 서로 가리킴 — SOP 줄을 짚으면 시설이, 마커를 누르면 SOP 줄이 켜진다 */
   const [focus, setFocus] = useState<Set<string>>(() => new Set());

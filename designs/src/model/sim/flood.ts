@@ -17,6 +17,7 @@ import type { LngLat, SceneLayer, ScenePoint } from "../scene";
 import type { TwinFamily } from "../incident";
 import type { WhatIfCase } from "../whatif";
 import { INCIDENT_ID as SH_INCIDENT_ID } from "../../fixtures/seohang-flood/incident";
+import { SUBJECTS, SUBJECT_LOCATION } from "../../fixtures/seohang-flood/subjects";
 import { CW_INCIDENT_ID } from "../../fixtures/changwoncheon/whatif";
 import { GEOMETRIES } from "../../fixtures";
 import { findWhatIfCase, whatIfStateRowsAt } from "../selectors";
@@ -27,7 +28,7 @@ import { formatMarkMetric, markMetricLabel } from "../../lib/forecast-twin";
 import { CW_FACTORS, CW_ROAD_LEVEL, cwAreaOfLevel, cwInterp, cwMarksFloodedAt } from "./cw-interp";
 import { CW_FLUDMARKS_HA } from "../../fixtures/changwoncheon/area-table.generated";
 import { RISK_DISTRICT_DAMAGE_MM_PER_H } from "../../fixtures/risk-districts.generated";
-import { HEAVY_RAIN_ADVISORY_3H, HEAVY_RAIN_WARNING_3H, OBS_AREA_HA, RULE_DATE, RULE_MAX_3H, RULE_MAX_HOURLY, RULE_START, RULE_TOTAL_MM, areaOfLevel, cumulativeAt, depthOfLevel, factorForWarning, levelAtMinutes, ruleForecast, type RuleChoice } from "./rain-rule";
+import { HEAVY_RAIN_ADVISORY_3H, HEAVY_RAIN_WARNING_3H, OBS_AREA_HA, RULE_DATE, RULE_MAX_3H, RULE_MAX_HOURLY, RULE_START, RULE_TOTAL_MM, areaOfLevel, cumulativeAt, depthOfLevel, factorForWarning, levelAtMinutes, rainRateAt, ruleForecast, type RuleChoice } from "./rain-rule";
 
 export interface SimOption { id: string; label: string; detail?: string; /** 당시 관측값에 곱하는 배율(조건의 정의가 "당시 × 1.2"일 때) */ factor?: number }
 export interface SimCondition {
@@ -128,6 +129,8 @@ export interface FloodSite extends SimSiteBase {
   extraFacilities: ScenePoint[];
   /** 그 시나리오·판에서 일어나는 조치 */
   actionsOf(choice: Record<string, string>, f: Forecast | null): SimAction[];
+  /** 계측 지점의 그 시각 표시값 — 규칙이 아는 것만(도로수위계 = 침수심 · 강우계 = 강도). 모르는 계측은 null 로 두면 "미연계"가 선다 */
+  facilityStateOf?(id: string, choice: Record<string, string>, atIso: string): { state: string; tone: ScenePoint["tone"] } | null;
   /**
    * "이 규정대로 하면" — 환경을 바꾸는 SOP(방류 · 펌프)를 규정 시각에 실행한 조합. 관련 SOP 줄의 스위치가 켠다.
    * 시나리오(조건)와 갈라 둔다: 조건은 "그때 비가 달랐다면", SOP 적용은 "규정대로 했다면"이다
@@ -253,6 +256,14 @@ const seohangSite = (): FloodSite => {
       })),
     ],
     extraFacilities: SH_DEVICE_POINTS,
+    /* 도로수위계 = 규칙 침수심 · 강우계 = 실자료 강도 × 배율. 관로 수위·조위는 규칙에 없다 */
+    facilityStateOf: (id, c, atIso) => {
+      const rc = ruleChoice(c);
+      const m = minutesOf(atIso);
+      if (id === SUBJECTS.roadLevel) { const d = depthOfLevel(levelAtMinutes(m, rc.factor, rc.pLim)); return { state: `침수심 ${Math.round(d * 100)} cm · 규칙 계산`, tone: d > 0 ? "warning" : "neutral" }; }
+      if (id === SUBJECTS.rainGauge) { const r = rainRateAt(m, rc.factor); return { state: `${r.toFixed(1)} mm/h${rc.factor === 1 ? " · 실자료" : ` · 실자료 × ${rc.factor}`}`, tone: r >= 30 ? "warning" : "neutral" }; }
+      return null;
+    },
     /* 조치 축이 없다 — 펌프 제원·가동 로그가 오면 규칙에 넣고 여기 선다 */
     actionsOf: () => [],
     wcase,
@@ -261,16 +272,22 @@ const seohangSite = (): FloodSite => {
 
 /** 서항 SOP 표본 → 시설. 장치 id 는 `devicesOf("seohang")` 의 것이다 */
 const SH_DEVICES = devicesOf("seohang");
-const SH_CCTV = SH_DEVICES.filter((d) => d.kind === "CV").slice(0, 2);
 const SH_BC = SH_DEVICES.filter((d) => d.kind === "BC");
+/* 계측·CCTV 는 이 사건 픽스처의 지점(SUBJECT_LOCATION)이다 — 강우계 · 간선관로 수위계 · 해안도로 도로수위계 · 조위관측소 · CCTV 2.
+   도로수위계는 규칙의 침수심, 강우계는 실자료 강도를 값으로 받고(facilityStateOf), 관로 수위·조위는 규칙에 없어 "계측 미연계"로 선다(지어내지 않는다) */
+const SH_SENSOR_IDS = [SUBJECTS.rainGauge, SUBJECTS.pipeLevel, SUBJECTS.roadLevel, SUBJECTS.tide] as const;
+const SH_CCTV_IDS = [SUBJECTS.cctvPump, SUBJECTS.cctvPole] as const;
+const SENSOR_ICON: Record<string, string> = { [SUBJECTS.rainGauge]: "mdi:weather-pouring", [SUBJECTS.pipeLevel]: "mdi:pipe", [SUBJECTS.roadLevel]: "mdi:waves-arrow-up", [SUBJECTS.tide]: "mdi:waves" };
 const SH_SOP_FACILITIES: Record<string, string[]> = {
-  cctv: SH_CCTV.map((d) => d.id),
+  cctv: [...SH_CCTV_IDS],
   broadcast: SH_BC.map((d) => d.id),
   road: ["a-block-s", "a-block-n"],
 };
-const SH_DEVICE_POINTS: ScenePoint[] = [...SH_CCTV, ...SH_BC].map((d) => ({
-  kind: "point", id: d.id, at: d.center, icon: deviceKindSpec(d.kind).icon, label: d.name, state: d.status, tone: d.status === "정상" ? "neutral" : "warning", small: true,
-}));
+const SH_DEVICE_POINTS: ScenePoint[] = [
+  ...SH_CCTV_IDS.map<ScenePoint>((id) => ({ kind: "point", id, at: SUBJECT_LOCATION[id].displayAnchor, icon: "mdi:cctv", label: SUBJECT_LOCATION[id].label, state: "정상", tone: "neutral", small: true })),
+  ...SH_BC.map<ScenePoint>((d) => ({ kind: "point", id: d.id, at: d.center, icon: deviceKindSpec(d.kind).icon, label: d.name, state: d.status, tone: d.status === "정상" ? "neutral" : "warning", small: true })),
+  ...SH_SENSOR_IDS.map<ScenePoint>((id) => ({ kind: "point", id, at: SUBJECT_LOCATION[id].displayAnchor, icon: SENSOR_ICON[id], label: SUBJECT_LOCATION[id].label, state: "계측 미연계 · 재현", tone: "neutral", small: true })),
+];
 
 /* ── 창원천 — 2024-08-28 재현. 판은 훈련 조합(강우 당시 · +20% · +50% × 방류 실제 15:05 · 14:35 조기) ── */
 const changwoncheonSite = (): FloodSite | null => {
