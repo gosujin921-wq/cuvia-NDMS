@@ -72,7 +72,12 @@ export function ProfileView({ profile, validAt, compareAt, collapsed, onToggle, 
   const thresholdPath = path(thresholds);
 
   return (
-    <AuxSection title="종단도 · 상류 → 하류" meta={<>{formatClock(validAt)} · {sloped ? "기준 수위 = 관측소별 둑 높이" : `기준 수위 EL.${profile.threshold.toFixed(1)} m`}</>} label="종단도" collapsed={collapsed} onToggle={onToggle} compact={compact}>
+    /* 작은 모드(폭 340)에선 머리를 한 줄로 — 제목 "종단도", 오른쪽엔 시각만. 기준 수위 설명은 점선(빨강)이 대신한다 */
+    <AuxSection
+      title={compact ? "종단도" : "종단도 · 상류 → 하류"}
+      meta={compact ? formatClock(validAt) : <>{formatClock(validAt)} · {sloped ? "기준 수위 = 관측소별 둑 높이" : `기준 수위 EL.${profile.threshold.toFixed(1)} m`}</>}
+      label="종단도" collapsed={collapsed} onToggle={onToggle} compact={compact}
+    >
       <div ref={ref} className="w-full">
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block" role="img" aria-label="하천 종단 수위" fontSize={FONT}>
           {/* 기준 수위선 — 관측소별이면 관측소를 잇는 선, 하나면 수평선 */}
