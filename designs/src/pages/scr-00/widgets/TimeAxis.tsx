@@ -7,7 +7,7 @@
  * // TODO(ds): 슬라이더 부품이 DS 에 없어 native range 를 쓴다. DS 승격 대상
  * ───────────────────────────────────────────── */
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
@@ -25,8 +25,11 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
   end: string;
   /** 판의 눈금 시각 — 표시만 */
   ticks: string[];
-  /** 조치 눈금 — 트랙 위에 서고, 지나면 채워진다. 아이콘은 종류 불문 SOP 표식 하나다(2026-09-17 사용자 "타임라인 위 아이콘 통일") — 무슨 조치인지는 호버·조치 이력이 말한다 */
-  events?: { at: string; label: string }[];
+  /**
+   * 조치 눈금 — 트랙 위에 서고, 지나면 채워진다. 아이콘은 종류 불문 SOP 표식 하나다(2026-09-17 사용자 "타임라인 위 아이콘 통일").
+   * 무슨 대응인지는 **호버 쪽지**가 말한다(2026-09-17 사용자 "호버하면 어떤 대응인지"). `kind` 는 쪽지 오른쪽의 한마디다
+   */
+  events?: { at: string; label: string; kind?: string }[];
   /** 현재로부터 몇 분 뒤를 보고 있나 */
   minutes: number;
   onChange: (minutes: number) => void;
@@ -45,18 +48,20 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
     const inRange = events
       .filter((e) => { const t = new Date(e.at).getTime(); return t >= new Date(origin).getTime() && t <= new Date(end).getTime(); })
       .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
-    const out: { at: string; labels: { at: string; label: string }[]; row: 0 | 1 }[] = [];
+    const out: { at: string; labels: { at: string; label: string; kind?: string }[]; row: 0 | 1 }[] = [];
     const px = (a: string, b: string) => ((pct(b) - pct(a)) / 100) * trackWidth;
     for (const e of inRange) {
       const prev = out[out.length - 1];
-      if (prev && px(prev.at, e.at) < CLUSTER_PX) { prev.labels.push({ at: e.at, label: e.label }); continue; }
+      if (prev && px(prev.at, e.at) < CLUSTER_PX) { prev.labels.push({ at: e.at, label: e.label, kind: e.kind }); continue; }
       /* 앞 눈금과 겹칠 만큼 가까우면 윗줄 — 슬라이더 눈금 라벨과 같은 규칙. 앞이 이미 윗줄이면 아랫줄로 돌아온다 */
       const row: 0 | 1 = prev && px(prev.at, e.at) < STACK_PX ? (prev.row === 0 ? 1 : 0) : 0;
-      out.push({ at: e.at, labels: [{ at: e.at, label: e.label }], row });
+      out.push({ at: e.at, labels: [{ at: e.at, label: e.label, kind: e.kind }], row });
     }
     return out;
   })();
   const stacked = grouped.some((g) => g.row === 1);
+  /* 호버한 눈금 — 쪽지를 띄운다. native title 은 늦게 뜨고 여러 줄이 안 읽힌다 */
+  const [hover, setHover] = useState<string | null>(null);
 
   return (
     /* 한 줄 캡슐이다 — 안내 문장 줄을 두지 않는다(대상·날짜는 좌측 레일이 말한다 · 2026-09-17 사용자). 눈금 라벨 몫으로 아래만 한 칸.
@@ -86,11 +91,40 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
           {/* 조치 눈금 — 트랙 위. 지난 것은 채운 원, 앞의 것은 빈 원. 같은 분의 여러 건은 한 눈금에 개수를 단다(겹치면 못 읽는다). 라벨은 title(호버) */}
           {grouped.map((g) => {
             const passed = pct(g.at) <= (m / span) * 100 + 0.5;
-            /* 눈금은 읽히는 크기여야 한다 — 손톱만 하면 안 보인다(2026-09-17 사용자). 글자는 최소 13px(text-caption) */
+            const on = hover === g.at;
+            /* 왼쪽 끝 눈금의 쪽지는 왼쪽으로 잘린다 — 트랙 왼쪽 1/4 안이면 쪽지를 오른쪽으로 연다 */
+            const near = pct(g.at) < 25 ? "left-0" : pct(g.at) > 75 ? "right-0" : "left-1/2 -translate-x-1/2";
             return (
-              <span key={g.at} className={cn("absolute flex h-6 min-w-6 -translate-x-1/2 items-center justify-center gap-0.5 rounded-full border px-1 font-mono text-caption font-bold", g.row === 1 ? "-top-[48px]" : "-top-[22px]", passed ? "border-primary bg-primary text-primary-foreground" : "border-primary-text bg-surface text-primary-text")} style={{ left: `${pct(g.at)}%` }} title={g.labels.map((l) => `${formatClock(l.at)} ${l.label}`).join("\n")} aria-hidden>
-                <Icon icon={SOP_ICON} className="size-4" />
-                {g.labels.length > 1 && <span>{g.labels.length}</span>}
+              <span key={g.at} className={cn("absolute -translate-x-1/2", g.row === 1 ? "-top-[44px]" : "-top-[20px]")} style={{ left: `${pct(g.at)}%` }}>
+                {/* 닷 — 규정 표식 하나. 종류는 쪽지가 말한다 */}
+                <button
+                  type="button"
+                  onMouseEnter={() => setHover(g.at)}
+                  onMouseLeave={() => setHover(null)}
+                  onFocus={() => setHover(g.at)}
+                  onBlur={() => setHover(null)}
+                  onClick={() => onChange(Math.round((new Date(g.at).getTime() - new Date(origin).getTime()) / 60_000))}
+                  aria-label={g.labels.map((l) => `${formatClock(l.at)} ${l.label}`).join(", ")}
+                  className={cn("flex size-5 cursor-pointer items-center justify-center gap-0.5 rounded-full border font-mono text-caption font-bold transition-transform",
+                    g.labels.length > 1 && "w-auto px-1",
+                    on && "scale-110",
+                    passed ? "border-primary bg-primary text-primary-foreground" : "border-primary-text bg-surface text-primary-text")}
+                >
+                  <Icon icon={SOP_ICON} className="size-3.5" aria-hidden />
+                  {g.labels.length > 1 && <span>{g.labels.length}</span>}
+                </button>
+                {/* 호버 쪽지 — 시각 · 무엇을 · 어떤 대응인지 */}
+                {on && (
+                  <span className={cn("absolute bottom-[26px] z-10 flex w-max max-w-[260px] flex-col gap-0.5 rounded-md border border-border bg-surface px-2 py-1.5 text-caption shadow-lg", near)} role="tooltip">
+                    {g.labels.map((l) => (
+                      <span key={`${l.at}-${l.label}`} className="flex items-baseline gap-1.5">
+                        <span className="shrink-0 font-mono text-foreground-subtle">{formatClock(l.at)}</span>
+                        <span className="min-w-0 break-keep text-foreground">{l.label}</span>
+                        {l.kind && <span className="ml-auto shrink-0 text-foreground-subtle">{l.kind}</span>}
+                      </span>
+                    ))}
+                  </span>
+                )}
               </span>
             );
           })}

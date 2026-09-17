@@ -11,7 +11,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import maplibregl from "maplibre-gl";
-import { GlassPanel } from "@ds";
+import { Icon } from "@iconify/react";
+import { Button, GlassPanel } from "@ds";
 import { useMapLibre } from "../../lib/useMapLibre";
 import { CENTER_LEFT, CENTER_RIGHT, EDGE, FAB_SIZE, LEFT_RAIL, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP, utilStripStyle } from "../../lib/layout";
 import { ensureHillshade, setBuildings3D, setHillshadeVisible, setTerrain } from "../../lib/flood-scene";
@@ -117,7 +118,9 @@ export function FloodSim() {
       const a = f ? site.actionsOf(sc.choice, f).find((x) => x.id === sopId) : undefined;
       if (!f || !t || !t.arrivalAt) return { text: "도달 없음", min: null };
       if (!a) return { text: "조치 없음", min: null };
-      return { text: `${Math.round((new Date(t.arrivalAt).getTime() - new Date(a.at).getTime()) / 60_000)}분`, min: Math.round((new Date(t.arrivalAt).getTime() - new Date(a.at).getTime()) / 60_000) };
+      const min = Math.round((new Date(t.arrivalAt).getTime() - new Date(a.at).getTime()) / 60_000);
+      /* 음수는 조치가 도달보다 늦었다는 뜻이다 — "-12분"보다 "12분 늦음"이 읽힌다 */
+      return { text: min >= 0 ? `${min}분` : `${-min}분 늦음`, min };
     };
     return Object.entries(site.sopTargetOf ?? {}).map(([sopId, tg]) => ({ label: `${tg.short} 여유`, base: lead(baseCol, sopId, tg.id), sel: lead(selected, sopId, tg.id) }))
       .filter((r) => r.base.min !== null || r.sel.min !== null);
@@ -225,6 +228,16 @@ export function FloodSim() {
     focusScope(800);
   }, [map, ready, focusScope]);
   useEffect(() => { const m = map.current; if (ready && m) setSafemapVisible(m, "flood-marks", layers.marks); }, [map, ready, layers.marks]);
+  /* 이 대상 밖으로 나가지 않는다 — 줌아웃해도 창원시 전체가 열리지 않게 범위를 건다(2026-09-17 사용자 "해당영역만 보이게").
+     대상을 바꾸면 그 대상의 범위로 다시 건다. 여백은 범위 한 변의 60 % */
+  useEffect(() => {
+    const m = map.current;
+    if (!ready || !m || fitPoints.length < 2) return;
+    const b = fitPoints.reduce((acc, p) => acc.extend(p), new maplibregl.LngLatBounds(fitPoints[0], fitPoints[0]));
+    const [w, s] = [b.getWest(), b.getSouth()], [e, n] = [b.getEast(), b.getNorth()];
+    const mx = (e - w) * 0.6, my = (n - s) * 0.6;
+    m.setMaxBounds([[w - mx, s - my], [e + mx, n + my]]);
+  }, [map, ready, fitPoints]);
 
   /* 지형을 채운 침수면 — 수위(해발)를 넣으면 범위·수심이 지형에서 나온다 */
   const surfaceGeometryId = site.rule ? site.rule.surfaceGeometryId : floorMark?.extentGeometryId ?? null;
@@ -318,7 +331,7 @@ export function FloodSim() {
           origin={origin}
           end={end}
           ticks={ticks}
-          events={actions.map((a) => ({ at: a.at, label: a.kind === "규정" ? `규정 해당 · ${a.label}` : a.label }))}
+          events={actions.map((a) => ({ at: a.at, label: a.label, kind: a.kind === "환경" ? "물이 달라진다" : a.kind === "규정" ? "규정 해당" : "노출만" }))}
           minutes={minutes}
           onChange={(m) => { setPlaying(false); setMinutes(m); }}
           playing={playing}
@@ -330,7 +343,7 @@ export function FloodSim() {
         <MapUtilStrip
           map={map}
           disabled={!ready}
-          homePitch={60}
+          homePitch={0}
           onReset={() => focusScope(500)}
           layers={[{
             title: "영향 표현",
@@ -372,12 +385,16 @@ export function FloodSim() {
               onFocus={focusFacilities}
               compare={compare}
               onCompare={setCompare}
-              onBasis={() => setBasisOpen(true)}
             />
           ) : (
             <p className="p-3 text-caption text-foreground-muted">이 조합은 계산한 판이 없습니다. 아무 판이나 대신 보이지 않습니다.</p>
           )}
         </GlassPanel>
+        {/* 근거는 패널 밖 바닥에 — 결과를 스크롤해 내려야 닿던 자리였다(2026-09-17 사용자) */}
+        <Button variant="outline" size="sm" className="pointer-events-auto w-full shrink-0 bg-surface/95 backdrop-blur" onClick={() => setBasisOpen(true)}>
+          <Icon icon="mdi:file-search-outline" className="size-4" aria-hidden />
+          근거 · 입력과 계산
+        </Button>
       </div>
 
       {basisOpen && (

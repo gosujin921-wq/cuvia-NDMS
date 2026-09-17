@@ -4,13 +4,13 @@
  *   결과 · 기준 대비   두 열뿐. 예보대로 | 고른 시나리오. 행은 최고 체감온도 · 주의보 기준(33°C↑) 시간 · 경보 기준(35°C↑) 시간 · 고온 지속 지역
  *   그 시각 열환경     고온 격자 비율과 무더위쉼터(원장 집계 · 그 시각 운영 중 · 야간 개방)
  *   해당 규정          폭염 대응 규정 매칭. 단계는 체감온도 기준에서 읽은 강조
- *   근거               버튼 하나. 출처·격자·산식·셈 기준 문장은 전부 그 창에 있다
+ *   근거               버튼은 패널 밖(레일 바닥)에 선다(2026-09-17 사용자). 출처·격자·산식·셈 기준 문장은 전부 그 창에 있다
  * ★ 좌 = 입력(기온·습도·체감은 좌측 "그 시각"), 우 = 결과. 절 = 머리 한 줄 + 상자 하나(panel-style).
  *   침수처럼 "이 건물이 위험"으로 잇지 않는다. 폭염의 결과는 공간적 위험 상태의 지속이다.
  * ───────────────────────────────────────────── */
 
 import { Icon } from "@iconify/react";
-import { Button, Tag, cn } from "@ds";
+import { Tag, cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
 import type { SimScenario, SimSop } from "../../../model/sim/flood";
 import { HEAT_ADVISORY, HEAT_WARNING, type HeatSummary } from "../../../model/sim/heat";
@@ -25,7 +25,7 @@ type Stage = "none" | "advisory" | "warning";
 const LEVEL_LABEL = { advisory: "주의보", warning: "경보", evacuate: "대피" } as const;
 const RANK = { none: 0, advisory: 1, warning: 2, evacuate: 3 } as const;
 
-export function HeatResult({ base, selected, summaries, hotShareNow, stage, shelters, sop, onBasis }: {
+export function HeatResult({ base, selected, summaries, hotShareNow, stage, shelters, sop }: {
   base: SimScenario;
   selected: SimScenario;
   summaries: Record<string, HeatSummary | null>;
@@ -34,7 +34,6 @@ export function HeatResult({ base, selected, summaries, hotShareNow, stage, shel
   /** 무더위쉼터 원장 집계(그 시각) · 아직 못 읽었으면 null */
   shelters: ShelterSummary | null;
   sop: SimSop[];
-  onBasis: () => void;
 }) {
   const same = base.id === selected.id;
   const cols = same ? [base] : [base, selected];
@@ -131,12 +130,6 @@ export function HeatResult({ base, selected, summaries, hotShareNow, stage, shel
         </ul>
       </section>
 
-      <section className={cn(PANEL.section, "py-3")}>
-        <Button variant="outline" size="sm" className="w-full" onClick={onBasis}>
-          <Icon icon="mdi:file-search-outline" className="size-4" aria-hidden />
-          근거 · 입력과 산식
-        </Button>
-      </section>
     </div>
   );
 }

@@ -6,13 +6,13 @@
  *   그 시각 영향       침수 범위 · 수심 타일과 영향 객체 상자(과거 침수 지점도 한 줄로)
  *   해당 규정          기존 SOP 를 **매칭**한다(발동이 아니다). 조치 기록이 있으면 같은 줄에 시각이 선다. 조치 이력을 따로 두지 않는다.
  *                      판이 있는 규정엔 "시각을 앞당겼다면" 스위치와 시각 칩이 붙는다 — 켜면 그 열이 다시 계산되고, 여럿을 동시에 켤 수 있다
- *   근거               버튼 하나. 출처·산식·범례 문장은 전부 그 창에 있다
+ *   근거               버튼은 패널 밖(레일 바닥)에 선다 — 스크롤에 묻히지 않는다(2026-09-17 사용자). 출처·산식·범례 문장은 전부 그 창에 있다
  * ★ 좌 = 입력, 우 = 결과. 절 = 머리 한 줄 + 상자 하나(panel-style). 시나리오를 고르는 자리는 좌측 하나뿐이라 여기 표 머리는 버튼이 아니다.
  * ★ "당시 실제로 이 SOP 가 실행됐다"고 말하지 않는다. "이 조건이면 이 SOP 가 해당된다"만 말한다.
  * ───────────────────────────────────────────── */
 
 import { Icon } from "@iconify/react";
-import { Badge, Button, Switch, Tag, cn } from "@ds";
+import { Badge, Switch, Tag, cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
 import { isPast, type ImpactObject, type ScenarioSummary, type SimAction, type SimScenario, type SimSop } from "../../../model/sim/flood";
 import type { AlertLevel } from "../../../demo/levels";
@@ -23,7 +23,7 @@ import { PANEL } from "./panel-style";
 const LEVEL_LABEL: Record<AlertLevel, string> = { advisory: "주의보", warning: "경보", evacuate: "대피" };
 const LEVEL_RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
 
-export function FloodResult({ base, selected, summaries, leadRows, observed, at, depthNow, headroomM, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, sopApply, sopOn, onSop, compare, onCompare, onBasis }: {
+export function FloodResult({ base, selected, summaries, leadRows, observed, at, depthNow, headroomM, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, sopApply, sopOn, onSop, compare, onCompare }: {
   /** 비교의 왼쪽 열 — 기준 시나리오. 규정 스위치를 켰으면 "그 규정을 실제 시각에 했을 때" */
   base: SimScenario;
   selected: SimScenario;
@@ -54,7 +54,6 @@ export function FloodResult({ base, selected, summaries, leadRows, observed, at,
   onSop: (id: string, at: string | null) => void;
   compare: boolean;
   onCompare: (v: boolean) => void;
-  onBasis: () => void;
 }) {
   const same = base.id === selected.id;
   const cols = same ? [base] : [base, selected];
@@ -244,12 +243,6 @@ export function FloodResult({ base, selected, summaries, leadRows, observed, at,
         </ul>
       </section>
 
-      <section className={cn(PANEL.section, "py-3")}>
-        <Button variant="outline" size="sm" className="w-full" onClick={onBasis}>
-          <Icon icon="mdi:file-search-outline" className="size-4" aria-hidden />
-          근거 · 입력과 계산
-        </Button>
-      </section>
     </div>
   );
 }

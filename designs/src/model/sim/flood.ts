@@ -351,7 +351,16 @@ const SOP_LEVEL_RANK: Record<SimSop["from"], number> = { advisory: 0, warning: 1
 /** 트윈에 서는 조치 종류 — 물을 바꾸거나(시설 점검 = 펌프 재가동) 사람 노출을 바꾸는 것(도로 통제 · 대피 안내). 전파·통보·기록·현장 확인은 아니다 */
 const SH_TWIN_ACTION_KINDS = new Set<string>(["시설 점검", "도로 통제", "대피 안내"]);
 /* 카탈로그 id → 장면 점 id(scene.ts) · 장치 id. 차단 지점(a-block-*)은 도로가 통제된 눈금에만 서므로 규칙 판(통제 없음)에서는 해안도로 통제 줄이 시설 없이 선다 */
+/**
+ * 대피소 — 저지대 건물에서 걸어 오를 수 있는 고지대 두 곳. 대피 권고를 켜면 여기가 켜진다.
+ * ⚠ 교체 대상: 행안부 대피소 원장에 서항 지구 행이 오면 이름·좌표를 그것으로 바꾼다
+ */
+const SH_SHELTER_POINTS: ScenePoint[] = [
+  { kind: "point", id: "sh-shelter-w", at: [128.5698, 35.2022], icon: "mdi:home-heart", label: "서항 대피소 (서)", state: "개방 가능", tone: "primary", small: true },
+  { kind: "point", id: "sh-shelter-e", at: [128.5755, 35.2008], icon: "mdi:home-heart", label: "서항 대피소 (동)", state: "개방 가능", tone: "primary", small: true },
+];
 const SH_SOP_FACILITIES: Record<string, string[]> = {
+  "SOP-10": SH_SHELTER_POINTS.map((p) => p.id),
   "SOP-01": [...SH_CCTV_IDS],
   "SOP-03": SH_BC.map((d) => d.id),
   "SOP-04": ["a-block-s", "a-block-n"],
@@ -364,6 +373,7 @@ const SH_DEVICE_POINTS: ScenePoint[] = [
   ...SH_CCTV_IDS.map<ScenePoint>((id) => ({ kind: "point", id, at: SUBJECT_LOCATION[id].displayAnchor, icon: "mdi:cctv", label: SUBJECT_LOCATION[id].label, state: "정상", tone: "neutral", small: true })),
   ...SH_BC.map<ScenePoint>((d) => ({ kind: "point", id: d.id, at: d.center, icon: deviceKindSpec(d.kind).icon, label: d.name, state: d.status, tone: d.status === "정상" ? "neutral" : "warning", small: true })),
   ...SH_SENSOR_IDS.map<ScenePoint>((id) => ({ kind: "point", id, at: SUBJECT_LOCATION[id].displayAnchor, icon: SENSOR_ICON[id], label: SUBJECT_LOCATION[id].label, state: "계측 미연계 · 재현", tone: "neutral", small: true })),
+  ...SH_SHELTER_POINTS,
 ];
 
 /* ── 창원천 — 2024-08-28 재현. 판은 훈련 조합(강우 당시 · +20% · +50% × 방류 실제 15:05 · 14:35 조기) ── */
@@ -436,6 +446,7 @@ const changwoncheonSite = (): FloodSite | null => {
       S2: { label: "규정대로 했다면", times: earlyTimes(sopAt("S2")), actualAt: sopAt("S2")?.slice(11, 16), apply: (c, at) => ({ ...c, S2: at }) },
       S3: { label: "규정대로 했다면", times: earlyTimes(sopAt("S3")), actualAt: sopAt("S3")?.slice(11, 16), apply: (c, at) => ({ ...c, S3: at }) },
     },
+    extraFacilities: CW_FACILITY_POINTS,
     sopTargetOf: { S3: { id: "RD-CW-COAST", short: "천변도로" } },
     marks: {
       areaHa: CW_FLUDMARKS_HA,
@@ -446,17 +457,40 @@ const changwoncheonSite = (): FloodSite | null => {
     observed: [],
     /* 창원천은 사건이 든 규정(S1 둔치 통제 · S2 상류 저류지 방류 · S3 천변도로 통제)만. 봉암 표본을 끌어오지 않는다(지명이 틀린다) */
     sop: sopOfCase(wcase, CW_SOP_FACILITIES),
-    extraFacilities: [],
     actionsOf: (c) => actionsOfCase(wcase, actsOf(c), CW_SOP_FACILITIES),
+    /* 저류지·펌프는 방류 시각이 지나면 말이 바뀐다 — 마커가 "무슨 일이 일어났나"를 스스로 말한다 */
+    facilityStateOf: (id, c, atIso) => {
+      const at = c.S2 ? isoAt(c.S2) : sopAt("S2");
+      const done = Boolean(at && new Date(at).getTime() <= new Date(atIso).getTime());
+      if (id === "cw-reservoir") return { state: done ? `방류 중 (${(at ?? "").slice(11, 16)})` : "현행 운영", tone: done ? "primary" : "neutral" };
+      return null;
+    },
     wcase,
   };
 };
 
 /**
- * 창원천 규정 → 시설. 상류 저류지는 원본에 좌표가 없어 자리를 세우지 않는다 — 방류 표식은 상류 수위계에 건다(방류가 보이는 곳).
- * 둔치 산책로는 객체가 없어 잇지 않는다. 천변도로 통제는 차단 지점(통제되면 장면에 선다)
+ * 창원천 시설 — 상류 저류지 · 합류부 배수펌프장 · CCTV 둘 · 대피소 둘 · 마을방송.
+ * ⚠ 교체 대상: 좌표는 하천 선과 도로 채록선을 기준으로 세운 자리다. 시설 원장이 오면 이름·좌표를 그것으로 바꾼다.
+ * 규정이 이 자리를 가리킨다 — 줄을 짚으면 지도에서 켜지고, 마커를 누르면 줄이 켜진다
  */
-const CW_SOP_FACILITIES: Record<string, string[]> = { S2: ["cw-st-a"], S3: ["cw-block-w", "cw-block-e"] };
+const CW_FACILITY_POINTS: ScenePoint[] = [
+  { kind: "point", id: "cw-reservoir", at: [128.6672, 35.2472], icon: "mdi:storage-tank", label: "상류 저류지", state: "현행 운영", tone: "neutral", small: true },
+  { kind: "point", id: "cw-pump", at: [128.6262, 35.2152], icon: "mdi:water-pump", label: "합류부 배수펌프장", state: "가동 중", tone: "neutral", small: true },
+  { kind: "point", id: "cw-cctv-up", at: [128.6648, 35.2452], icon: "mdi:cctv", label: "저류지 CCTV", state: "정상", tone: "neutral", small: true },
+  { kind: "point", id: "cw-cctv-conf", at: [128.6285, 35.2172], icon: "mdi:cctv", label: "합류부 CCTV", state: "정상", tone: "neutral", small: true },
+  { kind: "point", id: "cw-bc", at: [128.6170, 35.2145], icon: "mdi:bullhorn", label: "천변 마을방송", state: "정상", tone: "neutral", small: true },
+  { kind: "point", id: "cw-shelter-s", at: [128.6205, 35.2135], icon: "mdi:home-heart", label: "합류부 대피소", state: "개방 가능", tone: "primary", small: true },
+  { kind: "point", id: "cw-shelter-w", at: [128.6110, 35.2155], icon: "mdi:home-heart", label: "천변 대피소", state: "개방 가능", tone: "primary", small: true },
+];
+/**
+ * 규정 → 시설. **그 규정을 실제로 수행하는 자리만** 잇는다 — 방송·대피소까지 이으면 조치 배지와 이름표가 한 자리에 뭉쳐
+ * 서로를 가린다(2026-09-17). 나머지 시설은 규정 연결 없이 지도에 서고, 눌러야 이름이 뜬다. 둔치 산책로는 객체가 없어 잇지 않는다
+ */
+const CW_SOP_FACILITIES: Record<string, string[]> = {
+  S2: ["cw-reservoir"],
+  S3: ["cw-block-w", "cw-block-e"],
+};
 
 /**
  * 대상 목록 — **실제 사건이 먼저다.** 서항 2024-09-21 은 강우 실자료와 침수흔적으로 보정한 규칙이 있어 기준(Baseline)을 설명할 수 있다

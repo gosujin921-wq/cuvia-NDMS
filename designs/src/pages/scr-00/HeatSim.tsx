@@ -13,7 +13,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { GlassPanel } from "@ds";
+import { Icon } from "@iconify/react";
+import { Button, GlassPanel } from "@ds";
 import { useMapLibre } from "../../lib/useMapLibre";
 import { CENTER_LEFT, CENTER_RIGHT, EDGE, FAB_SIZE, LEFT_RAIL, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP, utilStripStyle } from "../../lib/layout";
 import { ensureHillshade, setBuildings3D, setHillshadeVisible, setTerrain } from "../../lib/flood-scene";
@@ -247,12 +248,15 @@ export function HeatSim() {
               stage={stage}
               shelters={shelterSummary}
               sop={site.sop}
-              onBasis={() => setBasisOpen(true)}
             />
           ) : (
             <p className="p-3 text-caption text-foreground-muted">기온 격자를 읽는 중입니다.</p>
           )}
         </GlassPanel>
+        <Button variant="outline" size="sm" className="pointer-events-auto w-full shrink-0 bg-surface/95 backdrop-blur" onClick={() => setBasisOpen(true)}>
+          <Icon icon="mdi:file-search-outline" className="size-4" aria-hidden />
+          근거 · 입력과 산식
+        </Button>
       </div>
 
       {basisOpen && (
