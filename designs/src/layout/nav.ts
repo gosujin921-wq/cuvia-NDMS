@@ -52,6 +52,15 @@ export const NAV_ITEMS: NavItem[] = [
     fullBleed: true,
   },
   {
+    /* 디지털트윈 시뮬레이션 — 실제 사건 재현(기준) → 조건 변경 → 결과 비교 → 관련 SOP (2026-09-17 새 방향 · 모의훈련은 킵) */
+    id: "sim",
+    scr: "SCR-00",
+    label: "디지털트윈",
+    route: "/scr-00",
+    icon: "mdi:cube-scan",
+    fullBleed: true,
+  },
+  {
     id: "warning",
     scr: "IA-02",
     label: "재난관제",

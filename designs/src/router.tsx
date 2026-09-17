@@ -16,6 +16,7 @@ import { useEffect } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppLayout } from "./layout/AppLayout";
 import { HUB_ROUTE } from "./layout/nav";
+import { SimulationPage } from "./pages/scr-00/SimulationPage";
 import { OverviewDashboardPage } from "./pages/scr-01/OverviewDashboardPage";
 import { EarlyWarningPage } from "./pages/scr-02/EarlyWarningPage";
 import { StatisticsPage } from "./pages/scr-04/StatisticsPage";
@@ -48,6 +49,8 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { path: "/scr-01", element: <OverviewDashboardPage /> },
+      // 디지털트윈 시뮬레이션 — 실제 사건 재현(기준) → 조건 변경 → 결과 비교 → 관련 SOP (2026-09-17 새 방향). 유형·대상·시나리오는 query
+      { path: "/scr-00", element: <SimulationPage /> },
       { path: "/scr-02", element: <HeroDistrictRedirect /> },
       // 지구의 진행 사건 작업공간. 우측 패널 모드는 query `panel=twin|response` (신규 라우트 없음 · IA §5.2)
       { path: "/scr-02/:districtId", element: <EarlyWarningPage /> },
