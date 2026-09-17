@@ -62,7 +62,7 @@ export function FloodSim() {
   const site = sites.find((s) => s.id === params.get("site") || (params.get("incident") !== null && s.incidentId === params.get("incident"))) ?? sites[0];
   /* 슬라이더가 준 직접 배율(`rf`) — 규칙 대상에서 앵커 밖 값을 고르면 C 시나리오가 선다. 한계강우량 축은 그때 고른 것을 따른다(`rl`) */
   const rf = site.slider ? params.get("rf") : null;
-  const custom = useMemo(() => (rf && site.slider ? { [site.slider.condId]: `x:${rf}`, ...(params.get("rl") ? { lim: params.get("rl") as string } : {}) } : null), [rf, site, params]);
+  const custom = useMemo(() => (rf && site.slider ? { [site.slider.condId]: site.slider.encode(Number(rf)), ...(params.get("rl") ? { lim: params.get("rl") as string } : {}) } : null), [rf, site, params]);
   const scenarios = useMemo(() => scenariosOf(site, custom), [site, custom]);
   const selected = scenarios.find((s) => s.id === params.get("sc")) ?? scenarios[0];
   const setQuery = (patch: Record<string, string | null>) => {

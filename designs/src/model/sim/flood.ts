@@ -78,7 +78,16 @@ export interface SimSiteBase {
    * 연속 축 — 규칙 대상만. 계산은 연속이고 앵커는 눈금일 뿐이다(2026-09-17 "+20% 는 왜 20% 인가").
    * 값은 그 조건의 선택지 id 가 아니라 배율("x:1.62")로 실린다
    */
-  slider?: { condId: string; min: number; max: number; step: number; anchors: { value: number; label: string }[]; factorOf(choice: Record<string, string>): number };
+  slider?: {
+    condId: string; min: number; max: number; step: number;
+    anchors: { value: number; label: string }[];
+    /** 지금 선택이 슬라이더에서 어디인가 */
+    valueOf(choice: Record<string, string>): number;
+    /** 슬라이더 값 → 그 조건의 선택 문자열("x:1.6" · "d:2.5") */
+    encode(value: number): string;
+    /** 사람이 읽는 표기("실제 × 1.60" · "예보 +2.5°C") */
+    format(value: number): string;
+  };
 }
 
 export interface FloodSite extends SimSiteBase {
@@ -187,7 +196,9 @@ const seohangSite = (): FloodSite => {
         { value: factorForWarning(HEAVY_RAIN_ADVISORY_3H), label: "주의보" },
         { value: factorForWarning(HEAVY_RAIN_WARNING_3H), label: "경보" },
       ].filter((a) => a.value >= 0.5 && a.value <= 2),
-      factorOf: (c) => ruleChoice(c).factor,
+      valueOf: (c) => ruleChoice(c).factor,
+      encode: (v) => `x:${v}`,
+      format: (v) => `실제 × ${v.toFixed(2)}`,
     },
     baselineOf: () => ruleForecast(ruleChoice(defaults), "FC-SH-RULE-fc-50", true),
     currentRows: () => [],

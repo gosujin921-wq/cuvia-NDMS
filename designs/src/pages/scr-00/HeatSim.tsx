@@ -43,7 +43,10 @@ export function HeatSim() {
 
   const site = useMemo(() => heatSite(field), [field]);
   const sites = useMemo(() => [site], [site]);
-  const scenarios = useMemo(() => scenariosOf(site), [site]);
+  /* 슬라이더가 준 직접 값(`rf`) — 앵커 밖이면 C 시나리오. 습도 축은 그때 고른 것을 따른다(`ro`) */
+  const rf = params.get("rf");
+  const custom = useMemo(() => (rf && site.slider ? { temp: site.slider.encode(Number(rf)), ...(params.get("ro") ? { rh: params.get("ro") as string } : {}) } : null), [rf, site, params]);
+  const scenarios = useMemo(() => scenariosOf(site, custom), [site, custom]);
   const selected = scenarios.find((s) => s.id === params.get("sc")) ?? scenarios[0];
   const setQuery = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(window.location.search);
@@ -51,7 +54,8 @@ export function HeatSim() {
     setParams(next, { replace: true });
   };
   /* 객체라 시나리오 id 로 메모한다 — 매 렌더 새 객체면 색면 다시 칠하기·고온 칸 계산이 렌더마다 돈다 */
-  const offset = useMemo(() => offsetOf(selected.choice), [selected.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const offsetKey = `${selected.id}:${selected.choice.temp ?? ""}:${selected.choice.rh ?? ""}`;
+  const offset = useMemo(() => offsetOf(selected.choice), [offsetKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* 시간축 — 자료의 첫 시각부터 마지막 시각까지, 분 단위 */
   const origin = site.now;
@@ -130,7 +134,10 @@ export function HeatSim() {
 
       <div className={`${RAIL_BASE} left-3`} style={{ width: LEFT_RAIL }}>
         <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
-          <SimScenarios sites={sites} site={site} onSite={() => undefined} scenarios={scenarios} selected={selected} onSelect={(id) => setQuery({ sc: id })} />
+          <SimScenarios
+            sites={sites} site={site} onSite={() => undefined} scenarios={scenarios} selected={selected} onSelect={(id) => setQuery({ sc: id })}
+            onSlide={(v) => setQuery({ rf: String(Number(v.toFixed(1))), ro: selected.choice.rh ?? null, sc: "C" })}
+          />
         </GlassPanel>
         <ContextInset family="E" anchor={site.anchor} hour={new Date(at).getHours()} meta={formatClock(at)} dome={dome} />
       </div>

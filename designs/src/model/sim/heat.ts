@@ -71,6 +71,15 @@ export function heatSite(field: TemperatureField | null): HeatSite {
     defaults: { temp: "fc", rh: "fc" },
     baselineTag: "예보",
     baselineLabel: "기상청 국지예보 그대로",
+    describeChoice: (c) => { const o = offsetOf(c); return [o.t ? `기온 예보 +${o.t.toFixed(1)}°C` : null, o.rh ? `습도 +${o.rh} %p` : null].filter(Boolean).join(" · ") || "예보 그대로"; },
+    /* 연속 축 — 기온 오프셋. 실자료 격자 위 계산이라 어디서든 값이 난다. 근거 앵커는 예보(0) 하나뿐이고 나머지는 가정이라 눈금을 더 세우지 않는다 */
+    slider: {
+      condId: "temp", min: 0, max: 4, step: 0.1,
+      anchors: [{ value: 0, label: "예보" }, { value: 2, label: "+2°C" }],
+      valueOf: (c) => offsetOf(c).t,
+      encode: (v) => `d:${v}`,
+      format: (v) => (v === 0 ? "예보 그대로" : `예보 +${v.toFixed(1)}°C`),
+    },
     date,
     anchor: CITY_CENTER,
     sop: sopOfCase(HEATWAVE_WHATIF),
@@ -79,7 +88,12 @@ export function heatSite(field: TemperatureField | null): HeatSite {
 
 /** 시나리오가 예보에 더하는 값 — 기온(°C) · 상대습도(%p). 둘 다 조건 변경이지 결과가 아니다 */
 export interface HeatOffset { t: number; rh: number }
-export const offsetOf = (choice: Record<string, string>): HeatOffset => ({ t: choice.temp === "p2" ? 2 : 0, rh: choice.rh === "p10" ? 10 : 0 });
+/* 기온 선택은 앵커 id("fc" · "p2")이거나 슬라이더가 준 직접 값("d:2.5") */
+export const offsetOf = (choice: Record<string, string>): HeatOffset => {
+  const temp = choice.temp ?? "fc";
+  const t = temp.startsWith("d:") ? Number(temp.slice(2)) : temp === "p2" ? 2 : 0;
+  return { t, rh: choice.rh === "p10" ? 10 : 0 };
+};
 const OFFSETS_ALL: HeatOffset[] = [{ t: 0, rh: 0 }, { t: 2, rh: 0 }, { t: 0, rh: 10 }, { t: 2, rh: 10 }];
 
 export const hourIso = (field: TemperatureField, h: number): string => `${field.date}T${String(field.hours[h]).padStart(2, "0")}:00:00+09:00`;

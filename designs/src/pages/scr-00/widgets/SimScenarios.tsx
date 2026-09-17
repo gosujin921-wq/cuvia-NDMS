@@ -21,7 +21,7 @@ export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelec
   onSlide?: (factor: number) => void;
 }) {
   const slider = site.slider;
-  const factor = slider ? slider.factorOf(selected.choice) : null;
+  const factor = slider ? slider.valueOf(selected.choice) : null;
   return (
     <div className="flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto overflow-x-hidden rounded-[inherit]">
       <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="대상">
@@ -79,7 +79,7 @@ export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelec
             const raw = selected.choice[c.id] ?? site.defaults[c.id];
             const o = c.options.find((x) => x.id === raw);
             /* 슬라이더가 준 직접 배율은 선택지가 아니다 — "실제 × 1.62" 로 읽는다 */
-            const label = o?.label ?? (raw.startsWith("x:") ? `실제 × ${raw.slice(2)}` : raw);
+            const label = o?.label ?? (slider && c.id === slider.condId ? slider.format(slider.valueOf(selected.choice)) : raw);
             const changed = raw !== site.defaults[c.id];
             return (
               <div key={c.id} className="contents">
@@ -93,8 +93,8 @@ export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelec
         {slider && factor !== null && onSlide && (
           <div className="flex flex-col gap-1 rounded-md border border-border bg-card px-2.5 py-2">
             <div className="flex items-baseline justify-between text-caption">
-              <span className="text-foreground-muted">{site.conditions.find((c) => c.id === slider.condId)?.label ?? "조건"} 배율</span>
-              <span className={cn("font-mono font-semibold", factor === 1 ? "text-foreground" : "text-warning")}>실제 × {factor.toFixed(2)}</span>
+              <span className="text-foreground-muted">{site.conditions.find((c) => c.id === slider.condId)?.label ?? "조건"} 직접 조정</span>
+              <span className={cn("font-mono font-semibold", slider.anchors.some((a) => Math.abs(a.value - factor) < 1e-9 && a.value === slider.anchors[0].value) ? "text-foreground" : "text-warning")}>{slider.format(factor)}</span>
             </div>
             <div className="relative h-7">
               {slider.anchors.map((a) => {
@@ -111,11 +111,11 @@ export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelec
               <input
                 type="range" min={slider.min} max={slider.max} step={slider.step} value={factor}
                 onChange={(e) => onSlide(Number(e.target.value))}
-                aria-label="강우 배율"
+                aria-label={`${site.conditions.find((c) => c.id === slider.condId)?.label ?? "조건"} 직접 조정`}
                 className="absolute inset-x-0 top-0 h-4 w-full cursor-pointer appearance-none bg-transparent opacity-0"
               />
             </div>
-            <p className="break-keep text-caption leading-snug text-foreground-subtle">계산은 연속입니다. 눈금은 근거 있는 값(실제 · 기상청 호우특보 3시간 기준)만 세웠습니다</p>
+            <p className="break-keep text-caption leading-snug text-foreground-subtle">계산은 연속입니다. 눈금은 근거 있는 값만 세웠습니다</p>
           </div>
         )}
         <p className="break-keep text-caption leading-snug text-foreground-subtle">
