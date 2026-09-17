@@ -11,7 +11,7 @@ import { Icon } from "@iconify/react";
 import { cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
 
-export function TimeAxis({ origin, end, ticks, minutes, onChange, playing, onTogglePlay, caption }: {
+export function TimeAxis({ origin, end, ticks, minutes, onChange, playing, onTogglePlay }: {
   /** 현재(시작) · 지평선 끝 */
   origin: string;
   end: string;
@@ -22,7 +22,6 @@ export function TimeAxis({ origin, end, ticks, minutes, onChange, playing, onTog
   onChange: (minutes: number) => void;
   playing: boolean;
   onTogglePlay: () => void;
-  caption?: string;
 }) {
   const span = Math.max(1, Math.round((new Date(end).getTime() - new Date(origin).getTime()) / 60_000));
   const m = Math.min(span, Math.max(0, minutes));
@@ -30,7 +29,8 @@ export function TimeAxis({ origin, end, ticks, minutes, onChange, playing, onTog
   const pct = (iso: string) => Math.min(100, Math.max(0, ((new Date(iso).getTime() - new Date(origin).getTime()) / 60_000 / span) * 100));
 
   return (
-    <div className="pointer-events-auto rounded-lg border border-border bg-surface/95 px-3.5 py-2.5 backdrop-blur" aria-label="시간축">
+    /* 한 줄이다 — 안내 문장 줄을 두지 않는다(대상·날짜는 좌측 레일이 말한다 · 2026-09-17 사용자 "타임라인 높이 줄여"). 눈금 라벨 몫으로 아래만 한 칸 */
+    <div className="pointer-events-auto rounded-lg border border-border bg-surface/95 px-3.5 pb-5 pt-2 backdrop-blur" aria-label="시간축">
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -71,7 +71,6 @@ export function TimeAxis({ origin, end, ticks, minutes, onChange, playing, onTog
         </span>
         <span className="shrink-0 whitespace-nowrap font-mono text-caption text-foreground-subtle">{formatClock(end)}</span>
       </div>
-      {caption && <p className="mt-5 overflow-hidden whitespace-nowrap text-caption text-foreground-subtle">{caption}</p>}
     </div>
   );
 }

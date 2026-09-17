@@ -134,7 +134,7 @@ export function HeatSim() {
         <ContextInset family="E" anchor={site.anchor} hour={new Date(at).getHours()} meta={formatClock(at)} dome={dome} />
       </div>
 
-      <div className="pointer-events-none absolute bottom-3 z-30 flex flex-col gap-2" style={{ left: CENTER_LEFT, right: CENTER_RIGHT + FAB_SIZE + EDGE }}>
+      <div className="pointer-events-none absolute bottom-3 z-30" style={{ left: CENTER_LEFT, right: CENTER_RIGHT + FAB_SIZE + EDGE }}>
         <TimeAxis
           origin={origin}
           end={end}
@@ -143,7 +143,6 @@ export function HeatSim() {
           onChange={(m) => { setPlaying(false); setMinutes(m); }}
           playing={playing}
           onTogglePlay={() => setPlaying((v) => !v)}
-          caption={`${site.dateLabel} · 시간을 옮기면 색면과 값이 그 시각으로 갑니다`}
         />
       </div>
 

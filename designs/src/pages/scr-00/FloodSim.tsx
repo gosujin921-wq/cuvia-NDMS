@@ -202,19 +202,24 @@ export function FloodSim() {
         />
       </div>
 
-      {/* 하단 중앙 — 종단도(있으면) + 시간축. 오른쪽은 질의 버튼 자리(FAB_SLOT_CLOCK)를 비워 둔다 — 종단도가 서면 스택이 높아져 겹친다 */}
-      <div className="pointer-events-none absolute bottom-3 z-30 flex flex-col gap-2" style={{ left: CENTER_LEFT, right: CENTER_RIGHT + FAB_SIZE + EDGE }}>
-        {forecast?.profile && profileAt && (
-          <GlassPanel className="pointer-events-auto">
+      {/* 상단 중앙 — 종단도(있으면), 유형 탭 아래에 작게. 지도 가운데를 비워 두고 위에 얹는다(2026-09-17 사용자 "종단도를 작게 상단으로") */}
+      {forecast?.profile && profileAt && (
+        <div className="pointer-events-none absolute z-20 flex justify-center" style={{ top: 56, left: CENTER_LEFT, right: CENTER_RIGHT }}>
+          <GlassPanel className="pointer-events-auto w-full max-w-[640px]">
             <ProfileView
               profile={forecast.profile}
               validAt={profileAt}
               compareAt={baseMark && baseline?.profile ? baseline.profile.levelsByMark[profileAt] ?? null : null}
               collapsed={profileCollapsed}
               onToggle={() => setProfileCollapsed((v) => !v)}
+              compact
             />
           </GlassPanel>
-        )}
+        </div>
+      )}
+
+      {/* 하단 중앙 — 시간축. 오른쪽은 질의 버튼 자리를 비워 둔다 */}
+      <div className="pointer-events-none absolute bottom-3 z-30" style={{ left: CENTER_LEFT, right: CENTER_RIGHT + FAB_SIZE + EDGE }}>
         <TimeAxis
           origin={origin}
           end={end}
@@ -223,7 +228,6 @@ export function FloodSim() {
           onChange={(m) => { setPlaying(false); setMinutes(m); }}
           playing={playing}
           onTogglePlay={() => setPlaying((v) => !v)}
-          caption={site.status === "재현" ? `${site.dateLabel} · 시간을 옮기면 지도와 결과가 그 시각으로 갑니다` : "지금부터 전망 끝까지 · 시간을 옮기면 지도와 결과가 그 시각으로 갑니다"}
         />
       </div>
 

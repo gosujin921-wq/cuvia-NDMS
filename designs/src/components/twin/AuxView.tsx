@@ -26,14 +26,16 @@ interface AuxSectionProps {
   /** 접힘 — 지도 장면을 가리므로 머리만 남길 수 있다 */
   collapsed?: boolean;
   onToggle?: () => void;
+  /** 작게 — 지도 위 상단에 얹을 때(scr-00). 머리는 caption 크기, 여백은 한 칸 */
+  compact?: boolean;
   children: ReactNode;
 }
 
-function AuxSection({ title, meta, label, collapsed, onToggle, children }: AuxSectionProps) {
+function AuxSection({ title, meta, label, collapsed, onToggle, compact, children }: AuxSectionProps) {
   return (
-    <section className="flex flex-col gap-1 p-3" aria-label={label}>
+    <section className={cn("flex flex-col", compact ? "gap-0.5 px-2.5 py-1.5" : "gap-1 p-3")} aria-label={label}>
       <header className="flex items-center justify-between gap-2">
-        <h2 className="text-body font-semibold text-foreground">{title}</h2>
+        <h2 className={cn("font-semibold text-foreground", compact ? "text-caption" : "text-body")}>{title}</h2>
         <div className="flex items-center gap-2">
           <span className="font-mono text-caption text-foreground-subtle">{meta}</span>
           {onToggle && (
@@ -48,10 +50,10 @@ function AuxSection({ title, meta, label, collapsed, onToggle, children }: AuxSe
   );
 }
 
-export function ProfileView({ profile, validAt, compareAt, collapsed, onToggle }: { profile: SceneProfile; validAt: string; /** 대안 비교 시 기준 예측판의 같은 눈금 수위 */ compareAt?: number[] | null; collapsed?: boolean; onToggle?: () => void }) {
+export function ProfileView({ profile, validAt, compareAt, collapsed, onToggle, compact }: { profile: SceneProfile; validAt: string; /** 대안 비교 시 기준 예측판의 같은 눈금 수위 */ compareAt?: number[] | null; collapsed?: boolean; onToggle?: () => void; /** 작게(높이 96) — 지도 상단에 얹을 때 */ compact?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const W = useElementWidth(ref);
-  const H = 160;
+  const H = compact ? 96 : 160;
   const levels = profile.levelsByMark[validAt] ?? profile.levelsByMark[Object.keys(profile.levelsByMark)[0]] ?? [];
   const kms = profile.stations.map((s) => s.km);
   const minKm = Math.min(...kms), maxKm = Math.max(...kms);
@@ -70,7 +72,7 @@ export function ProfileView({ profile, validAt, compareAt, collapsed, onToggle }
   const thresholdPath = path(thresholds);
 
   return (
-    <AuxSection title="종단도 · 상류 → 하류" meta={<>{formatClock(validAt)} · {sloped ? "기준 수위 = 관측소별 둑 높이" : `기준 수위 EL.${profile.threshold.toFixed(1)} m`}</>} label="종단도" collapsed={collapsed} onToggle={onToggle}>
+    <AuxSection title="종단도 · 상류 → 하류" meta={<>{formatClock(validAt)} · {sloped ? "기준 수위 = 관측소별 둑 높이" : `기준 수위 EL.${profile.threshold.toFixed(1)} m`}</>} label="종단도" collapsed={collapsed} onToggle={onToggle} compact={compact}>
       <div ref={ref} className="w-full">
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block" role="img" aria-label="하천 종단 수위" fontSize={FONT}>
           {/* 기준 수위선 — 관측소별이면 관측소를 잇는 선, 하나면 수평선 */}
