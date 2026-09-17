@@ -12,12 +12,11 @@ import { Icon } from "@iconify/react";
 import { cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
 import { useElementWidth } from "../../../lib/useElementWidth";
-import { SOP_ICON } from "./action-style";
 
 /** 눈금 두 개가 이보다 가까우면 하나로 묶는다(px) — 사실상 같은 자리. 겹치면 개수가 뒤 눈금에 가려 안 읽힌다 */
 const CLUSTER_PX = 14;
-/** 묶을 만큼은 아니지만 이보다 가까우면 윗줄로 비켜 세운다(px) — 눈금 지름 24 + 여백 */
-const STACK_PX = 32;
+/** 묶을 만큼은 아니지만 이보다 가까우면 윗줄로 비켜 세운다(px) — 닷 지름 8 + 여백 */
+const STACK_PX = 16;
 
 export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, playing, onTogglePlay }: {
   /** 현재(시작) · 지평선 끝 */
@@ -26,8 +25,8 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
   /** 판의 눈금 시각 — 표시만 */
   ticks: string[];
   /**
-   * 조치 눈금 — 트랙 위에 서고, 지나면 채워진다. 아이콘은 종류 불문 SOP 표식 하나다(2026-09-17 사용자 "타임라인 위 아이콘 통일").
-   * 무슨 대응인지는 **호버 쪽지**가 말한다(2026-09-17 사용자 "호버하면 어떤 대응인지"). `kind` 는 쪽지 오른쪽의 한마디다
+   * 조치 눈금 — 트랙 위에 선 **작은 닷**이다(2026-09-17 사용자 "아이콘 말고 작은 닷으로"). 지나면 채워지고, 앞의 것은 테두리만.
+   * 무엇이 서 있는지는 **호버 쪽지**가 말한다 — 시각 · 규정 이름 · 어떤 대응인지(`kind`). 닷을 누르면 그 시각으로 간다
    */
   events?: { at: string; label: string; kind?: string }[];
   /** 현재로부터 몇 분 뒤를 보고 있나 */
@@ -66,7 +65,7 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
   return (
     /* 한 줄 캡슐이다 — 안내 문장 줄을 두지 않는다(대상·날짜는 좌측 레일이 말한다 · 2026-09-17 사용자). 눈금 라벨 몫으로 아래만 한 칸.
        모양은 캡슐 카드 + 원형 재생 버튼(2026-09-17 사용자) */
-    <div className={cn("pointer-events-auto rounded-full border border-border bg-surface/95 pb-5 pl-2 pr-4 backdrop-blur", stacked ? "pt-[52px]" : events.length ? "pt-6" : "pt-2")} aria-label="시간축">
+    <div className={cn("pointer-events-auto rounded-full border border-border bg-surface/95 pb-5 pl-2 pr-4 backdrop-blur", stacked ? "pt-9" : events.length ? "pt-5" : "pt-2")} aria-label="시간축">
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -95,8 +94,8 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
             /* 왼쪽 끝 눈금의 쪽지는 왼쪽으로 잘린다 — 트랙 왼쪽 1/4 안이면 쪽지를 오른쪽으로 연다 */
             const near = pct(g.at) < 25 ? "left-0" : pct(g.at) > 75 ? "right-0" : "left-1/2 -translate-x-1/2";
             return (
-              <span key={g.at} className={cn("absolute -translate-x-1/2", g.row === 1 ? "-top-[44px]" : "-top-[20px]")} style={{ left: `${pct(g.at)}%` }}>
-                {/* 닷 — 규정 표식 하나. 종류는 쪽지가 말한다 */}
+              <span key={g.at} className={cn("absolute -translate-x-1/2", g.row === 1 ? "-top-[34px]" : "-top-[16px]")} style={{ left: `${pct(g.at)}%` }}>
+                {/* 닷 — 점 하나다. 누르는 자리는 20px 이고 보이는 점은 8px(묶인 건 10px + 링). 무엇인지는 쪽지가 말한다 */}
                 <button
                   type="button"
                   onMouseEnter={() => setHover(g.at)}
@@ -105,17 +104,16 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
                   onBlur={() => setHover(null)}
                   onClick={() => onChange(Math.round((new Date(g.at).getTime() - new Date(origin).getTime()) / 60_000))}
                   aria-label={g.labels.map((l) => `${formatClock(l.at)} ${l.label}`).join(", ")}
-                  className={cn("flex size-5 cursor-pointer items-center justify-center gap-0.5 rounded-full border font-mono text-caption font-bold transition-transform",
-                    g.labels.length > 1 && "w-auto px-1",
-                    on && "scale-110",
-                    passed ? "border-primary bg-primary text-primary-foreground" : "border-primary-text bg-surface text-primary-text")}
+                  className="flex size-5 cursor-pointer items-center justify-center rounded-full bg-transparent"
                 >
-                  <Icon icon={SOP_ICON} className="size-3.5" aria-hidden />
-                  {g.labels.length > 1 && <span>{g.labels.length}</span>}
+                  <span className={cn("block rounded-full border transition-transform",
+                    g.labels.length > 1 ? "size-2.5 ring-2 ring-primary-text/30" : "size-2",
+                    on && "scale-150",
+                    passed ? "border-primary bg-primary" : "border-primary-text bg-surface")} aria-hidden />
                 </button>
                 {/* 호버 쪽지 — 시각 · 무엇을 · 어떤 대응인지 */}
                 {on && (
-                  <span className={cn("absolute bottom-[26px] z-10 flex w-max max-w-[260px] flex-col gap-0.5 rounded-md border border-border bg-surface px-2 py-1.5 text-caption shadow-lg", near)} role="tooltip">
+                  <span className={cn("absolute bottom-[22px] z-10 flex w-max max-w-[260px] flex-col gap-0.5 rounded-md border border-border bg-surface px-2 py-1.5 text-caption shadow-lg", near)} role="tooltip">
                     {g.labels.map((l) => (
                       <span key={`${l.at}-${l.label}`} className="flex items-baseline gap-1.5">
                         <span className="shrink-0 font-mono text-foreground-subtle">{formatClock(l.at)}</span>
