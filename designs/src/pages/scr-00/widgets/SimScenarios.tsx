@@ -69,26 +69,14 @@ export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelec
               </button>
             );
           })}
+          {/* C 자리는 늘 비워 둔다 — 슬라이더를 움직여 C 가 생길 때 목록이 늘어나며 슬라이더가 손 밑에서 밀리지 않게(2026-09-17 사용자) */}
+          {slider && !scenarios.some((s) => s.id === "C") && (
+            <button type="button" disabled aria-hidden className="flex items-center gap-2 rounded-md border border-dashed border-border bg-transparent px-2.5 py-1.5 text-left">
+              <span className="shrink-0 rounded bg-surface-raised px-1.5 py-0.5 font-mono text-caption font-semibold text-foreground-subtle">C</span>
+              <span className="min-w-0 break-keep text-caption leading-snug text-foreground-subtle">슬라이더로 직접 조정</span>
+            </button>
+          )}
         </div>
-      </section>
-
-      <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="고른 조건">
-        <h2 className="text-body font-semibold text-foreground">고른 조건</h2>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-border bg-card px-2.5 py-2 text-caption">
-          {site.conditions.map((c) => {
-            const raw = selected.choice[c.id] ?? site.defaults[c.id];
-            const o = c.options.find((x) => x.id === raw);
-            /* 슬라이더가 준 직접 배율은 선택지가 아니다 — "실제 × 1.62" 로 읽는다 */
-            const label = o?.label ?? (slider && c.id === slider.condId ? slider.format(slider.valueOf(selected.choice)) : raw);
-            const changed = raw !== site.defaults[c.id];
-            return (
-              <div key={c.id} className="contents">
-                <dt className="truncate text-foreground-muted">{c.label}</dt>
-                <dd className={cn("text-right", changed ? (c.kind === "조치" ? "font-semibold text-primary-text" : "font-semibold text-warning") : "text-foreground")}>{label}</dd>
-              </div>
-            );
-          })}
-        </dl>
         {/* 연속 축 — 규칙 대상. 눈금은 근거 있는 앵커뿐이고 그 사이 어디든 멈춘다. 옮기면 C 열이 선다 */}
         {slider && factor !== null && onSlide && (
           <div className="flex flex-col gap-1 rounded-md border border-border bg-card px-2.5 py-2">
@@ -118,6 +106,25 @@ export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelec
             <p className="break-keep text-caption leading-snug text-foreground-subtle">계산은 연속입니다. 눈금은 근거 있는 값만 세웠습니다</p>
           </div>
         )}
+      </section>
+
+      <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="고른 조건">
+        <h2 className="text-body font-semibold text-foreground">고른 조건</h2>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-border bg-card px-2.5 py-2 text-caption">
+          {site.conditions.map((c) => {
+            const raw = selected.choice[c.id] ?? site.defaults[c.id];
+            const o = c.options.find((x) => x.id === raw);
+            /* 슬라이더가 준 직접 배율은 선택지가 아니다 — "실제 × 1.62" 로 읽는다 */
+            const label = o?.label ?? (slider && c.id === slider.condId ? slider.format(slider.valueOf(selected.choice)) : raw);
+            const changed = raw !== site.defaults[c.id];
+            return (
+              <div key={c.id} className="contents">
+                <dt className="truncate text-foreground-muted">{c.label}</dt>
+                <dd className={cn("text-right", changed ? (c.kind === "조치" ? "font-semibold text-primary-text" : "font-semibold text-warning") : "text-foreground")}>{label}</dd>
+              </div>
+            );
+          })}
+        </dl>
         <p className="break-keep text-caption leading-snug text-foreground-subtle">
           환경을 바꾸는 조치만 다시 계산합니다. 전파·통제는 관련 SOP에서 봅니다
         </p>
