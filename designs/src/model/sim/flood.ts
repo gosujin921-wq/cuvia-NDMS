@@ -139,7 +139,13 @@ export interface FloodSite extends SimSiteBase {
    * "이 규정대로 하면" — 환경을 바꾸는 SOP(방류 · 펌프)를 규정 시각에 실행한 조합. 관련 SOP 줄의 스위치가 켠다.
    * 시나리오(조건)와 갈라 둔다: 조건은 "그때 비가 달랐다면", SOP 적용은 "규정대로 했다면"이다
    */
-  sopApply?: Record<string, { label: string; apply(choice: Record<string, string>): Record<string, string> }>;
+  sopApply?: Record<string, {
+    /** 스위치 문구 — 규정 이름은 줄이 이미 말하므로 "시각을 앞당겼다면" 같은 짧은 말 */
+    label: string;
+    /** 고를 수 있는 조치 시각 — 판이 있는 것만. 첫 항목이 켤 때의 기본. 실제 시각은 스위치를 끈 상태다 */
+    times: { at: string; label: string }[];
+    apply(choice: Record<string, string>, at: string): Record<string, string>;
+  }>;
   /** 스위치가 없는 이유 — 환경을 바꾸는 규정이 있어도 모델이 없으면 여기 적는다 */
   sopNote?: string;
   wcase: WhatIfCase | null;
@@ -322,7 +328,15 @@ const changwoncheonSite = (): FloodSite | null => {
   if (!wcase || !t) return null;
   const now = t.stops[0]?.at ?? wcase.occurredAt;
   const rainSteps = t.conditions[0]?.steps ?? [];
-  const actsOf = (discharge: string): Record<string, string> => (discharge === "early" ? { S2: now } : {});
+  /* 규정 시각은 선택(choice)에 규정 id 로 실린다("S2": "14:35"). 없으면 그날 실제 시각(조합 판의 acts 없음 = 실제) */
+  const isoAt = (hhmm: string) => `${now.slice(0, 11)}${hhmm}${now.slice(16)}`;
+  const actsOf = (c: Record<string, string>): Record<string, string> => Object.fromEntries((["S2", "S3"] as const).filter((k) => c[k]).map((k) => [k, isoAt(c[k])]));
+  /* 판이 있는 조치 시각 — 훈련 조합의 정지점과 같다(whatif.ts TRAIN_STOPS). 실제보다 몇 분 이른지를 이름으로 */
+  const earlyTimes = (actedAt: string | undefined) => ["14:35", "14:55"].map((hhmm) => {
+    const min = actedAt ? Math.round((new Date(actedAt).getTime() - new Date(isoAt(hhmm)).getTime()) / 60_000) : 0;
+    return { at: hhmm, label: min > 0 ? `${min}분 일찍` : "발동 즉시" };
+  });
+  const sopAt = (id: string) => wcase.sop?.find((s) => s.id === id)?.actedAt;
   const horizon = t.stops[t.stops.length - 1]?.at ?? now;
   const cwMaxHourly = Math.max(0, ...(wcase.stateByTime ?? []).map((s) => Number.parseFloat(s.rows.find((r) => r.label === "상류 강우계")?.value ?? "")).filter((v) => Number.isFinite(v)));
   /* 강우 선택은 판 단계 id 이거나 슬라이더의 직접 배율("x:1.35"). 판 사이는 보간(cw-interp) */
@@ -330,7 +344,7 @@ const changwoncheonSite = (): FloodSite | null => {
     const r = c.rain ?? rainSteps[0]?.id ?? "now";
     return r.startsWith("x:") ? Number(r.slice(2)) : CW_FACTORS.find((f) => f.stepId === r)?.factor ?? 1;
   };
-  const interp = (c: Record<string, string>) => cwInterp(wcase, factorOf(c), actsOf(c.discharge ?? "actual"));
+  const interp = (c: Record<string, string>) => cwInterp(wcase, factorOf(c), actsOf(c));
   return {
     id: "changwoncheon",
     label: wcase.title,
@@ -342,20 +356,14 @@ const changwoncheonSite = (): FloodSite | null => {
     now,
     /* 이 사건의 수치는 원장이 아니라 시나리오 편집값이다(fixtures/changwoncheon/whatif.ts 머리말). 화면엔 "편집"을 적지 않는다(2026-09-17 사용자) — 근거 창이 말한다 */
     dateLabel: `${now.slice(0, 10).replace(/-/g, ".")} 재현 · ${now.slice(11, 16)} 기준`,
+    /* 조치(방류 · 통제)는 조건 축이 아니라 규정 줄의 스위치다(sopApply) */
     conditions: [
       { id: "rain", label: "강우", kind: "조건", stateLabel: t.conditions[0]?.stateLabel, options: rainSteps.map((s) => ({ id: s.id, label: s.label, detail: s.detail, factor: s.factor })) },
-      {
-        id: "discharge", label: "상류 저류지 방류", kind: "조치",
-        options: [
-          { id: "actual", label: "실제 · 15:05", detail: "그날 한 대로" },
-          { id: "early", label: `${now.slice(11, 16)} 조기 방류`, detail: "예측 발생 즉시" },
-        ],
-      },
     ],
-    defaults: { rain: rainSteps[0]?.id ?? "now", discharge: "actual" },
+    defaults: { rain: rainSteps[0]?.id ?? "now" },
     boardOf: (c) => interp(c).forecast,
     baselineOf: (c) => cwInterp(wcase, factorOf(c), {}).forecast,
-    describeChoice: (c) => [factorOf(c) !== 1 ? `강우 당시 × ${factorOf(c)}` : null, (c.discharge ?? "actual") === "early" ? `${now.slice(11, 16)} 조기 방류` : null].filter(Boolean).join(" · ") || "그날 그대로",
+    describeChoice: (c) => [factorOf(c) !== 1 ? `강우 당시 × ${factorOf(c)}` : null, c.S2 ? `${c.S2} 방류` : null, c.S3 ? `${c.S3} 통제` : null].filter(Boolean).join(" · ") || "그날 그대로",
     slider: {
       condId: "rain", min: 1, max: 1.5, step: 0.05,
       anchors: [
@@ -377,9 +385,12 @@ const changwoncheonSite = (): FloodSite | null => {
       levelLabel: "합류부 수위",
       surfaceGeometryId: "GEO-CW-L20",
     },
-    /* S2 상류 저류지 방류 — 규정 발동 시각(14:35)에 했다면. 시나리오가 아니라 SOP 줄의 스위치다.
-     ⚠ "방류를 아예 안 한 판"은 없다 — 픽스처가 "안 함 = 실제 15:05 방류 그대로"로 정의한다(whatif.ts TRAIN_BASE). 비교는 실제 시각 | 규정 시각이다 */
-    sopApply: { S2: { label: `규정 시각 ${now.slice(11, 16)}에 방류했다면`, apply: (c) => ({ ...c, discharge: "early" }) } },
+    /* S2 상류 저류지 방류 · S3 하구 천변도로 통제 — 시각을 앞당겼다면. 둘 다 켤 수 있고 조합 판이 전부 있다(whatif.ts CW_TRAINING_COMBOS).
+     ⚠ "방류를 아예 안 한 판"은 없다 — 픽스처가 "안 함 = 실제 15:05 방류 그대로"로 정의한다(whatif.ts TRAIN_BASE). 스위치를 끈 상태가 실제 시각이다 */
+    sopApply: {
+      S2: { label: "시각을 앞당겼다면", times: earlyTimes(sopAt("S2")), apply: (c, at) => ({ ...c, S2: at }) },
+      S3: { label: "시각을 앞당겼다면", times: earlyTimes(sopAt("S3")), apply: (c, at) => ({ ...c, S3: at }) },
+    },
     marks: {
       areaHa: CW_FLUDMARKS_HA,
       floodedAt: (c) => cwMarksFloodedAt(wcase, factorOf(c), 50, now, horizon),
@@ -390,7 +401,7 @@ const changwoncheonSite = (): FloodSite | null => {
     /* 창원천은 사건이 든 규정(S1 둔치 통제 · S2 상류 저류지 방류 · S3 천변도로 통제)만. 봉암 표본을 끌어오지 않는다(지명이 틀린다) */
     sop: sopOfCase(wcase, CW_SOP_FACILITIES),
     extraFacilities: [],
-    actionsOf: (c) => actionsOfCase(wcase, actsOf(c.discharge ?? "actual"), CW_SOP_FACILITIES),
+    actionsOf: (c) => actionsOfCase(wcase, actsOf(c), CW_SOP_FACILITIES),
     wcase,
   };
 };

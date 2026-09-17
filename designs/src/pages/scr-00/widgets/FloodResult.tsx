@@ -5,7 +5,7 @@
  *                      실측은 같은 상자의 바닥 줄. 아래에 "지도에 기준 겹쳐 보기" 스위치 한 줄
  *   그 시각 영향       침수 범위 · 수심 타일과 영향 객체 상자(과거 침수 지점도 한 줄로)
  *   해당 규정          기존 SOP 를 **매칭**한다(발동이 아니다). 조치 기록이 있으면 같은 줄에 시각이 선다. 조치 이력을 따로 두지 않는다.
- *                      환경을 바꾸는 규정(방류 · 펌프)엔 "규정 시각 hh:mm 에 …했다면" 스위치가 붙는다 — 켜면 그 열이 다시 계산된다
+ *                      판이 있는 규정엔 "시각을 앞당겼다면" 스위치와 시각 칩이 붙는다 — 켜면 그 열이 다시 계산되고, 여럿을 동시에 켤 수 있다
  *   근거               버튼 하나. 출처·산식·범례 문장은 전부 그 창에 있다
  * ★ 좌 = 입력, 우 = 결과. 절 = 머리 한 줄 + 상자 하나(panel-style). 시나리오를 고르는 자리는 좌측 하나뿐이라 여기 표 머리는 버튼이 아니다.
  * ★ "당시 실제로 이 SOP 가 실행됐다"고 말하지 않는다. "이 조건이면 이 SOP 가 해당된다"만 말한다.
@@ -23,7 +23,7 @@ import { PANEL } from "./panel-style";
 const LEVEL_LABEL: Record<AlertLevel, string> = { advisory: "주의보", warning: "경보", evacuate: "대피" };
 const LEVEL_RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
 
-export function FloodResult({ base, selected, summaries, observed, at, depthNow, headroomM, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, sopApply, sopOn, onToggleSop, compare, onCompare, onBasis }: {
+export function FloodResult({ base, selected, summaries, observed, at, depthNow, headroomM, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, sopApply, sopOn, onSop, compare, onCompare, onBasis }: {
   /** 비교의 왼쪽 열 — 기준 시나리오. 규정 스위치를 켰으면 "그 규정을 실제 시각에 했을 때" */
   base: SimScenario;
   selected: SimScenario;
@@ -45,10 +45,11 @@ export function FloodResult({ base, selected, summaries, observed, at, depthNow,
   /** 켜진 시설 id — 규정 줄·영향 객체 줄과 지도 마커가 같은 집합을 본다 */
   focus: Set<string>;
   onFocus: (facilityIds: string[] | null) => void;
-  /** 스위치를 붙일 규정 id → 스위치 문구("규정 시각 14:35에 방류했다면"). 환경을 바꾸는 규정만 */
-  sopApply: Record<string, string>;
-  sopOn: string | null;
-  onToggleSop: (id: string) => void;
+  /** 스위치를 붙일 규정 id → 문구와 고를 수 있는 조치 시각(판이 있는 것만). 켜면 첫 시각, 칩으로 바꾼다 */
+  sopApply: Record<string, { label: string; times: { at: string; label: string }[] }>;
+  /** 켜진 규정 id → 고른 시각(HH:MM) */
+  sopOn: Record<string, string>;
+  onSop: (id: string, at: string | null) => void;
   compare: boolean;
   onCompare: (v: boolean) => void;
   onBasis: () => void;
@@ -153,7 +154,8 @@ export function FloodResult({ base, selected, summaries, observed, at, depthNow,
                   <span className="min-w-0 break-keep text-foreground">{i.label}</span>
                 </span>
                 <span className={cn("shrink-0 font-mono", i.status === "영향" || i.status === "범위 안" ? "text-danger" : i.status === "예상" ? "text-warning" : "text-success")}>
-                  {i.status === "예상" && i.at ? `${formatClock(i.at)} 예상` : i.status === "영향" && i.exposure ? i.exposure : i.status}
+                  {/* 통제·대피가 앞선 대상은 도달 전에도 "통제됨"이다 — 규정을 켠 효과가 도달 전에 보여야 한다 */}
+                  {i.status === "예상" && i.at ? (i.exposure === "통제됨" ? `통제됨 · ${formatClock(i.at)} 도달` : `${formatClock(i.at)} 예상`) : i.status === "영향" && i.exposure ? i.exposure : i.status}
                 </span>
               </span>
               {/* 공간 교차가 덧붙인 한마디 — "범위 안 약 320 m" */}
@@ -180,7 +182,8 @@ export function FloodResult({ base, selected, summaries, observed, at, depthNow,
             const ev = actions.find((a) => a.id === s.id || a.id === `sop-${s.id}`);
             const done = ev ? isPast(ev.at, at) : false;
             const style = ev && ev.kind !== "규정" ? ACTION_STYLE[ev.kind] : ACTION_STYLE.규정;
-            const applyLabel = sopApply[s.id];
+            const spec = sopApply[s.id];
+            const chosen = sopOn[s.id] ?? null;
             return (
               <li
                 key={s.id}
@@ -199,12 +202,24 @@ export function FloodResult({ base, selected, summaries, observed, at, depthNow,
                     : <span className="shrink-0 font-mono text-foreground-subtle">{LEVEL_LABEL[s.from]}부터</span>}
                 </span>
                 {s.detail && <span className="break-keep pl-5 text-caption leading-snug text-foreground-subtle">{s.detail}</span>}
-                {/* 환경을 바꾸는 규정만 — 켜면 "규정 시각에 했다면"이 오른쪽 열로 서고 결과가 다시 계산된다. 전파·통제는 스위치가 없다(물이 안 바뀐다) */}
-                {applyLabel && (
-                  <label className={cn(PANEL.switchRow, "mt-1 w-full pl-5 pr-0", sopOn === s.id ? "text-foreground" : "")}>
-                    <span className="break-keep">{applyLabel}</span>
-                    <Switch checked={sopOn === s.id} onCheckedChange={() => onToggleSop(s.id)} aria-label={applyLabel} />
-                  </label>
+                {/* 판이 있는 규정만 — 켜면 "앞당겼다면"이 오른쪽 열로 서고 결과가 다시 계산된다. 시각 칩은 판이 있는 시각뿐 */}
+                {spec && (
+                  <div className="mt-1 flex w-full flex-col gap-1 pl-5">
+                    <label className={cn(PANEL.switchRow, "pr-0", chosen ? "text-foreground" : "")}>
+                      <span className="break-keep">{spec.label}</span>
+                      <Switch checked={chosen !== null} onCheckedChange={(v) => onSop(s.id, v ? spec.times[0]?.at ?? null : null)} aria-label={`${s.label} · ${spec.label}`} />
+                    </label>
+                    {chosen && spec.times.length > 1 && (
+                      <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="조치 시각">
+                        {spec.times.map((t) => (
+                          <button key={t.at} type="button" role="radio" aria-checked={chosen === t.at} onClick={() => onSop(s.id, t.at)}
+                            className={cn("cursor-pointer rounded-md border px-2 py-0.5 text-caption", chosen === t.at ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-foreground-muted hover:text-foreground")}>
+                            <span className="font-mono">{t.at}</span> · {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </li>
             );

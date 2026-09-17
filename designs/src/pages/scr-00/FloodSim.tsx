@@ -38,6 +38,7 @@ import { SimBasisDialog } from "./widgets/SimBasisDialog";
 import { SimScenarios } from "./widgets/SimScenarios";
 import { FacilityMarkers } from "./widgets/FacilityMarkers";
 import type { ScenePoint } from "../../model/scene";
+import type { SimScenario } from "../../model/sim/flood";
 import { FloodResult } from "./widgets/FloodResult";
 import { TimeAxis } from "./widgets/TimeAxis";
 
@@ -65,15 +66,28 @@ export function FloodSim() {
   const custom = useMemo(() => (rf && site.slider ? { [site.slider.condId]: site.slider.encode(Number(rf)), ...(params.get("rl") ? { lim: params.get("rl") as string } : {}) } : null), [rf, site, params]);
   const scenarios = useMemo(() => scenariosOf(site, custom), [site, custom]);
   const picked = scenarios.find((s) => s.id === params.get("sc")) ?? scenarios[0];
-  /* "이 규정대로 하면" — 관련 SOP 줄의 스위치. 켜면 고른 시나리오에 그 SOP 를 규정 시각에 적용한 열이 하나 더 서고 그것을 본다 */
-  const sopOn = params.get("sop");
-  const sopSpec = sopOn && site.sopApply?.[sopOn] ? site.sopApply[sopOn] : null;
-  const selected = useMemo(
-    () => (sopSpec && sopOn ? { id: `${picked.id}+${sopOn}`, tag: "규정대로", label: `${picked.label} · ${sopSpec.label}`, choice: sopSpec.apply(picked.choice), baseline: false } : picked),
-    [picked, sopSpec, sopOn],
-  );
-  /* 비교의 왼쪽 열 — SOP 를 켰으면 "그 규정을 안 했을 때"(고른 시나리오), 아니면 기준 시나리오. 표는 이 둘만 세운다 */
-  const baseCol = sopSpec ? picked : scenarios[0];
+  /* 규정 스위치 — `sop=S2@14:35,S3@14:55`. 켜진 규정을 고른 시나리오에 그 시각으로 적용한 열이 하나 더 서고 그것을 본다. 여럿을 동시에 켤 수 있다 */
+  const sopParam = params.get("sop") ?? "";
+  const sopOn = useMemo<Record<string, string>>(() => Object.fromEntries(
+    sopParam.split(",").map((x) => x.split("@")).filter(([id, at]) => id && at && site.sopApply?.[id]?.times.some((t) => t.at === at)).map(([id, at]) => [id, at]),
+  ), [sopParam, site]);
+  const sopIds = Object.keys(sopOn);
+  const selected = useMemo<SimScenario>(() => {
+    if (!sopIds.length || !site.sopApply) return picked;
+    const apply = site.sopApply;
+    return {
+      id: `${picked.id}+${sopIds.join("+")}`, tag: "규정대로",
+      label: `${picked.label} · ${sopIds.map((id) => `${site.sop.find((s) => s.id === id)?.label ?? id} ${sopOn[id]}`).join(" · ")}`,
+      choice: sopIds.reduce((c, id) => apply[id].apply(c, sopOn[id]), picked.choice), baseline: false,
+    };
+  }, [picked, site, sopIds, sopOn]);
+  const setSop = (id: string, at: string | null) => {
+    const next = { ...sopOn };
+    if (at) next[id] = at; else delete next[id];
+    setQuery({ sop: Object.entries(next).map(([k, v]) => `${k}@${v}`).join(",") || null });
+  };
+  /* 비교의 왼쪽 열 — 규정을 켰으면 "그 규정을 실제 시각에 했을 때"(고른 시나리오), 아니면 기준 시나리오. 표는 이 둘만 세운다 */
+  const baseCol = sopIds.length ? picked : scenarios[0];
   const columns = useMemo(() => (baseCol.id === selected.id ? [baseCol] : [baseCol, selected]), [baseCol, selected]);
   const setQuery = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(window.location.search);
@@ -325,9 +339,9 @@ export function FloodSim() {
             <FloodResult
               base={baseCol}
               selected={selected}
-              sopApply={Object.fromEntries(Object.entries(site.sopApply ?? {}).map(([id, v]) => [id, v.label]))}
-              sopOn={sopSpec ? sopOn : null}
-              onToggleSop={(id) => setQuery({ sop: sopOn === id ? null : id })}
+              sopApply={Object.fromEntries(Object.entries(site.sopApply ?? {}).map(([id, v]) => [id, { label: v.label, times: v.times }]))}
+              sopOn={sopOn}
+              onSop={setSop}
               summaries={summaries}
               observed={site.observed}
               at={at}
