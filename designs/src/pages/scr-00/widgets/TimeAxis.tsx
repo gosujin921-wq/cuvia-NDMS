@@ -43,11 +43,12 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
         >
           <Icon icon={playing ? "mdi:pause" : "mdi:play"} className="size-5" aria-hidden />
         </button>
-        {/* 시계·배지는 고정 폭 — 값마다 폭이 달라지면 트랙이 좌우로 흔들린다(2026-09-17 사용자) */}
-        <span className="w-[66px] shrink-0 font-mono text-[20px] font-bold leading-none tracking-tight text-foreground tabular-nums">{formatClock(at)}</span>
-        {/* 상자 없이 글자만 — 폭은 고정, 왼쪽 정렬(2026-09-17 사용자) */}
-        <span className={cn("w-[96px] shrink-0 truncate text-left font-mono text-caption", m === 0 ? "text-primary-text" : "text-warning")}>
-          {m === 0 ? "현재" : `+${m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60 ? `${m % 60}분` : ""}`.trim() : `${m}분`}`}
+        {/* 시계·경과는 고정 폭 — 값마다 폭이 달라지면 트랙이 좌우로 흔들린다. 둘은 바짝 붙인다(2026-09-17 사용자) */}
+        <span className="flex shrink-0 items-baseline gap-1.5">
+          <span className="w-[60px] font-mono text-[20px] font-bold leading-none tracking-tight text-foreground tabular-nums">{formatClock(at)}</span>
+          <span className={cn("w-[92px] truncate text-left font-mono text-caption", m === 0 ? "text-primary-text" : "text-warning")}>
+            {m === 0 ? "현재" : `+${m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60 ? `${m % 60}분` : ""}`.trim() : `${m}분`}`}
+          </span>
         </span>
 
         <span className="relative mx-1 h-6 flex-1">

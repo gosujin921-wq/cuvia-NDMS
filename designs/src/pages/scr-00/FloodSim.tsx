@@ -99,15 +99,22 @@ export function FloodSim() {
   const origin = site.now;
   const end = forecast ? horizonOf(forecast) : plusMin(origin, 60);
   const span = spanMin(origin, end);
-  const [minutes, setMinutes] = useState(0);
+  /* 재생 시작점 — 물이 차오르기 조금 전(대상이 정한다). 시간축 범위는 그대로고, 첫 위치와 되풀이의 시작만 여기다 */
+  const playFromMin = useMemo(() => {
+    const iso = site.playFrom?.(selected.choice) ?? null;
+    return iso ? Math.max(0, Math.min(span, Math.round((new Date(iso).getTime() - new Date(origin).getTime()) / 60_000))) : 0;
+  }, [site, selected, origin, span]);
+  const playFromRef = useRef(playFromMin);
+  useEffect(() => { playFromRef.current = playFromMin; }, [playFromMin]);
+  const [minutes, setMinutes] = useState(() => playFromMin);
   const [playing, setPlaying] = useState(false);
-  useEffect(() => { setMinutes(0); setPlaying(false); }, [site.id]);
+  useEffect(() => { setMinutes(playFromRef.current); setPlaying(false); }, [site.id]);
   useEffect(() => {
     if (!playing) return;
     let raf = 0, last = performance.now();
     const tick = (now: number) => {
       const dm = (now - last) / PLAY_MS_PER_MIN;
-      if (dm >= 1) { last = now; setMinutes((m) => (m + Math.floor(dm) > span ? 0 : m + Math.floor(dm))); }
+      if (dm >= 1) { last = now; setMinutes((m) => (m + Math.floor(dm) > span ? playFromRef.current : m + Math.floor(dm))); }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);

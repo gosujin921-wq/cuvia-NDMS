@@ -115,6 +115,11 @@ export interface FloodSite extends SimSiteBase {
     /** 지형 채우기 패치를 찾는 링 id — 규칙은 링이 아니라 수위로 채우므로 하나면 된다 */
     surfaceGeometryId: string;
   };
+  /**
+   * 재생 시작 시각 — 물이 차오르기 시작하기 조금 전. 시간축 범위는 그대로 두고 재생과 첫 위치만 여기서 시작한다
+   * (2026-09-17 사용자 "타임라인이 중간부터 플레이"). 없으면 시작점에서
+   */
+  playFrom?(choice: Record<string, string>): string | null;
   /** 시가지 과거 침수 지점(생활안전지도 침수흔적도) — 실자료. 잠김 판정은 누적 강우 ≥ 한계강우량(p.41) */
   marks?: { areaHa: number; floodedAt(choice: Record<string, string>): string | null; note: string };
   /** 이 대상에 매칭되는 기존 SOP */
@@ -226,6 +231,8 @@ const seohangSite = (): FloodSite => {
       ];
     },
     observed: [{ label: "침수흔적도 · 권역 안 면적", value: `${OBS_AREA_HA} ha` }],
+    /* 물이 그릇 바닥에 고이기 시작하는 시각(누적 ≥ 한계강우량) 30분 전부터 — 아홉 시간 빈 지도를 보지 않게 */
+    playFrom: (c) => { const rc = ruleChoice(c); for (let m = 0; m <= 12 * 60; m += 1) if (cumulativeAt(m, rc.factor) >= rc.pLim) return new Date(new Date(RULE_START).getTime() + Math.max(0, m - 30) * 60_000).toISOString(); return null; },
     marks: {
       areaHa: OBS_AREA_HA,
       floodedAt: (c) => { const rc = ruleChoice(c); for (let m = 0; m <= 12 * 60; m += 1) if (cumulativeAt(m, rc.factor) >= rc.pLim) return new Date(new Date(RULE_START).getTime() + m * 60_000).toISOString(); return null; },
