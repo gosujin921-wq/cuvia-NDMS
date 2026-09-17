@@ -118,7 +118,7 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
           </dl>
         )}
         <p className="break-keep text-caption leading-snug text-foreground-subtle">
-          <span className="text-primary-text">파란 값</span>은 이 시나리오의 계산값, <span className="text-warning">주황 값</span>은 조건대로 환산한 관측값, 나머지는 당시 기록입니다
+          <span className="text-primary-text">파란 값</span>은 이 시나리오의 계산값, <span className="text-warning">주황 값</span>은 조건대로 환산한 관측값, 나머지는 관측 기록입니다
         </p>
       </section>
 

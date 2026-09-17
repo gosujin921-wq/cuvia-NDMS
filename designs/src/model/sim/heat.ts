@@ -142,6 +142,25 @@ export function summarizeHeat(field: TemperatureField, offset: number, anchorCel
   return { maxFeel, maxFeelAt: hourIso(field, maxH), advisoryHours, warningHours, advisoryAt, warningAt, hotCells, hotShare: hotCells / n, feelAvailable };
 }
 
+/** 고온 지속 지역의 칸 링 — 지도에 면으로 세운다. 판정은 `summarizeHeat` 와 같은 규칙(33°C↑ 가 HOT_HOURS 이상 연속) */
+export function hotCellRings(field: TemperatureField, offset: number): LngLat[][] {
+  const [west, south] = field.bbox;
+  const half = field.step / 2;
+  const H = field.hours.length;
+  const out: LngLat[][] = [];
+  for (let iy = 0; iy < field.ny; iy += 1) {
+    for (let ix = 0; ix < field.nx; ix += 1) {
+      const c = iy * field.nx + ix;
+      let run = 0, best = 0;
+      for (let h = 0; h < H; h += 1) { const v = feelOf(field, h, c, offset).feel ?? field.temp[h][c] + offset; run = v >= HEAT_ADVISORY ? run + 1 : 0; if (run > best) best = run; }
+      if (best < HOT_HOURS) continue;
+      const x0 = west + ix * field.step - half, y0 = south + iy * field.step - half;
+      out.push([[x0, y0], [x0 + field.step, y0], [x0 + field.step, y0 + field.step], [x0, y0 + field.step]]);
+    }
+  }
+  return out;
+}
+
 /** 그 시각(분 단위) 기준 칸의 상태 줄 — 시각 사이는 직선 보간 */
 export function heatStateAt(field: TemperatureField, offset: number, anchorCell: number, minutesFromStart: number): { rows: StateRow[]; feel: number | null; hourIndex: number } {
   const H = field.hours.length;

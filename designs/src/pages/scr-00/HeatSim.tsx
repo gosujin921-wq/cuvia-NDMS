@@ -14,7 +14,7 @@ import { GlassPanel } from "@ds";
 import { useMapLibre } from "../../lib/useMapLibre";
 import { CENTER_LEFT, CENTER_RIGHT, EDGE, FAB_SIZE, LEFT_RAIL, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP, utilStripStyle } from "../../lib/layout";
 import { ensureHillshade, setBuildings3D, setHillshadeVisible, setTerrain } from "../../lib/flood-scene";
-import { cssColor } from "../../lib/map-polygon";
+import { cssColor, setPolygonLayerVisible, upsertMultiPolygonLayer } from "../../lib/map-polygon";
 import { loadTemperatureField, type TemperatureField } from "../../lib/temperature-field";
 import { ensureTemperatureLayer, repaintTemperature, setTemperatureVisible } from "../../lib/temperature-layer";
 import { formatClock } from "../../lib/datetime";
@@ -24,7 +24,7 @@ import { MapUtilStrip } from "../../components/MapUtilStrip";
 import { ContextInset } from "../../components/twin/ContextInset";
 import { useHeatDomeData } from "../../components/heat-dome";
 import { scenariosOf } from "../../model/sim/flood";
-import { cellIndexOf, fieldRange, fieldValuesAt, heatSite, heatStateAt, hotShareAt, HEAT_ADVISORY, HEAT_WARNING, offsetOf, summarizeHeat } from "../../model/sim/heat";
+import { cellIndexOf, fieldRange, fieldValuesAt, heatSite, heatStateAt, hotCellRings, hotShareAt, HEAT_ADVISORY, HEAT_WARNING, offsetOf, summarizeHeat } from "../../model/sim/heat";
 import { SimScenarios } from "./widgets/SimScenarios";
 import { HeatResult } from "./widgets/HeatResult";
 import { TimeAxis } from "./widgets/TimeAxis";
@@ -32,6 +32,7 @@ import { TimeAxis } from "./widgets/TimeAxis";
 /** 시 전역 배율 — 격자가 1.5 km 라 동네 배율에선 한 색이다. 어느 동네가 뜨거운지는 시역이 다 보여야 읽힌다 */
 const CITY_ZOOM = SCOPE_ZOOM.구역 - 3.2;
 const PLAY_MS_PER_MIN = 40;
+const HOT_SOURCE = "sim-heat-hot";
 const plusMin = (iso: string, m: number) => new Date(new Date(iso).getTime() + m * 60_000).toISOString();
 
 export function HeatSim() {
@@ -84,7 +85,7 @@ export function HeatSim() {
   /* ── 지도 — 체감온도 색면. 시각·시나리오가 바뀌면 같은 램프로 다시 칠한다 ── */
   const mapContainer = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(mapContainer, { center: site.anchor, zoom: CITY_ZOOM, pitch: 0, capture: true });
-  const [layers, setLayers] = useState({ temp: true });
+  const [layers, setLayers] = useState({ temp: true, hot: true });
   useEffect(() => {
     const m = map.current;
     if (!ready || !m) return;
@@ -101,6 +102,14 @@ export function HeatSim() {
     repaintTemperature(m, field, fieldValuesAt(field, state.hourIndex, offset), range);
     setTemperatureVisible(m, layers.temp);
   }, [map, ready, field, range, state.hourIndex, offset, layers.temp]);
+  /* 고온 지속 지역 — 33°C↑ 가 3시간 넘게 이어지는 칸을 면으로. 색면이 "지금 어디가 뜨거운가"라면 이것은 "어디에 오래 남는가"다 */
+  const hotRings = useMemo(() => (field ? hotCellRings(field, offset) : []), [field, offset]);
+  useEffect(() => {
+    const m = map.current;
+    if (!ready || !m) return;
+    upsertMultiPolygonLayer(m, HOT_SOURCE, hotRings, { fill: cssColor("--color-danger", "#ef4444"), line: cssColor("--color-danger", "#ef4444"), opacity: 0.2 }, 0);
+    setPolygonLayerVisible(m, HOT_SOURCE, layers.hot);
+  }, [map, ready, hotRings, layers.hot]);
 
   const dome = useHeatDomeData(undefined, true);
   const ticks = useMemo(() => (field ? field.hours.map((_, h) => plusMin(origin, h * 60)) : []), [field, origin]);
@@ -146,9 +155,12 @@ export function HeatSim() {
           onReset={() => map.current?.easeTo({ center: site.anchor, zoom: CITY_ZOOM, pitch: 0, bearing: 0, duration: 500 })}
           layers={[{
             title: "열환경",
-            items: [{ id: "temp", label: "체감온도 색면", color: cssColor("--color-warning", "#eb6834"), icon: "mdi:thermometer", shape: "raster" as const, visible: layers.temp }],
+            items: [
+              { id: "temp", label: "체감온도 색면", color: cssColor("--color-warning", "#eb6834"), icon: "mdi:thermometer", shape: "raster" as const, visible: layers.temp },
+              { id: "hot", label: "고온 지속 지역", color: cssColor("--color-danger", "#ef4444"), icon: "mdi:vector-square", shape: "area" as const, visible: layers.hot },
+            ],
             onToggle: (id) => setLayers((p) => ({ ...p, [id as keyof typeof p]: !p[id as keyof typeof p] })),
-            onSetAll: (visible) => setLayers({ temp: visible }),
+            onSetAll: (visible) => setLayers({ temp: visible, hot: visible }),
           }]}
         />
       </div>

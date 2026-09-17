@@ -75,6 +75,28 @@ export function upsertPolygonLayer(map: maplibregl.Map, id: string, ring: Ring |
   }
 }
 
+/**
+ * 링 여럿을 한 층에 — 폭염 "고온 지속 지역"(격자 칸 묶음)처럼 면이 여러 조각일 때(2026-09-17 · /scr-00).
+ * 조각마다 층을 만들면 수백 층이 되므로 MultiPolygon 하나로 싣는다. 외곽선은 점선이 아니라 실선이다(범위가 아니라 판정 결과).
+ */
+export function upsertMultiPolygonLayer(map: maplibregl.Map, id: string, rings: Ring[], paint: PolygonPaint, lineWidth = 1) {
+  const data = rings.length > 0
+    ? { type: "Feature" as const, geometry: { type: "MultiPolygon" as const, coordinates: rings.map((r) => [[...r, r[0]]]) }, properties: {} }
+    : null;
+  const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
+  if (!src) {
+    map.addSource(id, { type: "geojson", data: data ?? EMPTY });
+    map.addLayer({ id: `${id}-fill`, type: "fill", source: id, paint: { "fill-color": paint.fill, "fill-opacity": paint.opacity } });
+    /* 격자 칸 묶음은 테두리를 0 으로 — 칸마다 선이 서면 판정 결과가 아니라 격자 도면으로 읽힌다 */
+    map.addLayer({ id: `${id}-line`, type: "line", source: id, paint: { "line-color": paint.line, "line-width": lineWidth } });
+  } else {
+    src.setData(data ?? EMPTY);
+    map.setPaintProperty(`${id}-fill`, "fill-color", paint.fill);
+    map.setPaintProperty(`${id}-fill`, "fill-opacity", paint.opacity);
+    map.setPaintProperty(`${id}-line`, "line-color", paint.line);
+  }
+}
+
 /** 층 표시 토글 — 만들기 전이면 아무 일도 없다 */
 export function setPolygonLayerVisible(map: maplibregl.Map, id: string, visible: boolean) {
   for (const layer of [`${id}-fill`, `${id}-line`]) {

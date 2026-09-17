@@ -122,7 +122,9 @@ const seohangSite = (demoNow: Date): FloodSite => {
     defaults: { rain: "fc", pump: "off" },
     boardOf: (c) => board(c.rain ?? "fc", c.pump ?? "off"),
     baselineOf: (c) => board(c.rain ?? "fc", "off"),
-    currentRows: (now) => {
+    currentRows: (at) => {
+      /* 진행 중 사건의 관측은 **지금까지**만 있다. 시간축을 미래로 옮겨도 관측 줄은 현재 값에 머문다(미래 관측을 지어내지 않는다) */
+      const now = at.getTime() > demoNow.getTime() ? demoNow : at;
       const rows: StateRow[] = [];
       const wl = devicesOf("seohang").find((d) => d.kind === "WL");
       if (wl) {
