@@ -207,6 +207,28 @@ export function FacilityPin({
   );
 }
 
+interface SitePinProps {
+  /** 지도 주변 주체 — 지하차도·대피소·마을방송·조위관측소 (fixtures sitePointsOf) */
+  point: { kind: string; label: string; icon: string; color?: string };
+  onClick?: (e: React.MouseEvent) => void;
+}
+
+/** 주변 주체 핀 — 장치 핀과 같은 원형 글라스 칩. 상태를 받지 않는 자리라 배지 없이 종류만 말한다 */
+export function SitePin({ point, onClick }: SitePinProps) {
+  return (
+    <MapMarker
+      className="pointer-events-auto"
+      variant="facility"
+      icon={point.icon}
+      size={DEVICE_PIN_SIZE}
+      color={point.color}
+      picker={{ title: point.label, rows: [{ label: "종류", value: point.kind }] }}
+      onClick={onClick}
+      aria-label={`${point.kind} · ${point.label}`}
+    />
+  );
+}
+
 interface EventPinProps {
   type: EventType;
   level: AlertLevel;

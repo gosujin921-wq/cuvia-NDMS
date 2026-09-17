@@ -49,20 +49,16 @@ const SECTIONS: { id: SectionId; label: string; question: string }[] = [
   { id: "timeline", label: "경과", question: "전부 어떤 순서였나" },
 ];
 
-export function IncidentRecordModal({ record, all, now, focusCase, onClose, onOpenReport, onOpenWorkspace, onOpenIncident }: {
+export function IncidentRecordModal({ record, now, focusCase, onClose, onOpenReport, onOpenWorkspace }: {
   record: IncidentRecord | null;
-  /** 같은 원장의 사건 전부 — 이 사건에 병합된 사건을 찾는다 */
-  all: IncidentRecord[];
   now: Date;
   /** D8 종료로 들어왔는가 — ⑤ 예측 검증 절로 연다 */
   focusCase: boolean;
   onClose: () => void;
   onOpenReport: (reportId: string) => void;
   onOpenWorkspace: (districtId: string) => void;
-  /** 병합된 사건 → 기준 사건 기록으로 */
-  onOpenIncident: (incidentId: string) => void;
 }) {
-  const dossier = useMemo(() => (record ? incidentDossierAt(record, now, all) : null), [record, now, all]);
+  const dossier = useMemo(() => (record ? incidentDossierAt(record, now) : null), [record, now]);
   const entries = useMemo(() => (record ? incidentTimelineAt(record, now) : []), [record, now]);
   const cases = useMemo(() => (record?.hasLedger ? predictionCasesAt(record.incidentId, now) : []), [record, now]);
 
@@ -180,7 +176,7 @@ export function IncidentRecordModal({ record, all, now, focusCase, onClose, onOp
           ) : (
             /* 케이스가 없어도 훈련이 남긴 개선 항목은 여기 선다 — 예측 검증과 한 목록(README §2.3) */
             <div className="flex flex-col gap-3">
-              <CaseEmpty record={record} onOpenIncident={onOpenIncident} />
+              <CaseEmpty record={record} />
               <ImprovementList incidentId={record.incidentId} verified={[]} hideWhenEmpty />
             </div>
           )}
@@ -481,26 +477,12 @@ function ResponseSection({ dossier }: { dossier: IncidentDossier }) {
 }
 
 /* ── ⑤ 예측 검증이 없는 까닭 — 상태마다 다르다. 없는 것을 빈칸으로 두지 않고 왜 없는지 말한다 ── */
-function CaseEmpty({ record, onOpenIncident }: { record: IncidentRecord; onOpenIncident: (id: string) => void }) {
+function CaseEmpty({ record }: { record: IncidentRecord }) {
   if (record.status === "진행 중") {
     return <EmptyState variant="inline" icon="mdi:timer-sand" message="사건이 종료되면 예측 검증이 생깁니다" description="예측과 실제를 견주려면 실제 결과가 있어야 합니다." />;
   }
   if (record.status === "오탐") {
     return <EmptyState variant="inline" icon="mdi:close-circle-outline" message="오탐으로 닫힌 사건은 예측 검증을 하지 않습니다" />;
-  }
-  if (record.status === "병합" && record.mergedInto) {
-    return (
-      <EmptyState
-        variant="inline"
-        icon="mdi:call-merge"
-        message="병합된 사건은 기준 사건에서 검증합니다"
-        action={
-          <Button variant="outline" size="sm" onClick={() => onOpenIncident(record.mergedInto!)}>
-            기준 사건 기록 보기
-          </Button>
-        }
-      />
-    );
   }
   return <EmptyState variant="inline" icon="mdi:compare-horizontal" message="이 사건에는 예측 대 실제 기록이 없습니다" />;
 }

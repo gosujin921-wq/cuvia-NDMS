@@ -23,6 +23,9 @@ import { DistrictHoverProvider } from "../../lib/district-hover";
 import { DISTRICTS, type DistrictKind } from "../../demo/districts";
 import { districtStatusAt, incidentsAt, riskCountsAt, topIncidentByDistrictAt, watchTargetsAt, type FeedItem } from "../../model/selectors";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
+import { ContextInset } from "../../components/twin/ContextInset";
+import { useHeatDomeData } from "../../components/heat-dome";
+import { HAZARD_COLOR } from "../../lib/hazard-colors";
 import {
   AGENT_PILL_WIDTH,
   CENTER_LEFT,
@@ -65,7 +68,7 @@ const CITY_CENTER_FALLBACK: [number, number] = [128.667, 35.201];
 export function OverviewDashboardPage() {
   const navigate = useNavigate();
   /* Phase 2 시연 시계. AI 패널 열림은 아직 Phase 1 엔진 값 — 지도 조작 스트립이 그 폭만큼 비켜 선다 */
-  const { demoNow: now, agentOpen } = useScenario();
+  const { demoNow: now, agentOpen, domeInsetOn, setDomeInsetOn } = useScenario();
   const mapContainer = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(mapContainer);
   /* 지도를 덮는 세 요소 — 시 전체 맞춤이 이들의 실제 크기를 재서 비운다 */
@@ -116,6 +119,10 @@ export function OverviewDashboardPage() {
   const [tempOn, setTempOn] = useState(false);
   useWindLayer(map, ready, windOn);
   useTemperatureLayer(map, ready, tempOn);
+  /* 열돔 · 상층 기압 높이 — 광역 현상이라 시 지도에 못 얹고 좌측 레일 위 지구본 인셋으로 선다
+     (ContextInset E). 스위치는 시나리오 스토어가 든다 — 열돔 질의가 답과 함께 켠다(demo/ai showDome).
+     상층장 0.9MB 는 켰을 때만 받는다 */
+  const dome = useHeatDomeData(undefined, domeInsetOn);
 
   /* 행안부 침수 자료 2종 — 실시간 WMS. 시연 회선이 불안하면 꺼 둔 채로 간다(safemap.ts) */
   const [safemapOn, setSafemapOn] = useState<Record<string, boolean>>(() =>
@@ -159,6 +166,15 @@ export function OverviewDashboardPage() {
     },
     [map],
   );
+
+  /* 열돔 인셋이 켜지면 지도를 시 전체로 되돌리고 기온 색면도 같이 켠다 — 열돔은 도시 전체의 이야기라
+     지구 하나에 머문 지도로는 답과 그림이 어긋나고, 뚜껑(인셋)만 있고 그 아래 도시가 얼마나 뜨거운지(기온)가
+     지도에 없으면 "왜 뜨거운가"의 답이 반쪽이다(2026-09-17 "온도 왜 안떠"). 끌 때는 둘 다 그대로 둔다 */
+  useEffect(() => {
+    if (!ready || !domeInsetOn) return;
+    fitCounty(600);
+    setTempOn(true);
+  }, [ready, domeInsetOn, fitCounty]);
 
   useEffect(() => {
     if (!ready) return;
@@ -254,11 +270,24 @@ export function OverviewDashboardPage() {
                   icon: "mdi:thermometer",
                   visible: tempOn,
                 },
+                {
+                  /* 지도 층이 아니라 좌측 레일의 지구본 인셋을 켠다 — 자리만 다르고 성격은 기상 층이다 */
+                  id: "dome",
+                  label: "열돔",
+                  color: HAZARD_COLOR.열돔,
+                  icon: "mdi:earth",
+                  visible: domeInsetOn,
+                },
               ],
-              onToggle: (id) => (id === "wind" ? setWindOn((v) => !v) : setTempOn((v) => !v)),
+              onToggle: (id) => {
+                if (id === "wind") setWindOn((v) => !v);
+                else if (id === "temp") setTempOn((v) => !v);
+                else setDomeInsetOn(!domeInsetOn);
+              },
               onSetAll: (visible) => {
                 setWindOn(visible);
                 setTempOn(visible);
+                setDomeInsetOn(visible);
               },
               /* CC BY 4.0 출처 표기는 추후 한곳에 모아 정리한다(외부-API-인계 §3-4) */
             },
@@ -317,6 +346,12 @@ export function OverviewDashboardPage() {
       {/* 좌측 — 지구 현황 · 지구 목록(푸터 범례). 레일은 화면 바닥까지 내려간다.
           데이터 장애 줄은 상단 캡슐로 올라갔다(StatusStrip) */}
       <div className={`${RAIL_BASE} left-3`} style={{ width: LEFT_RAIL }}>
+        {/* 열돔 인셋 — 켜져 있고 자료가 왔을 때만. 인셋 폭(INSET_SIZE)이 레일 폭과 같다 */}
+        {domeInsetOn && dome.lower && dome.upper && (
+          <div className="shrink-0">
+            <ContextInset family="E" anchor={CITY_CENTER_FALLBACK} hour={now.getHours()} dome={dome} meta={dome.date ?? undefined} />
+          </div>
+        )}
         <GlassPanel className="pointer-events-auto shrink-0">
           <DistrictSummaryCard />
         </GlassPanel>

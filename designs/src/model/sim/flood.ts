@@ -17,11 +17,11 @@ import type { LngLat, SceneLayer, ScenePoint } from "../scene";
 import type { TwinFamily } from "../incident";
 import type { WhatIfCase } from "../whatif";
 import { INCIDENT_ID as SH_INCIDENT_ID } from "../../fixtures/seohang-flood/incident";
-import { SUBJECTS, SUBJECT_LOCATION } from "../../fixtures/seohang-flood/subjects";
+import { SITE_POINTS, SUBJECTS, SUBJECT_LOCATION, type SitePoint } from "../../fixtures/seohang-flood/subjects";
 import { CW_INCIDENT_ID } from "../../fixtures/changwoncheon/whatif";
 import { GEOMETRIES } from "../../fixtures";
 import { findWhatIfCase, whatIfStateRowsAt } from "../selectors";
-import { deviceKindSpec, devicesOf } from "../../demo/devices";
+import { findDevice } from "../../demo/devices";
 import { SOP_CATALOG as SH_SOP_CATALOG } from "../../fixtures/seohang-flood/sop";
 import { floodSurfaceOf } from "../../lib/flood-surfaces";
 import { formatMarkMetric, markMetricLabel } from "../../lib/forecast-twin";
@@ -340,41 +340,33 @@ const seohangSite = (): FloodSite => {
   };
 };
 
-/** 서항 SOP 표본 → 시설. 장치 id 는 `devicesOf("seohang")` 의 것이다 */
-const SH_DEVICES = devicesOf("seohang");
-const SH_BC = SH_DEVICES.filter((d) => d.kind === "BC");
+/** 서항 SOP 표본 → 시설. 대피소·마을방송·지하차도는 재난관제와 같은 목록(subjects SITE_POINTS)이다 */
+const SH_SITE = (kind: SitePoint["kind"]) => SITE_POINTS.filter((p) => p.kind === kind);
 /* 계측·CCTV 는 이 사건 픽스처의 지점(SUBJECT_LOCATION)이다 — 강우계 · 간선관로 수위계 · 해안도로 도로수위계 · 조위관측소 · CCTV 2.
    도로수위계는 규칙의 침수심, 강우계는 실자료 강도를 값으로 받고(facilityStateOf), 관로 수위·조위는 규칙에 없어 "계측 미연계"로 선다(지어내지 않는다) */
 const SH_SENSOR_IDS = [SUBJECTS.rainGauge, SUBJECTS.pipeLevel, SUBJECTS.roadLevel, SUBJECTS.tide] as const;
 const SH_CCTV_IDS = [SUBJECTS.cctvPump, SUBJECTS.cctvPole] as const;
-const SENSOR_ICON: Record<string, string> = { [SUBJECTS.rainGauge]: "mdi:weather-pouring", [SUBJECTS.pipeLevel]: "mdi:pipe", [SUBJECTS.roadLevel]: "mdi:waves-arrow-up", [SUBJECTS.tide]: "mdi:waves" };
+const SENSOR_ICON: Record<string, string> = { [SUBJECTS.rainGauge]: "mdi:weather-pouring", [SUBJECTS.pipeLevel]: "mdi:pipe", [SUBJECTS.roadLevel]: "mdi:waves-arrow-up", [SUBJECTS.tide]: SITE_POINTS.find((p) => p.id === SUBJECTS.tide)?.icon ?? "mdi:waves" };
 const SOP_LEVEL_RANK: Record<SimSop["from"], number> = { advisory: 0, warning: 1, evacuate: 2 };
 /** 트윈에 서는 조치 종류 — 물을 바꾸거나(시설 점검 = 펌프 재가동) 사람 노출을 바꾸는 것(도로 통제 · 대피 안내). 전파·통보·기록·현장 확인은 아니다 */
 const SH_TWIN_ACTION_KINDS = new Set<string>(["시설 점검", "도로 통제", "대피 안내"]);
 /* 카탈로그 id → 장면 점 id(scene.ts) · 장치 id. 차단 지점(a-block-*)은 도로가 통제된 눈금에만 서므로 규칙 판(통제 없음)에서는 해안도로 통제 줄이 시설 없이 선다 */
-/**
- * 대피소 — 저지대 건물에서 걸어 오를 수 있는 고지대 두 곳. 대피 권고를 켜면 여기가 켜진다.
- * ⚠ 교체 대상: 행안부 대피소 원장에 서항 지구 행이 오면 이름·좌표를 그것으로 바꾼다
- */
-const SH_SHELTER_POINTS: ScenePoint[] = [
-  { kind: "point", id: "sh-shelter-w", at: [128.5698, 35.2022], icon: "mdi:home-heart", label: "서항 대피소 (서)", state: "개방 가능", tone: "primary", small: true },
-  { kind: "point", id: "sh-shelter-e", at: [128.5755, 35.2008], icon: "mdi:home-heart", label: "서항 대피소 (동)", state: "개방 가능", tone: "primary", small: true },
-];
 const SH_SOP_FACILITIES: Record<string, string[]> = {
-  "SOP-10": SH_SHELTER_POINTS.map((p) => p.id),
+  "SOP-10": SH_SITE("대피소").map((p) => p.id),
   "SOP-01": [...SH_CCTV_IDS],
-  "SOP-03": SH_BC.map((d) => d.id),
+  "SOP-03": SH_SITE("마을방송").map((p) => p.id),
   "SOP-04": ["a-block-s", "a-block-n"],
   "SOP-05": ["a-pump", "a-retention"],
   "SOP-06": ["a-underpass"],
   "SOP-07": [SUBJECTS.cctvPole],
   "SOP-09": ["a-underpass"],
 };
+/* 지하차도는 예측 장면이 상태와 함께 그리고, 조위관측소는 계측 줄이 그린다 — 여기서는 대피소·마을방송만 더한다 */
 const SH_DEVICE_POINTS: ScenePoint[] = [
   ...SH_CCTV_IDS.map<ScenePoint>((id) => ({ kind: "point", id, at: SUBJECT_LOCATION[id].displayAnchor, icon: "mdi:cctv", label: SUBJECT_LOCATION[id].label, state: "정상", tone: "neutral", small: true })),
-  ...SH_BC.map<ScenePoint>((d) => ({ kind: "point", id: d.id, at: d.center, icon: deviceKindSpec(d.kind).icon, label: d.name, state: d.status, tone: d.status === "정상" ? "neutral" : "warning", small: true })),
+  ...SH_SITE("마을방송").map<ScenePoint>((p) => { const status = findDevice(p.id)?.status ?? "정상"; return { kind: "point", id: p.id, at: p.at, icon: p.icon, label: p.label, state: status, tone: status === "정상" ? "neutral" : "warning", small: true }; }),
   ...SH_SENSOR_IDS.map<ScenePoint>((id) => ({ kind: "point", id, at: SUBJECT_LOCATION[id].displayAnchor, icon: SENSOR_ICON[id], label: SUBJECT_LOCATION[id].label, state: "계측 미연계 · 재현", tone: "neutral", small: true })),
-  ...SH_SHELTER_POINTS,
+  ...SH_SITE("대피소").map<ScenePoint>((p) => ({ kind: "point", id: p.id, at: p.at, icon: p.icon, label: p.label, state: "개방 가능", tone: "primary", small: true })),
 ];
 
 /* ── 창원천 — 2024-08-28 재현. 판은 훈련 조합(강우 당시 · +20% · +50% × 방류 실제 15:05 · 14:35 조기) ── */

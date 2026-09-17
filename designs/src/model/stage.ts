@@ -21,7 +21,7 @@ export const DEMO_STAGE_SPECS: readonly DemoStageSpec[] = [
   { stage: 1, code: "D1", title: "이상 징후", question: "무엇이 변했는가", screen: "IA-02" },
   { stage: 2, code: "D2", title: "교차확인", question: "정말 같은 사건인가", screen: "IA-02" },
   { stage: 3, code: "D3", title: "현재 판단", question: "왜 위험한가", screen: "IA-02" },
-  { stage: 4, code: "D4", title: "기준 전망", question: "그대로 두면 어떻게 되는가", screen: "IA-03" },
+  { stage: 4, code: "D4", title: "기준 예측", question: "그대로 두면 어떻게 되는가", screen: "IA-03" },
   { stage: 5, code: "D5", title: "대안 비교", question: "무엇을 바꾸면 달라지는가", screen: "IA-03" },
   { stage: 6, code: "D6", title: "영향 기반 대응", question: "무엇을 결정할 것인가", screen: "IA-04" },
   { stage: 7, code: "D7", title: "실행 결과", question: "실제로 되었는가", screen: "IA-04" },

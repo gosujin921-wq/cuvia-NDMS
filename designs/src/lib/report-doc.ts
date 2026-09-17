@@ -9,19 +9,15 @@ import type { ReportDocumentProps } from "../components/ReportDocument";
 import type { Report } from "../demo/report";
 import type { AnalysisResult, TrainingRun } from "../model/whatif";
 import type { ReportRecord } from "../model/records";
-import { findEvent } from "../model/selectors";
 import { analysisReportOf } from "./analysis-report";
+import { formatStamp as stamp } from "./datetime";
+import { incidentReportOf } from "./incident-report";
 import { trainingReportOf } from "./training-report";
 
 /** 표 안의 시각 — HH:MM */
 const clock = (d: Date): string => {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
-};
-
-const stamp = (d: Date): string => {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
 /** 모의훈련 분석 보고서 — 저장된 분석 결과 한 건에서 (03 §26.10) */
@@ -39,7 +35,7 @@ export function analysisDocOf(a: AnalysisResult): ReportDocumentProps {
        "SOP 로 확정되지 않습니다" 같은 면책은 올리지 않는다(CLAUDE.md · 2026-09-16 사용자 "빼줘").
        대안 예측판이 사전 작성본이라는 사실은 사건별 whatif fixture 의 머리 주석이 든다 */
     notice: [
-      "대안은 실제로 일어난 일이 아니라 대응의 시점·수준·범위를 바꿨을 때의 전망입니다.",
+      "대안은 실제로 일어난 일이 아니라 대응의 시점·수준·범위를 바꿨을 때의 예측입니다.",
     ],
   };
 }
@@ -100,38 +96,11 @@ export function incidentDocOf(report: Report, docNo: string, subtitle: string): 
 /**
  * 이력의 사건 보고서 — 사건 원장의 REPORT_GENERATED 한 건에 문서 틀을 씌운다(IA §10.1 · 2026-09-16).
  *
- * 절 본문은 원장이 " · " 로 이어 적은 항목이라 한 줄씩 표로 편다. 절마다 근거 이벤트를 각주로 단다 —
- * 보고서의 값이 어느 기록에서 왔는지 문서 안에서 짚을 수 있어야 한다(IA §10 "근거 링크").
+ * 절·차트·요약 지표는 lib/incident-report 가 원장에서 엮는다. `now` 는 이력이 넘긴 시계다.
  */
-export function ledgerReportDocOf(rec: ReportRecord): ReportDocumentProps {
-  const { report: r, incident } = rec;
-  const occurred = new Date(incident.occurredAt);
-  const closed = incident.closedAt ? new Date(incident.closedAt) : null;
-  const report: Report = {
-    title: rec.title,
-    head: [
-      { label: "사건", value: incident.title },
-      { label: "범위", value: incident.scopeLabel },
-      { label: "재난유형", value: incident.hazardKind },
-      { label: "기간", value: `${stamp(occurred)} ~ ${closed ? clock(closed) : "진행 중"}` },
-      { label: "상태", value: `${r.status} · ${r.version}판` },
-    ],
-    sections: r.sections.map((s, i) => {
-      const evidence = s.evidenceEventIds
-        .map(findEvent)
-        .filter((e): e is NonNullable<ReturnType<typeof findEvent>> => Boolean(e))
-        .map((e) => `${clock(new Date(e.observedAt))} ${e.summary}`);
-      return {
-        id: `s${i + 1}`,
-        title: s.title,
-        rows: [],
-        table: { head: ["내용"], rows: s.body.split(" · ").map((line) => [line]) },
-        footnote: evidence.length ? `근거 · ${evidence.join(" · ")}` : undefined,
-      };
-    }),
-    timeline: [],
-    issuedAt: new Date(r.generatedAt),
-  };
+export function ledgerReportDocOf(rec: ReportRecord, now: Date): ReportDocumentProps {
+  const { report: r } = rec;
+  const report = incidentReportOf(rec, now);
   return {
     report,
     meta: [

@@ -25,6 +25,7 @@ import { latestValue } from "./measurements";
 import { floodImpactAt } from "./flood-impact";
 import { sopItemsFor, sopResultsFor, HERO_CONFIRMED_AT } from "./sop";
 import { CHANNELS, type DispatchRecord } from "./dispatch";
+import type { ReportChart, ReportStat } from "../model/report-chart";
 
 /** 문서의 한 절 — 화면은 이 배열을 순서대로 찍는다 */
 export interface ReportSection {
@@ -40,6 +41,8 @@ export interface ReportSection {
   footnote?: string;
   /** 절 안의 그림 한 장 — 분석 보고서의 "지도 결과" */
   figure?: { src: string; alt: string; caption?: string };
+  /** 절 머리에 서는 차트 — 표보다 먼저 읽힌다(양식: 절마다 차트 + 표). 값은 model/report-chart 계약 */
+  charts?: ReportChart[];
   /** 아직 일어나지 않아 비어 있는 절 */
   pending?: boolean;
 }
@@ -61,6 +64,8 @@ export interface Report {
   /** 문서 머리 — 사건 식별 */
   head: { label: string; value: string }[];
   sections: ReportSection[];
+  /** 식별 블록 아래 요약 지표 타일(양식의 발생 현황 요약). 없으면 세우지 않는다 */
+  stats?: ReportStat[];
   timeline: TimelineEntry[];
   /** 이 보고서를 뽑은 시각 */
   issuedAt: Date;

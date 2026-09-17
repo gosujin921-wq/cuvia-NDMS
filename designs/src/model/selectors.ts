@@ -11,7 +11,7 @@ import { ALTERNATIVE_LABEL, type Forecast } from "./forecast";
 import type { CityOperationalState, HazardAssessment, Incident, IncidentPhase, StatusChange, WorkflowStatus } from "./incident";
 import { ACTIVE_WORKFLOW_STATUSES } from "./incident";
 import type { AttentionAlert, AlertStatus } from "./alert";
-import type { RiskMatrixResult } from "./risk-matrix";
+import type { RiskMatrixResult, RiskMatrixSpec } from "./risk-matrix";
 import type { Action, ActionStatus, Decision, Dissemination, DisseminationResult, Outcome, Recommendation, Report } from "./response";
 import type { CaseAction, CaseRow, CaseTargetRow, PredictionCase } from "./prediction-case";
 import type { DemoStage, DemoTick } from "./stage";
@@ -32,6 +32,11 @@ export function eventsUntil(now: Date): EventEnvelope[] {
 
 export function eventsOfIncident(incidentId: string, now: Date): EventEnvelope[] {
   return eventsUntil(now).filter((e) => e.incidentId === incidentId);
+}
+
+/** 원장의 마지막 수신 시각 — 이 시계로 읽으면 원장이 아는 모든 일이 다 일어난 뒤다. 원장이 비어 있으면 epoch */
+export function ledgerEnd(): Date {
+  return new Date(EVENTS.reduce((max, e) => Math.max(max, ms(e.receivedAt)), 0));
 }
 
 export function findEvent(eventId: string): EventEnvelope | undefined {
@@ -137,6 +142,11 @@ export function isActiveStatus(status: WorkflowStatus): boolean {
 }
 
 /** 매트릭스 결과 — 위험판단의 정본. 4축은 이것의 설명이다 */
+/** 매트릭스 규칙 스펙 — 등급 경계(띠)의 정본. 결과의 ruleId 로 찾는다 */
+export function matrixSpecOf(ruleId: string): RiskMatrixSpec | undefined {
+  return RISK_MATRIX_SPECS[ruleId];
+}
+
 export function riskMatrixAt(incidentId: string, now: Date): RiskMatrixResult | null {
   return incidentViewAt(incidentId, now)?.assessment?.matrix ?? null;
 }
@@ -367,6 +377,8 @@ export function dataStatusAt(now: Date): DataStatusRow[] {
 
 export interface CctvChannelView extends CctvChannel {
   still: string;
+  /** 실촬 클립 — 있으면 스틸을 포스터로 두고 클립을 튼다(CctvStill) */
+  clip?: string;
   analysis: { description: string; confidence: number; analyzedAt: string; model: string; version: string } | null;
   incidentId: string | null;
 }
@@ -378,8 +390,8 @@ export function cctvChannelsAt(now: Date): CctvChannelView[] {
   const scenes = eventsUntil(now).filter((e) => e.eventType === "SCENE_ANALYZED");
   return CCTV_CHANNELS.filter((c) => scopes.some((i) => i.correlationKeys.includes(c.id))).map((c) => {
     const scene = [...scenes].reverse().find((e) => e.subjectId === c.id);
-    const p = scene?.payload as { still?: string; description: string; confidence: number; analyzedAt: string; model: string; version: string } | undefined;
-    return { ...c, still: p?.still ?? c.calmStill, analysis: p ? { description: p.description, confidence: p.confidence, analyzedAt: p.analyzedAt, model: p.model, version: p.version } : null, incidentId: active.find((i) => i.correlationKeys.includes(c.id))?.incidentId ?? null };
+    const p = scene?.payload as { still?: string; clip?: string; description: string; confidence: number; analyzedAt: string; model: string; version: string } | undefined;
+    return { ...c, still: p?.still ?? c.calmStill, clip: p?.clip, analysis: p ? { description: p.description, confidence: p.confidence, analyzedAt: p.analyzedAt, model: p.model, version: p.version } : null, incidentId: active.find((i) => i.correlationKeys.includes(c.id))?.incidentId ?? null };
   });
 }
 
@@ -404,7 +416,10 @@ export function relatedEventsAt(incidentId: string, now: Date): RelatedEventRow[
   if (!view) return [];
   const alerts = alertsAt(now).filter((a) => a.incidentId === incidentId);
   const reasonOf = new Map<string, string>();
-  for (const a of alerts) for (const id of a.evidenceEventIds) if (!reasonOf.has(id)) reasonOf.set(id, `${a.demoRole} · ${a.reason}`);
+  /* 연결 이유는 그 근거를 처음 인용한 알림의 것이다. 목록 순서(열림·등급·갱신)로 훑으면 뒤에 온 영상 교차확인 알림이
+     관로 급상승 줄의 이유까지 덮어써 관로·도로 줄이 같은 문장이 된다 (2026-09-17) */
+  const byCreated = [...alerts].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  for (const a of byCreated) for (const id of a.evidenceEventIds) if (!reasonOf.has(id)) reasonOf.set(id, `${a.demoRole} · ${a.reason}`);
   const reviews = allOfType<{ targetEventId: string }>(view.events, "REVIEW_REQUESTED").map((r) => r.payload.targetEventId);
   const decided = new Set(decisionsAt(incidentId, now).flatMap((d) => d.references));
   /* 정정·갱신으로 대체된 것(호우주의보 → 호우경보)은 세우지 않는다 */
@@ -789,8 +804,8 @@ export function channelsOfScope(scope: Incident, now: Date): CctvChannelView[] {
   const scenes = eventsUntil(now).filter((e) => e.eventType === "SCENE_ANALYZED");
   return CCTV_CHANNELS.filter((c) => scope.correlationKeys.includes(c.id)).map((c) => {
     const scene = [...scenes].reverse().find((e) => e.subjectId === c.id);
-    const p = scene?.payload as { still?: string; description: string; confidence: number; analyzedAt: string; model: string; version: string } | undefined;
-    return { ...c, still: p?.still ?? c.calmStill, analysis: p ? { description: p.description, confidence: p.confidence, analyzedAt: p.analyzedAt, model: p.model, version: p.version } : null, incidentId: incidentExistsAt(scope.incidentId, now) ? scope.incidentId : null };
+    const p = scene?.payload as { still?: string; clip?: string; description: string; confidence: number; analyzedAt: string; model: string; version: string } | undefined;
+    return { ...c, still: p?.still ?? c.calmStill, clip: p?.clip, analysis: p ? { description: p.description, confidence: p.confidence, analyzedAt: p.analyzedAt, model: p.model, version: p.version } : null, incidentId: incidentExistsAt(scope.incidentId, now) ? scope.incidentId : null };
   });
 }
 
@@ -991,10 +1006,10 @@ export function whatIfRecordAt(c: WhatIfCase, status: WhatIfStatus, now: Date): 
   return status === "종료" ? c.record : c.record.filter((r) => ms(r.at) <= now.getTime());
 }
 
-/** 시간축의 멈춤 자리 — 지도 상태가 있는 시각. 진행 중은 기록(지금 이전) + 전망(지금 이후), 종료는 기준 재현 전체 */
+/** 시간축의 멈춤 자리 — 지도 상태가 있는 시각. 진행 중은 기록(지금 이전) + 예측(지금 이후), 종료는 기준 재현 전체 */
 export interface WhatIfStop {
   at: string;
-  kind: "기록" | "전망";
+  kind: "기록" | "예측";
   forecastId: string;
 }
 export function whatIfStopsAt(c: WhatIfCase, status: WhatIfStatus, now: Date): WhatIfStop[] {
@@ -1002,9 +1017,9 @@ export function whatIfStopsAt(c: WhatIfCase, status: WhatIfStatus, now: Date): W
   if (!recon) return [];
   if (status === "종료") return recon.marks.map((m) => ({ at: m.validAt, kind: "기록" as const, forecastId: recon.forecastId }));
   const forecast = c.forecastId ? findForecast(c.forecastId) : undefined;
-  /* 예측판을 지난 구간에 그리지 않는다 — 지금 이전은 기록, 지금 이후는 전망 */
+  /* 예측판을 지난 구간에 그리지 않는다 — 지금 이전은 기록, 지금 이후는 예측 */
   const past = recon.marks.filter((m) => ms(m.validAt) <= now.getTime()).map((m) => ({ at: m.validAt, kind: "기록" as const, forecastId: recon.forecastId }));
-  const future = (forecast?.marks ?? []).filter((m) => ms(m.validAt) > now.getTime()).map((m) => ({ at: m.validAt, kind: "전망" as const, forecastId: forecast!.forecastId }));
+  const future = (forecast?.marks ?? []).filter((m) => ms(m.validAt) > now.getTime()).map((m) => ({ at: m.validAt, kind: "예측" as const, forecastId: forecast!.forecastId }));
   return [...past, ...future];
 }
 
@@ -1072,7 +1087,7 @@ export function whatIfStateRowsAt(c: WhatIfCase, atIso: string): { at: string; r
 }
 
 /** 주체 이름 — 주체 공간 표(SUBJECT_LOCATION)의 이름 */
-function subjectLabelOf(subjectId: string): string {
+export function subjectLabelOf(subjectId: string): string {
   return SUBJECT_LOCATION[subjectId]?.label ?? subjectId;
 }
 

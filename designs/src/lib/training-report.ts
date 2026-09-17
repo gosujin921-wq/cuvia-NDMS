@@ -20,7 +20,7 @@
 
 import type { Report, ReportSection } from "../demo/report";
 import type { TrainingRun } from "../model/whatif";
-import { formatClock } from "./datetime";
+import { formatClock, formatStamp as stamp } from "./datetime";
 import { formatLagMinutes } from "./forecast-twin";
 
 /** 그 회에서 내가 실제로 실행한 규정만 — 목록·보고서가 같은 규칙을 읽는다(두 벌이 되면 수가 갈린다) */
@@ -138,8 +138,3 @@ export function trainingReportOf(run: TrainingRun): Report {
   };
 }
 
-const stamp = (iso: string): string => {
-  const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-};

@@ -1,10 +1,12 @@
 /* ─────────────────────────────────────────────
- * 전망 탭 우측 레일 (IA-03 · 02 D4 · 04 W3 · 03 §25, 2026-09-16 정리)
+ * 예측 탭 우측 레일 (IA-03 · 02 D4 · 04 W3 · 03 §25, 2026-09-16 정리)
+ * 화면 이름은 "예측"이다(2026-09-17 "전망"에서 바꿈). 시각·장소·수심이 정해진 값이고, 근거 줄·범례가 이미 "예측"이라 한 이름으로 맞췄다.
+ * 화면 문구 전체를 같이 바꿨다. 예측판은 "예측", 날씨 흐름은 "예보", 문장 끝은 "…할 것으로 예측"이다.
  *
  * 이 탭이 답하는 질문은 "그대로 두면 언제 · 어디가 · 얼마나 위험해지나" 하나다(기준 전망). 대안을 나란히 세우지 않는다 —
  * "대응을 바꾸면?"은 디지털트윈이 답한다. 그래서 맨 위는 그대로 두면 카드(최대값 · 도달 · 영향 대상)이고, 그 끝에서
  * [디지털트윈에서 열기]로 넘긴다. 트윈은 이 사건의 기록·전망을 시간으로 훑고 필요하면 대안을 본다. 트윈의 기준은 이 전망과 같은 예측판이다.
- * 그 아래 시간축(시계 시각 눈금 · 지난 눈금은 흐리게 · 지금 위치), 고른 시각 한 줄, 근거 한 줄, 버튼 둘.
+ * 그 아래 고른 시각 한 줄, 근거 한 줄, 버튼 둘. 시각은 지도 하단 시간축 슬라이더가 고른다(디지털트윈과 같은 부품 · 2026-09-17).
  * 눈금 사이 값은 판단에 쓰지 않는다(IA §8). 예측판이 유효하지 않으면 다른 것으로 바꾸지 않고 목록에서 다시 고른다(IA §5.2).
  * ───────────────────────────────────────────── */
 
@@ -14,7 +16,7 @@ import type { Forecast, ForecastMark, ImpactTarget } from "../../../model/foreca
 import { ALTERNATIVE_LABEL } from "../../../model/forecast";
 import type { resolveForecast } from "../../../model/selectors";
 import { formatClock } from "../../../lib/datetime";
-import { formatMarkMetric, markMetricLabel, minutesBetween } from "../../../lib/forecast-twin";
+import { formatMarkMetric, markMetricLabel } from "../../../lib/forecast-twin";
 
 const KIND_LABEL: Record<ImpactTarget["kind"], string> = { 도로: "도로", 중요시설: "중요시설", 건물: "건물", 대상자: "이용자" };
 const KIND_ORDER: ImpactTarget["kind"][] = ["도로", "중요시설", "건물", "대상자"];
@@ -27,14 +29,12 @@ const EXPOSURE_TONE: Record<ImpactTarget["exposure"], string> = {
   중단: "text-danger",
 };
 
-export function ForecastRail({ now, resolution, forecast, mark, repick, onPickValidAt, onBack, onReview, onRepick, onCompare }: {
-  now: Date;
+export function ForecastRail({ resolution, forecast, mark, repick, onBack, onReview, onRepick, onCompare }: {
   resolution: ReturnType<typeof resolveForecast> | null;
   forecast: Forecast | null;
   mark: ForecastMark | null;
   /** 전망이 무효일 때 다시 고를 목록 — 이 사건의 현재 예측판 */
   repick: Forecast[];
-  onPickValidAt: (at: string) => void;
   onBack: () => void;
   onReview: () => void;
   onRepick: (forecastId: string) => void;
@@ -45,7 +45,7 @@ export function ForecastRail({ now, resolution, forecast, mark, repick, onPickVa
     const reason = !resolution ? "예측판을 고르지 않았습니다." : resolution.kind === "not-found" ? "존재하지 않는 예측판입니다." : resolution.kind === "expired" ? `유효 종료 ${formatClock(resolution.forecast.validUntil)}가 지난 예측판입니다.` : "이 시각에는 아직 생성되지 않은 예측판입니다.";
     return (
       <GlassPanel className="pointer-events-auto flex flex-col gap-3 p-3">
-        <Notice variant="warning" title="이 전망은 지금 쓸 수 없습니다" description={`${reason} 다른 전망으로 바꾸지 않습니다. 아래에서 다시 고르세요.`} />
+        <Notice variant="warning" title="이 예측은 지금 쓸 수 없습니다" description={`${reason} 다른 예측으로 바꾸지 않습니다. 아래에서 다시 고르세요.`} />
         <ul className="flex flex-col gap-1.5">
           {repick.map((f) => (
             <li key={f.forecastId}>
@@ -63,7 +63,6 @@ export function ForecastRail({ now, resolution, forecast, mark, repick, onPickVa
   const peak = forecast.marks.reduce((best, m) => (m.maxDepthM > best.maxDepthM ? m : best), forecast.marks[0]);
   const reaches = forecast.targets.some((t) => t.arrivalAt);
   const targets = [...forecast.targets].sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
-  const nextMark = forecast.marks.find((m) => new Date(m.validAt) > now) ?? null;
   const b = forecast.basis;
   const basisLine = `${formatClock(b.baseTime)} 기준 · ${b.assumptions.join(", ")} · 불확실성 ${b.uncertainty.grade}`;
   const basisTip = [`${b.modelName} ${b.modelVersion}`, `생성 ${formatClock(b.generatedAt)}`, `입력 데이터 ${b.inputQuality}`, b.uncertainty.sensitiveTo.length ? `민감 · ${b.uncertainty.sensitiveTo.join(" · ")}` : ""].filter(Boolean).join("\n");
@@ -118,37 +117,6 @@ export function ForecastRail({ now, resolution, forecast, mark, repick, onPickVa
         </div>
       </GlassPanel>
 
-      {/* 시간축 — 눈금은 예측판 유효시각(시계 시각). 지난 눈금은 흐리고, 지금이 어디인지 한 줄 */}
-      <GlassPanel className="pointer-events-auto shrink-0 p-3">
-        <header className="flex items-baseline justify-between">
-          <span className="text-caption font-semibold text-foreground-muted">유효 시각</span>
-        </header>
-        <ol className="mt-2 flex gap-1" aria-label="유효 시각 눈금">
-          {forecast.marks.map((m) => {
-            const past = new Date(m.validAt) <= now;
-            const selected = m.validAt === mark.validAt;
-            return (
-              <li key={m.validAt} className="flex-1">
-                <button
-                  type="button"
-                  onClick={() => onPickValidAt(m.validAt)}
-                  aria-pressed={selected}
-                  title={`${formatClock(m.validAt)} · ${markMetricLabel(m)} ${formatMarkMetric(m)}${past ? " · 지난 시각" : ""}`}
-                  className={cn("flex w-full cursor-pointer flex-col items-center gap-0.5 rounded-md border px-1 py-1.5", selected ? "border-primary-text bg-primary text-primary-foreground" : "border-border bg-transparent", !selected && (past ? "text-foreground-subtle" : "text-foreground-muted hover:text-foreground"))}
-                >
-                  <span className="font-mono text-caption font-medium">{formatClock(m.validAt)}</span>
-                  <span className="font-mono text-caption">{formatMarkMetric(m)}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-        <p className="mt-1.5 flex items-center gap-1 text-caption text-foreground-subtle">
-          <Icon icon="mdi:clock-outline" className="size-3.5 shrink-0" aria-hidden />
-          지금 {formatClock(now)}{nextMark ? ` · 다음 눈금 ${formatClock(nextMark.validAt)} · ${minutesBetween(now, nextMark.validAt)}분 뒤` : " · 남은 눈금 없음"}
-        </p>
-      </GlassPanel>
-
       {/* 고른 시각 — 지도가 그리고 있는 그 장면 한 줄 */}
       <GlassPanel className="pointer-events-auto shrink-0 px-3 py-2.5">
         <p className="text-caption text-foreground"><span className="font-mono font-medium">{formatClock(mark.validAt)}</span> · {markMetricLabel(mark)} {formatMarkMetric(mark)} · {mark.impactSummary}</p>
@@ -173,7 +141,7 @@ export function ForecastRail({ now, resolution, forecast, mark, repick, onPickVa
 
       <GlassPanel className="pointer-events-auto flex shrink-0 gap-2 p-2">
         <Button variant="ghost" size="sm" className="flex-1" onClick={onBack}>판단으로</Button>
-        <Button size="sm" className="flex-1" onClick={onReview}>이 전망으로 조치안 갱신</Button>
+        <Button size="sm" className="flex-1" onClick={onReview}>이 예측으로 조치안 갱신</Button>
       </GlassPanel>
     </>
   );

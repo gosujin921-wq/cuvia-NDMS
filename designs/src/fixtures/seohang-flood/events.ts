@@ -159,7 +159,28 @@ export const E7_SCENE = base({
   id: "EV-E7-01", type: "SCENE_ANALYZED", eventClass: "분석", producerRole: "모델", source: "CCTV·VLM", subject: SUBJECTS.cctvPump,
   observedAt: t("17:24"), readiness: "협의 필요", origin: "합성 데이터", mode: "모의", calc: "CUVIA 계산", demoRef: "E7",
   summary: "차로 일부 침수 추정 · 신뢰도 0.82", derivedFrom: [],
-  payload: { model: "VLM-scene", version: "0.3", analyzedAt: t("17:24"), confidence: 0.82, description: "해안도로 방향 차로 일부에 물고임이 보이며 차량 통행이 느려지고 있다.", still: "/cctv/06_city_flood_start.jpg", calmStill: "/cctv/05_city_normal_01.jpg" },
+  payload: { model: "VLM-scene", version: "0.3", analyzedAt: t("17:24"), confidence: 0.82, description: "해안도로 방향 차로 일부에 물고임이 보이며 차량 통행이 느려지고 있다.", still: "/cctv/06_city_flood_start.jpg", clip: "/cctv/02_car.mp4", calmStill: "/cctv/05_city_normal_01.jpg" },
+});
+/* 같은 채널의 뒤 분석 — 팝업 영상이 17:24 문장에 머물지 않게 현장 보고(E9)와 같은 국면을 따라간다.
+   침수가 더 깊은 표본이 없어 18:06 은 17:24 사진을 그대로 쓴다. 영상은 침수 중 02_car · 물 빠진 뒤 01_car (실촬 클립) */
+export const E7_SCENE_FLOODED = base({
+  id: "EV-E7-02", type: "SCENE_ANALYZED", eventClass: "분석", producerRole: "모델", source: "CCTV·VLM", subject: SUBJECTS.cctvPump,
+  observedAt: t("18:06"), readiness: "협의 필요", origin: "합성 데이터", mode: "모의", calc: "CUVIA 계산", demoRef: "E7",
+  summary: "차로 침수 · 통행 거의 멈춤 · 신뢰도 0.88", derivedFrom: [],
+  payload: { model: "VLM-scene", version: "0.3", analyzedAt: t("18:06"), confidence: 0.88, description: "해안도로 방향 차로 대부분이 물에 잠겼고 차량 통행이 거의 멈췄다.", still: "/cctv/06_city_flood_start.jpg", clip: "/cctv/02_car.mp4" },
+});
+/* 18:40 상황 안정 전환(EV-W-15)과 같은 국면 — 도로수위가 27 → 21 cm 로 내려가는 중. 안정 뒤 영상 창을 다시 열면 물 빠진 도로 클립이 선다 */
+export const E7_SCENE_EASING = base({
+  id: "EV-E7-04", type: "SCENE_ANALYZED", eventClass: "분석", producerRole: "모델", source: "CCTV·VLM", subject: SUBJECTS.cctvPump,
+  observedAt: t("18:40"), readiness: "협의 필요", origin: "합성 데이터", mode: "모의", calc: "CUVIA 계산", demoRef: "E7",
+  summary: "차로 고인 물 감소 · 통행 재개 · 신뢰도 0.84", derivedFrom: [],
+  payload: { model: "VLM-scene", version: "0.3", analyzedAt: t("18:40"), confidence: 0.84, description: "해안도로 방향 차로의 고인 물이 줄어들고 차량 통행이 다시 이어지고 있다.", still: "/cctv/05_city_normal_01.jpg", clip: "/cctv/01_car.mp4" },
+});
+export const E7_SCENE_RECEDED = base({
+  id: "EV-E7-03", type: "SCENE_ANALYZED", eventClass: "분석", producerRole: "모델", source: "CCTV·VLM", subject: SUBJECTS.cctvPump,
+  observedAt: t("20:50"), readiness: "협의 필요", origin: "합성 데이터", mode: "모의", calc: "CUVIA 계산", demoRef: "E7",
+  summary: "물 빠짐 · 노면 드러남 · 신뢰도 0.85", derivedFrom: [],
+  payload: { model: "VLM-scene", version: "0.3", analyzedAt: t("20:50"), confidence: 0.85, description: "해안도로 노면이 드러났고 차로에 고인 물이 보이지 않는다.", still: "/cctv/05_city_normal_01.jpg", clip: "/cctv/01_car.mp4" },
 });
 
 /* E9 현장 보고 — 사용자 입력·수동 */
@@ -189,6 +210,6 @@ export const E10_QUALITY_RECOVER = base({
 /** 관측·외부·분석 이벤트 전부 (E8 은 forecasts.ts 가 Forecast 객체와 함께 든다) */
 export const SOURCE_EVENTS: EventEnvelope[] = [
   ...E0_RAIN, E1_FORECAST_RAIN, E2_ALERT_ADVISORY, E2_ALERT_WARNING, E3A_TIDE_FORECAST, ...E3B_TIDE, ...E4A_PIPE, E4B_PIPE_RATE,
-  ...E5A_ROAD, E5B_ROAD_THRESHOLD, E5B_ROAD_FLOODED, E6A_PUMP_DOWN, E6A_PUMP_UP, E6B_RETENTION, E7_SCENE, E9_FIELD_CONTROL, E9_FIELD_RECEDE,
+  ...E5A_ROAD, E5B_ROAD_THRESHOLD, E5B_ROAD_FLOODED, E6A_PUMP_DOWN, E6A_PUMP_UP, E6B_RETENTION, E7_SCENE, E7_SCENE_FLOODED, E7_SCENE_EASING, E7_SCENE_RECEDED, E9_FIELD_CONTROL, E9_FIELD_RECEDE,
   E10_QUALITY_DELAY, E10_QUALITY_RECOVER,
 ];

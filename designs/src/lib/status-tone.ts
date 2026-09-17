@@ -170,7 +170,6 @@ export const RECORD_STATUS_TONE: Record<RecordStatus, { badge: "live" | "done" |
   "진행 중": { badge: "live", meaning: "아직 닫히지 않은 사건" },
   종료: { badge: "done", meaning: "종료 조건을 채우고 닫힌 사건" },
   오탐: { badge: "offline", meaning: "시험·오경보로 닫힌 사건" },
-  병합: { badge: "offline", meaning: "기준 사건에 흡수된 사건" },
 };
 
 /** 조치·전파 결과 뱃지 — 이력의 대응 절과 경과 타임라인이 같은 색을 쓴다. 실패·미응답만 위험색 */

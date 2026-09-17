@@ -95,7 +95,7 @@ export function ResponsePopup({ open, onClose, view, incident, now, channels, re
             <div className="relative aspect-video w-full overflow-hidden rounded-md border border-border bg-black">
               {channel ? (
                 <>
-                  <CctvStill src={{ still: channel.still }} className="absolute inset-0" />
+                  <CctvStill src={{ still: channel.still, clip: channel.clip }} className="absolute inset-0" />
                   <div className="pointer-events-none absolute inset-x-0 top-0 h-1/4 bg-gradient-to-b from-black/60 to-transparent" aria-hidden />
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/75 to-transparent" aria-hidden />
                   <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-caption font-medium text-white backdrop-blur-sm">
@@ -136,7 +136,7 @@ export function ResponsePopup({ open, onClose, view, incident, now, channels, re
                       className={cn("w-56 shrink-0 cursor-pointer overflow-hidden rounded-md bg-surface p-0 text-left", channel?.id === c.id ? "border-2 border-primary-text" : "border border-border")}
                     >
                       <div className="relative aspect-video w-full bg-black">
-                        <CctvStill src={{ still: c.still }} className="absolute inset-0" />
+                        <CctvStill src={{ still: c.still, clip: c.clip }} className="absolute inset-0" />
                         {c.analysis && <Badge variant="blue" className="absolute right-2 top-2">VLM</Badge>}
                       </div>
                       <div className="flex flex-col px-2.5 py-1.5">
@@ -173,7 +173,7 @@ export function ResponsePopup({ open, onClose, view, incident, now, channels, re
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-caption text-foreground-subtle">유효한 전망 없음</p>
+                      <p className="text-caption text-foreground-subtle">유효한 예측 없음</p>
                     )}
                   </div>
                   <div className="flex flex-col gap-1.5">

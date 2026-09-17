@@ -21,10 +21,21 @@
 
 import wordmarkUrl from "@cuvia/assets/wordmark.svg";
 import type { Report, ReportSection, ReportTable } from "../demo/report";
+import { ReportChartView } from "./ReportCharts";
 
 /** 종이 팔레트 — 인쇄물의 색이다. 앱 테마 토큰(어두운 면)과 섞지 않는다 */
 const PAPER = `
 .rpt { --p-ink:#1a1a1a; --p-sub:#555; --p-mute:#777; --p-faint:#888; --p-line:#eee; --p-rule:#ddd; --p-card:#e5e5e8; --p-wash:#f7f7f9; --p-desk:#f0f0f2; }
+/* 차트 팔레트 — 종이 위의 데이터 색. 범주 두 색(파랑·주황) · 상태 넷 · 격자. 검증한 값(dataviz 기준 팔레트, 흰 종이 기준) */
+.rpt { --p-s1:#2a78d6; --p-s1-soft:#cde2fb; --p-s2:#eb6834; --p-ok:#0ca30c; --p-warn:#fab219; --p-serious:#ec835a; --p-crit:#d03b3b; --p-grid:#e1e0d9; --p-axis:#c3c2b7; --p-muted:#898781; }
+.rpt .stats { display:flex; gap:12px; margin-top:20px; }
+.rpt .stat { flex:1; min-width:0; border:1px solid var(--p-card); border-radius:8px; padding:12px 14px; }
+.rpt .stat .lbl { font-size:11.5px; color:var(--p-mute); font-weight:700; }
+.rpt .stat .val { font-size:22px; font-weight:800; margin-top:3px; line-height:1.15; white-space:nowrap; }
+.rpt .stat .val small { font-size:12px; color:var(--p-mute); font-weight:800; margin-left:3px; }
+.rpt .stat .cmp { font-size:11.5px; color:var(--p-faint); margin-top:3px; }
+.rpt .chart { margin:2px 0 12px; }
+.rpt .chart svg { display:block; overflow:visible; }
 .rpt { background:var(--p-desk); color:var(--p-ink); font-size:13px; line-height:1.6; }
 .rpt .page { width:794px; min-height:1123px; background:#fff; margin:0 auto; padding:56px 60px; box-shadow:0 2px 10px rgba(0,0,0,.08); position:relative; }
 .rpt .hd { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; }
@@ -61,7 +72,7 @@ const PAPER = `
 .rpt .num-t { font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; }
 .rpt table.rtab tr, .rpt table.kv tr { break-inside:avoid; page-break-inside:avoid; }
 .rpt table.rtab thead { display:table-header-group; }
-.rpt .figure, .rpt .notice { break-inside:avoid; page-break-inside:avoid; }
+.rpt .figure, .rpt .notice, .rpt .chart, .rpt .stats { break-inside:avoid; page-break-inside:avoid; }
 @media print { @page { size:A4; margin:0; } .rpt { background:#fff; } .rpt .page { margin:0 auto; box-shadow:none; } }
 `;
 
@@ -111,6 +122,19 @@ export function ReportDocument({ report, meta, footLabel, figure, notice }: Repo
           </dl>
         )}
 
+        {/* 요약 지표 타일 — 양식의 발생 현황 요약 자리. 값은 문서 빌더가 원장에서 골랐다 */}
+        {report.stats && report.stats.length > 0 && (
+          <div className="stats">
+            {report.stats.map((s) => (
+              <div key={s.label} className="stat">
+                <div className="lbl">{s.label}</div>
+                <div className="val">{s.value}{s.unit && <small>{s.unit}</small>}</div>
+                {s.note && <div className="cmp num-t">{s.note}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+
         {report.sections.map((s, i) => <Section key={s.id} index={i + 1} section={s} />)}
 
         {figure && (
@@ -140,7 +164,7 @@ export function ReportDocument({ report, meta, footLabel, figure, notice }: Repo
 }
 
 function Section({ index, section }: { index: number; section: ReportSection }) {
-  const empty = section.rows.length === 0 && !section.table && !section.figure;
+  const empty = section.rows.length === 0 && !section.table && !section.figure && !(section.charts && section.charts.length);
   return (
     <section>
       <div className="sec">
@@ -148,6 +172,13 @@ function Section({ index, section }: { index: number; section: ReportSection }) 
         <h2>{section.title}</h2>
         {section.note && <span className="note">{section.note}</span>}
       </div>
+
+      {/* 차트가 표보다 먼저 선다 — 양식의 절 문법(차트 → 표) */}
+      {section.charts?.map((c, i) => (
+        <div key={`${c.kind}-${i}`} className="chart">
+          <ReportChartView chart={c} />
+        </div>
+      ))}
 
       {section.table && <Grid table={section.table} />}
 

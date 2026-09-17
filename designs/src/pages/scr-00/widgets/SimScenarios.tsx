@@ -87,12 +87,13 @@ export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelec
               <span className="text-foreground-muted">{condLabel} 직접 조정</span>
               <span className={cn("font-mono font-semibold", atAnchor ? "text-foreground" : "text-warning")}>{slider.format(factor)}</span>
             </div>
-            {/* 눈금 라벨 — 가까운 눈금(20% 안)은 아랫줄로 비켜 놓는다. 겹치면 둘 다 못 읽는다 */}
-            <div className={cn("relative", placed.some((a) => a.row === 1) ? "h-14" : "h-10")}>
+            {/* 눈금 라벨 — 가까운 눈금(20% 안)은 아랫줄로 비켜 놓는다. 겹치면 둘 다 못 읽는다.
+                아랫줄 눈금선은 윗줄 글자 옆을 지나 내려가므로 윗줄 글자에 패널 바탕을 깔아 선이 글자 뒤로 지나가게 한다 */}
+            <div className={cn("relative", placed.some((a) => a.row === 1) ? "h-16" : "h-10")}>
               {placed.map((a) => (
-                <span key={a.label} className="absolute top-0 flex -translate-x-1/2 flex-col items-center" style={{ left: `${pct(a.value)}%` }} aria-hidden>
-                  <u className={cn("w-0.5 rounded-sm", a.row === 1 ? "h-8" : "h-2", Math.abs(a.value - factor) < 0.026 ? "bg-primary-text" : "bg-border-light")} />
-                  <span className={cn("whitespace-nowrap font-mono text-caption text-foreground-subtle", a.row === 1 ? "mt-0.5" : "mt-3")}>{a.label}</span>
+                <span key={a.label} className={cn("pointer-events-none absolute top-0 flex -translate-x-1/2 flex-col items-center", a.row === 0 && "z-10")} style={{ left: `${pct(a.value)}%` }} aria-hidden>
+                  <u className={cn("w-0.5 rounded-sm", a.row === 1 ? "h-10" : "h-2", Math.abs(a.value - factor) < 0.026 ? "bg-primary-text" : "bg-border-light")} />
+                  <span className={cn("whitespace-nowrap bg-card px-0.5 font-mono text-caption text-foreground-subtle", a.row === 1 ? "mt-0.5" : "mt-3")}>{a.label}</span>
                 </span>
               ))}
               <i className="absolute left-0 top-[6px] h-1 rounded-full bg-primary" style={{ width: `${pct(factor)}%` }} aria-hidden />

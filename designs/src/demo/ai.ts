@@ -50,6 +50,14 @@ export interface CannedQuery {
    */
   backdrop?: string;
   /**
+   * 답과 함께 종합상황의 열돔 인셋(열돔 · 상층 기압 높이)을 켠다 (2026-09-17).
+   *
+   * 열돔은 지구 하나의 현상이 아니라 광역 현상이다 — 상층 격자가 2°(약 182km)라 도시 배율 지도에
+   * 얹을 수 없고, 지구본 인셋으로만 선다. 그래서 답이 서는 자리는 사건 시나리오가 아니라 시 전체를
+   * 보는 종합상황이다. 인셋은 화면의 기상 층이고 질의는 그 스위치를 켤 뿐이다(두 벌을 두지 않는다).
+   */
+  showDome?: boolean;
+  /**
    * AI 패널에서만 답하는 질의.
    *
    * 옛 SCR-06 화면은 답변 한 벌을 손으로 짜 두어(원인·이력·영향 세 짜임), 새 질의가
@@ -90,18 +98,21 @@ export const CANNED_QUERIES: CannedQuery[] = [
     keywords: ["침수", "피해", "잠기", "대피", "몇 동", "영향"],
   },
   {
-    /* 통계 `열돔` 유형에서 열돔 곡선을 보고 묻는 자리. 지구가 없는 재난이라
-       districtId 를 서항으로 두되 답변은 지구를 말하지 않는다 */
+    /* 지구가 없는 재난이라 districtId 를 서항으로 두되 답변은 지구를 말하지 않는다.
+       답이 서는 자리는 종합상황이다(2026-09-17 확정) — 시 전체 지도 위에 열돔 인셋을 켠다(`showDome`).
+       한때 `/scr-05?hazard=열돔`(옛 트윈 열돔 장면)이었고, scr-05 가 모의훈련이 된 뒤로는 사건 목록만
+       열렸다. 통계의 열돔 판도 걷혔다(IA §10.2 · 2026-09-16).
+       바로가기(`route`)는 이 질의에서 쓰지 않는다 — 답과 그림이 같은 화면에 서므로 갈 곳이 없다 */
     id: "heat-dome-cause",
     kind: "dome",
     text: "수온이 왜 이렇게 높아?",
     districtId: "seohang",
-    /* TODO(phase2): 통계에서 열돔·수온 판을 걷었다(IA §10.2 · 2026-09-16). 이 질의가 설 자리를 다시 정할 것 */
-    route: "/scr-04",
-    routeLabel: "통계",
+    route: "/scr-01",
+    routeLabel: "종합상황",
     keywords: ["수온", "폭염", "열돔", "더워", "더운", "뜨거", "기온"],
-    /* 답이 흐르는 동안 왼쪽이 디지털트윈 열돔으로 바뀐다 */
-    backdrop: "/scr-05?hazard=열돔",
+    /* 답이 흐르는 동안 뒤가 종합상황(시 전체)으로 바뀌고 열돔 인셋이 선다 */
+    backdrop: "/scr-01",
+    showDome: true,
     panelOnly: true,
   },
 ];
@@ -564,7 +575,8 @@ function seaTempCauseMessage(id: string, now: Date): AgentMessage {
     ]
       .filter(Boolean)
       .join("\n"),
-    actions: [gotoAction(query), ...followUpActions(query)],
+    /* 바로가기가 없다 — 답과 열돔 인셋이 같은 화면(종합상황)에 선다 */
+    actions: followUpActions(query),
   };
 }
 

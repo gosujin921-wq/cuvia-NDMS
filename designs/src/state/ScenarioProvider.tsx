@@ -26,7 +26,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { alarmToast, dismissAllAlarms, type AlarmToast } from "../lib/alarm-toast";
+import { alarmToast, alertToast, dismissAllAlarms, type AlarmToast } from "../lib/alarm-toast";
 import type { AlertLevel } from "../demo/levels";
 import type { GateOverride } from "../demo/facilities";
 import { DISPATCH_HISTORY, type DispatchRecord } from "../demo/dispatch";
@@ -36,11 +36,14 @@ import { seaTempOnce } from "../demo/sea-temp";
 import type { DemoStage, DemoStageSpec, DemoTick } from "../model/stage";
 import { DEMO_STAGE_SPECS } from "../model/stage";
 import { HERO_INCIDENT_ID } from "../fixtures";
-import { ticksOf } from "../model/selectors";
+import { alertsAt, findIncident, ticksOf } from "../model/selectors";
 import type { AnalysisResult, TrainingRun, ImprovementItem } from "../model/whatif";
+import type { SimReportInput, SimReportRecord } from "../lib/sim-report";
 
 /** 세계 틱 한 칸 간격 — 승인 뒤 결과가 "도착하는" 느낌. CSMS 자동조치 0.7초보다 길게, 읽을 시간을 준다 */
 const WORLD_TICK_MS = 1800;
+/** 한 tick 에 알림이 여럿 생기면 이 간격으로 한 장씩 쌓는다 */
+const ALERT_TOAST_STEP_MS = 600;
 
 /** S0~S9 (04 §0). S2 는 진입(17:20)과 격상(17:22) 두 국면을 가진다 */
 export type ScenarioStep = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
@@ -258,6 +261,9 @@ interface ScenarioContextValue {
   /** 분석 결과 — 모의훈련 분석의 저장 단위(03 §26.9). 사건에 연결되지만 사건 원장을 고치지 않는다 */
   analyses: AnalysisResult[];
   saveAnalysis: (draft: Omit<AnalysisResult, "analysisId" | "savedAt">) => AnalysisResult;
+  /** 시뮬레이션 보고서 — /scr-00 에서 저장한 문서. 이력의 보고서 목록에 사건 보고서와 나란히 선다 */
+  simReports: SimReportRecord[];
+  saveSimReport: (input: SimReportInput) => SimReportRecord;
   /** 훈련 한 회의 기록 — 분석 결과와 다른 물건이다(03 §26.9) */
   trainingRuns: TrainingRun[];
   saveTrainingRun: (draft: Omit<TrainingRun, "runId" | "finishedAt">) => TrainingRun;
@@ -285,6 +291,13 @@ interface ScenarioContextValue {
    */
   agentBackdrop: string | null;
   clearAgentBackdrop: () => void;
+  /**
+   * 종합상황의 열돔 인셋(열돔 · 상층 기압 높이) — 기상 층 스위치다.
+   * 사람이 유틸 스트립에서 켜고 끄며, 열돔 질의(demo/ai `showDome`)가 답과 함께 켠다.
+   * 화면이 아니라 여기가 드는 이유는 답이 다른 화면에서 흘러도 종합상황에 닿았을 때 켜져 있어야 해서다
+   */
+  domeInsetOn: boolean;
+  setDomeInsetOn: (on: boolean) => void;
   /** 선택 장비 — 재난관제에서 연 센서·CCTV. 화면을 옮겨도 유지되고 트윈이 같은 핀을
    *  강조한다(03 §5 · 차수 K). URL(`?device=`)은 새로고침·직접 진입의 보조 복구다 */
   selectedDeviceId: string | null;
@@ -361,6 +374,21 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  /* 시뮬레이션 보고서 — 세션 안에서만 쌓인다. 저장 시점의 화면 값을 통째로 든다 */
+  const [simReports, setSimReports] = useState<SimReportRecord[]>([]);
+  const simSeq = useRef(0);
+  const saveSimReport = useCallback((input: SimReportInput): SimReportRecord => {
+    simSeq.current += 1;
+    const saved: SimReportRecord = {
+      reportId: `SIM-${simSeq.current.toString().padStart(3, "0")}`,
+      savedAt: new Date().toISOString(),
+      title: `${input.siteLabel} 모의훈련 보고서`,
+      input,
+    };
+    setSimReports((prev) => [saved, ...prev]);
+    return saved;
+  }, []);
+
   /* 훈련 기록 — 훈련 한 회(03 §26.9). 판 id 와 보고서용 표시값을 둘 다 담아
      판을 고쳐도 과거 훈련 결과가 소급해서 바뀌지 않게 한다 */
   const [trainingRuns, setTrainingRuns] = useState<TrainingRun[]>([]);
@@ -408,6 +436,28 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     const id = window.setTimeout(() => setTickIndex((prev) => Math.min(prev + 1, ticks.length - 1)), WORLD_TICK_MS);
     return () => window.clearTimeout(id);
   }, [autoPlay, tickIndex, ticks]);
+  /* 새 알림 토스트 (2026-09-17 사용자 지시 "0 누르면 토스트 떠야해"). tick 이 시계를 옮기면 그 사이에 생긴
+     알림을 띄운다. 어느 알림이 뜨는지는 원장(ALERTS)의 생성시각이 정하고 tick 이름을 보지 않는다.
+     세계 tick 에서만 띄운다. 담당자 조작(검토 인수·사건 대응)이 시계를 옮길 때 생긴 알림까지 띄우면 대응 팝업 위를 덮는다.
+     StrictMode 가 effect 를 두 번 돌려도 한 번만 뜨게 마지막으로 본 시각을 ref 로 든다 */
+  const toastedUntil = useRef(new Date(ticks[0].at).getTime());
+  useEffect(() => {
+    const now = new Date(ticks[tickIndex].at);
+    const from = toastedUntil.current;
+    if (now.getTime() <= from) return;
+    toastedUntil.current = now.getTime();
+    if (ticks[tickIndex].driver !== "세계") return;
+    alertsAt(now)
+      .filter((a) => a.open && new Date(a.createdAt).getTime() > from)
+      .forEach((a, i) => {
+        const districtId = a.incidentId ? findIncident(a.incidentId)?.legacyDistrictId : undefined;
+        window.setTimeout(() => alertToast({
+          alertId: a.alertId, title: a.title, kind: a.kind, grade: a.grade,
+          location: a.target.label ?? "", summary: a.reason,
+          href: districtId ? `/scr-02/${districtId}?alertId=${a.alertId}` : undefined,
+        }), i * ALERT_TOAST_STEP_MS);
+      });
+  }, [tickIndex, ticks]);
   const nextTick = useCallback(() => {
     setTickIndex((prev) => Math.min(prev + 1, ticks.length - 1));
   }, [ticks.length]);
@@ -613,6 +663,7 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
 
   const [agentBackdrop, setAgentBackdrop] = useState<string | null>(null);
   const clearAgentBackdrop = useCallback(() => setAgentBackdrop(null), []);
+  const [domeInsetOn, setDomeInsetOn] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
   const [agentResponding, setAgentResponding] = useState(false);
@@ -703,6 +754,7 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
 
         /* 배경 전환 — 답과 함께 뒤가 바뀐다. 패널은 열린 채 남는다 */
         if (matched?.backdrop) setAgentBackdrop(matched.backdrop);
+        if (matched?.showDome) setDomeInsetOn(true);
 
         setAgentMessages((prev) => [
           ...prev.filter((message) => message.id !== analyzingId),
@@ -791,6 +843,8 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
       nextIsWorld: ticks[tickIndex + 1]?.driver === "세계",
       analyses,
       saveAnalysis,
+      simReports,
+      saveSimReport,
       trainingRuns,
       saveTrainingRun,
       improvements,
@@ -805,6 +859,8 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
       askAgent,
       agentBackdrop,
       clearAgentBackdrop,
+      domeInsetOn,
+      setDomeInsetOn,
     };
   }, [
     track,
@@ -839,6 +895,8 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     nextTick,
     analyses,
     saveAnalysis,
+    simReports,
+    saveSimReport,
     trainingRuns,
     saveTrainingRun,
     improvements,
@@ -853,6 +911,7 @@ export function ScenarioProvider({ children }: { children: ReactNode }) {
     askAgent,
     agentBackdrop,
     clearAgentBackdrop,
+    domeInsetOn,
   ]);
 
   return <ScenarioContext.Provider value={value}>{children}</ScenarioContext.Provider>;

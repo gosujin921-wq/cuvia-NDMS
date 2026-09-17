@@ -4,13 +4,15 @@
  * 창 틀은 정보 창과 같은 FormDialog 다(KISA design.md §22 — 큰 창은 FormDialog). 너비만 종이 폭(794px)에 여백을 더해 넓힌다.
  * 문서 자체는 화면과 무관한 인쇄 양식이라 `ReportDocument` 한 벌을 그대로 쓴다.
  * 바닥은 왼쪽 [보고서 화면](전체 화면으로 열기) · 오른쪽 [인쇄]. [닫기]는 없다(X 가 있다).
+ * 문서마다 더 필요한 동작(시뮬레이션 보고서의 [이력에 저장])은 `extraAction` 이 왼쪽에 붙인다.
  * ───────────────────────────────────────────── */
 
+import type { ReactNode } from "react";
 import { Icon } from "@iconify/react";
 import { FormDialog } from "./FormDialog";
 import { ReportDocument, type ReportDocumentProps } from "./ReportDocument";
 
-export function ReportModal({ open, onOpenChange, doc, kindLabel = "보고서", onOpenFull }: {
+export function ReportModal({ open, onOpenChange, doc, kindLabel = "보고서", onOpenFull, extraAction }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
   doc: ReportDocumentProps | null;
@@ -18,6 +20,8 @@ export function ReportModal({ open, onOpenChange, doc, kindLabel = "보고서", 
   kindLabel?: string;
   /** 전체 화면 보고서로 — 없으면 버튼을 세우지 않는다 */
   onOpenFull?: () => void;
+  /** 바닥 왼쪽에 더 붙일 동작 */
+  extraAction?: ReactNode;
 }) {
   if (!doc) return null;
   return (
@@ -36,6 +40,7 @@ export function ReportModal({ open, onOpenChange, doc, kindLabel = "보고서", 
       bodyClassName="px-4 py-4"
       footer={
         <>
+          {extraAction}
           {onOpenFull && (
             <FormDialog.CancelButton onClick={onOpenFull}>
               <Icon icon="mdi:open-in-new" className="size-4 shrink-0" aria-hidden />

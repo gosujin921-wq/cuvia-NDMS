@@ -12,6 +12,7 @@
  *   TODO(data): 지난 사건도 INCIDENTS 와 이벤트 원장에 올리면 이 합치기가 사라진다.
  *
  * ★ 시계로 자른다. 아직 생기지 않은 사건은 목록에 서지 않고, 사건이 끝나기 전에는 종료 시각도 예측 검증도 없다.
+ *   다만 이력·통계가 넘기는 시계는 `recordClockOf` 가 정한다 — 시연 시계가 원장보다 뒤에 있어도 원장 끝까지 읽는다(아래).
  * ───────────────────────────────────────────── */
 
 import { INCIDENTS, WHATIF_CASES } from "../fixtures";
@@ -21,21 +22,41 @@ import { formatClock, formatDate, formatElapsed } from "../lib/datetime";
 import type { EventEnvelope } from "./event";
 import type { HazardAssessment, HazardKind, StatusChange, WorkflowStatus } from "./incident";
 import type { Action, Decision, DisseminationResult, Report } from "./response";
-import { actionsAt, disseminationsAt, eventsOfIncident, findEvent, findForecast, forecastsOf, incidentViewAt, outcomesAt, predictionCasesAt, reportsAt } from "./selectors";
+import { actionsAt, disseminationsAt, eventsOfIncident, findEvent, findForecast, forecastsOf, incidentViewAt, ledgerEnd, outcomesAt, predictionCasesAt, reportsAt } from "./selectors";
 import type { CaseRow } from "./prediction-case";
 import type { RiskGrade } from "./risk-matrix";
 import type { RecordEntry, WhatIfCase } from "./whatif";
 
+/* ── 이력·통계의 시계 ───────────────────────────── */
+
+/**
+ * 이력(IA-05)·통계(IA-06)가 원장을 읽는 시계 — 시연 시계와 원장 끝 중 늦은 쪽.
+ *
+ * 시연은 D0(16:45)에서 시작하지만 이력은 지난 일을 되짚는 자리라, 원장이 적어 둔 사건은 처음부터 끝난 것으로
+ * 선다(2026-09-17 사용자 지시 "이력에 서항지구 이벤트 완료되었다고 치고 노출"). 서항만 가르지 않고 원장 사건
+ * 전부에 같은 규칙을 둔다 — 실서버에서는 원장 끝이 늘 현재보다 앞이라 이 함수는 `now` 를 그대로 돌려준다.
+ * 사건 작업공간·현황판은 이 시계를 쓰지 않는다. 거기서는 사건이 시연 시계대로 진행 중이다.
+ */
+export function recordClockOf(now: Date): Date {
+  const end = ledgerEnd();
+  return end > now ? end : now;
+}
+
 /* ── 사건 목록 ─────────────────────────────────── */
 
-/** 이력·통계가 쓰는 상태 넷 — 처리상태 여섯(후보·확인중·대응중·종료·오탐·병합됨)을 읽는 사람 쪽으로 접었다 */
-export type RecordStatus = "진행 중" | "종료" | "오탐" | "병합";
-export const RECORD_STATUSES: RecordStatus[] = ["진행 중", "종료", "오탐", "병합"];
+/** 이력·통계가 쓰는 상태 셋 — 처리상태 여섯(후보·확인중·대응중·종료·오탐·병합됨)을 읽는 사람 쪽으로 접었다 */
+export type RecordStatus = "진행 중" | "종료" | "오탐";
+export const RECORD_STATUSES: RecordStatus[] = ["진행 중", "종료", "오탐"];
 
-export function recordStatusOf(status: WorkflowStatus): RecordStatus {
+/**
+ * 병합된 사건은 자기 줄이 없다(null) — 기준 사건 기록 창의 "병합된 사건" 줄로만 보인다.
+ * 같은 사건이 목록에 두 줄로 서던 것을 걷었다(2026-09-17 사용자 "굳이 없어도 되는거면 하나만 남겨").
+ * 사건 작업공간(scr-02)의 병합 안내와 라우트 예외는 원장을 직접 읽으므로 그대로다.
+ */
+export function recordStatusOf(status: WorkflowStatus): RecordStatus | null {
   if (status === "종료") return "종료";
   if (status === "오탐") return "오탐";
-  if (status === "병합됨") return "병합";
+  if (status === "병합됨") return null;
   return "진행 중";
 }
 
@@ -50,8 +71,6 @@ export interface IncidentRecord {
   status: RecordStatus;
   /** 원장 사건의 처리상태. 원장이 없는 사건은 null */
   workflowStatus: WorkflowStatus | null;
-  /** 병합됐으면 기준 사건 */
-  mergedInto: string | null;
   /** 원장 사건은 후보 생성 시각, 지난 사건은 발생 시각 */
   occurredAt: string;
   /** 종료·오탐·병합으로 닫힌 시각. 진행 중이면 null */
@@ -80,6 +99,8 @@ function ledgerRecord(incidentId: string, now: Date, falsePositive: boolean): In
   const createdAt = raw.createdAt;
   /* 화면에서 담당자가 닫은 오탐은 원장 이벤트가 아니라 엔진 상태다. 사건 작업공간(scr-02)과 같은 규칙으로 뷰 위에 얹는다 */
   const view = falsePositive ? { ...raw, workflowStatus: "오탐" as const } : raw;
+  const status = recordStatusOf(view.workflowStatus);
+  if (!status) return null;
   const { incident, events } = view;
   const closing = [...events].reverse().find(
     (e) => e.eventType === "INCIDENT_STATUS_CHANGED" && CLOSE_STATUSES.includes((e.payload as StatusChange).to),
@@ -91,9 +112,8 @@ function ledgerRecord(incidentId: string, now: Date, falsePositive: boolean): In
     scopeLabel: incident.scope.label,
     region: regionOf(incident.legacyDistrictId, incident.scope.label),
     hazardKind: incident.hazardKind,
-    status: recordStatusOf(view.workflowStatus),
+    status,
     workflowStatus: view.workflowStatus,
-    mergedInto: view.mergedInto,
     occurredAt: createdAt,
     closedAt: closing?.observedAt ?? null,
     firstResponseAt: responses[0]?.observedAt ?? null,
@@ -117,7 +137,6 @@ function pastRecord(c: WhatIfCase, now: Date): IncidentRecord | null {
     hazardKind: c.hazardKind,
     status: closed ? "종료" : "진행 중",
     workflowStatus: null,
-    mergedInto: null,
     occurredAt: c.occurredAt,
     closedAt: closed,
     firstResponseAt: responses[0]?.at ?? null,
@@ -189,7 +208,7 @@ function entryOf(e: EventEnvelope): RecordTimelineEntry {
     case "INCIDENT_STATUS_CHANGED": {
       const p = e.payload as StatusChange;
       if (p.to === "종료" || p.to === "오탐" || p.to === "병합됨") {
-        return { ...base, lane: "close", kind: "상태", badge: "gray", closeKind: recordStatusOf(p.to) as "종료" | "오탐" | "병합", detail: p.reason };
+        return { ...base, lane: "close", kind: "상태", badge: "gray", closeKind: p.to === "병합됨" ? "병합" : p.to, detail: p.reason };
       }
       return { ...base, lane: "flow", kind: "상태", badge: "outline", dot: STATUS_TONE[p.to].dot, detail: p.reason };
     }
@@ -421,14 +440,14 @@ function forecastOf(forecastId: string | undefined, at: string | undefined, chec
     model: `${f.basis.modelName} ${f.basis.modelVersion}`.trim(),
     arrivalAt: f.arrivalAt,
     peak: top ? `${formatClock(top.validAt)} ${peakValue}` : "",
-    peakLabel: verified ? "검증한 전망" : "가장 큰 영향",
+    peakLabel: verified ? "검증한 예측" : "가장 큰 영향",
     impact: top?.impactSummary ?? "",
     targets: f.targets.map((t) => t.label),
     check,
   };
 }
 
-export function incidentDossierAt(record: IncidentRecord, now: Date, all: IncidentRecord[]): IncidentDossier {
+export function incidentDossierAt(record: IncidentRecord, now: Date): IncidentDossier {
   const period = record.closedAt ? formatElapsed(record.occurredAt, record.closedAt) : "진행 중";
 
   if (!record.hasLedger) {
@@ -469,7 +488,8 @@ export function incidentDossierAt(record: IncidentRecord, now: Date, all: Incide
   const peak = [...assessments].sort((a, b) => GRADE_ORDER.indexOf(b.grade) - GRADE_ORDER.indexOf(a.grade) || a.at.localeCompare(b.at))[0];
   const outcome = [...events].reverse().find((e) => e.eventType === "OUTCOME_RECORDED");
   const closing = allDecisions(events).reverse().find((d) => d.payload.kind === "종료 판단");
-  const merged = all.filter((r) => r.mergedInto === record.incidentId).map((r) => r.title);
+  /* 이 사건에 흡수된 사건 — 목록에는 서지 않으므로 원장에서 직접 찾는다 */
+  const merged = INCIDENTS.map((i) => incidentViewAt(i.incidentId, now)).filter((v) => v?.mergedInto === record.incidentId).map((v) => v!.incident.title);
   const caseRows = predictionCasesAt(record.incidentId, now)[0]?.rows ?? [];
   const verification = outcomesAt(record.incidentId, now).at(-1)?.verification;
   const baseline = forecastsOf(record.incidentId, now).find((f) => f.alternativeId === "baseline");

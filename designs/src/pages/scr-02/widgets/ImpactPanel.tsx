@@ -17,9 +17,9 @@ import { useScenario } from "../../../state/ScenarioProvider";
 export function ImpactPanel({ forecast, onOpenTwin }: { forecast: Forecast | null; onOpenTwin: (forecastId: string) => void }) {
   const { demoNow: now } = useScenario();
   return (
-    <section className="flex flex-col gap-1.5 p-3" aria-label="판단 기준 전망">
+    <section className="flex flex-col gap-1.5 p-3" aria-label="판단 기준 예측">
       <header className="flex items-baseline justify-between gap-2">
-        <h2 className="text-body font-semibold text-foreground">판단 기준 전망</h2>
+        <h2 className="text-body font-semibold text-foreground">판단 기준 예측</h2>
         {forecast && <span className="text-caption text-foreground-subtle">유효 ~{formatClock(forecast.validUntil)}</span>}
       </header>
       {forecast ? (
@@ -33,11 +33,11 @@ export function ImpactPanel({ forecast, onOpenTwin }: { forecast: Forecast | nul
           </p>
           <Button variant="outline" size="sm" className="w-full" onClick={() => onOpenTwin(forecast.forecastId)}>
             <Icon icon="mdi:cube-scan" className="size-4" aria-hidden />
-            전망 탭에서 비교
+            예측 탭에서 보기
           </Button>
         </>
       ) : (
-        <p className="text-caption text-foreground-muted">유효한 전망 없음 · 예측 갱신을 기다림. 판단의 디지털트윈 예측 지표는 미평가</p>
+        <p className="text-caption text-foreground-muted">유효한 예측 없음 · 예측 갱신을 기다림. 판단의 디지털트윈 예측 지표는 미평가</p>
       )}
     </section>
   );

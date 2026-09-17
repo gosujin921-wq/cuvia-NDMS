@@ -136,6 +136,11 @@ body {
   z-index: 3;
 }
 
+/* 지도 팝업은 불투명 면 — 글래스 면(72%)이면 바로 뒤의 DOM 핀 아이콘이 글 위로 비친다 (2026-09-17) */
+.dsms-popup [data-slot="glass-panel"] {
+  background-color: var(--color-surface);
+}
+
 .dsms-popup .maplibregl-popup-content {
   background: transparent;
   padding: 0;

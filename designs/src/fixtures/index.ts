@@ -19,10 +19,10 @@ import { CHANGWONCHEON_FORECASTS, CHANGWONCHEON_GEOMETRIES, CHANGWONCHEON_WHATIF
 import { PAST_FORECASTS, PAST_GEOMETRIES, PAST_WHATIF_CASES } from "./past";
 import type { WhatIfCase } from "../model/whatif";
 import { WORKFLOW_EVENTS } from "./seohang-flood/workflow";
-import { SEOHANG_CENTER } from "./seohang-flood/subjects";
+import { SEOHANG_CENTER, SITE_POINTS as SEOHANG_SITE_POINTS, type SitePoint } from "./seohang-flood/subjects";
 
 export { INCIDENT_ID, DEMO_TICKS };
-export { SUBJECTS, SCOPE_ZOOM, type CctvChannel } from "./seohang-flood/subjects";
+export { SUBJECTS, SCOPE_ZOOM, type CctvChannel, type SitePoint } from "./seohang-flood/subjects";
 import { CCTV_CHANNELS as SEOHANG_CCTV, GEOMETRIES as SEOHANG_GEOMETRIES, SUBJECT_LOCATION as SEOHANG_LOCATION, deviceOfSubject as seohangDevice, facilityOfSubject as seohangFacility, isFacilitySubject as isSeohangFacility, isSensorSubject as isSeohangSensor, type CctvChannel as CctvChannelT } from "./seohang-flood/subjects";
 import type { Device } from "../demo/devices";
 import type { Facility } from "../demo/facilities";
@@ -47,6 +47,12 @@ export const CCTV_CHANNELS: CctvChannelT[] = [...SEOHANG_CCTV, ...DISTRICT_FIXTU
 export const ALERTS: AttentionAlert[] = [...SEOHANG_ALERTS, ...DISTRICT_FIXTURES.flatMap((d) => d.alerts)];
 
 /** 주체 → Phase 1 핀 부품 모양. 서항은 자체 어댑터, 다른 구역은 SubjectSpec 에서 */
+/** 지구 지도 주변 주체(지하차도·대피소·마을방송·조위관측소) — 재난관제와 디지털트윈이 같은 목록을 읽는다. 정의가 없는 지구는 빈 목록 */
+const SITE_POINTS_BY_DISTRICT: Record<string, SitePoint[]> = { seohang: SEOHANG_SITE_POINTS };
+export function sitePointsOf(districtId: string): SitePoint[] {
+  return SITE_POINTS_BY_DISTRICT[districtId] ?? [];
+}
+
 export function isSensorSubject(id: string): boolean {
   return isSeohangSensor(id) || Boolean(DISTRICT_SUBJECTS[id]?.kind);
 }
@@ -69,10 +75,8 @@ export { type SopCatalogItem, type SopBinding } from "./seohang-flood/sop";
 import { SOP_CATALOG as SEOHANG_SOP } from "./seohang-flood/sop";
 
 const MERGED_ID = "INC-2024-0921-SH02";
-const FALSE_ID = "INC-2024-0921-SH03";
 
 const MERGED_INCIDENT: Incident = { ...INCIDENT, incidentId: MERGED_ID, title: "해안도로 도로수위 단독 알람 (중복 후보)", scope: { kind: "지점", displayAnchor: [128.5661, 35.1963], label: "해안도로 저지대 도로수위계" }, scopeKind: "지점", correlationKeys: ["RW-SH-07"] };
-const FALSE_INCIDENT: Incident = { ...INCIDENT, incidentId: FALSE_ID, title: "팔용 배수구역 수위 시험 알람", scope: { kind: "지점", displayAnchor: [128.627, 35.24], label: "팔용 배수구역 시험 수위계" }, scopeKind: "지점", correlationKeys: ["WL-PY-TEST"], legacyDistrictId: "paryong" };
 
 function sys(id: string, incidentId: string, type: EventEnvelope["eventType"], at: string, summary: string, payload: unknown, references: string[] = []): EventEnvelope {
   return { eventId: id, sourceSystem: "CUVIA", eventType: type, eventClass: "업무", producerRole: "담당자", subjectId: incidentId, observedAt: at, receivedAt: at, quality: "정상", sourceReadiness: "내부 생성", dataOrigin: "사용자 입력", payload, schemaVersion: "ndms.event/0.1", incidentId, references, actor: "김상황", ingestionMode: "수동", scenario: { scenarioRuleId: "SCN-SH-FLOOD", scenarioRuleVersion: "0.1.0", generatedAt: "2026-09-11T14:00:00+09:00", scenarioTime: at }, summary };
@@ -82,11 +86,9 @@ const EXCEPTION_EVENTS: EventEnvelope[] = [
   sys("EV-X-01", MERGED_ID, "INCIDENT_CREATED", t("17:23"), "도로수위 단독 알람으로 후보 생성", { initialStatus: "후보" as WorkflowStatus, ruleId: "RULE-CANDIDATE-SINGLE", ruleVersion: "0.1", reasons: ["도로수위 경계 기준 진입"] }),
   sys("EV-X-02", MERGED_ID, "INCIDENT_RELATION_CHANGED", t("17:28"), `병합 → ${INCIDENT_ID}`, { fromIncidentId: MERGED_ID, toIncidentId: INCIDENT_ID, kind: "병합", reason: "같은 배수권역·시간창·위험현상" }),
   sys("EV-X-03", MERGED_ID, "INCIDENT_STATUS_CHANGED", t("17:28"), "후보 → 병합됨", { from: "후보", to: "병합됨", reason: `기준 사건 ${INCIDENT_ID} 에 흡수`, recordedAt: t("17:28"), mergedInto: INCIDENT_ID }, ["EV-X-02"]),
-  sys("EV-X-04", FALSE_ID, "INCIDENT_CREATED", t("16:20"), "시험 수위계 임계치 통과로 후보 생성", { initialStatus: "후보" as WorkflowStatus, ruleId: "RULE-CANDIDATE-THRESHOLD", ruleVersion: "0.1", reasons: ["심각 임계치 통과"] }),
-  sys("EV-X-05", FALSE_ID, "INCIDENT_STATUS_CHANGED", t("16:35"), "후보 → 오탐", { from: "후보", to: "오탐", reason: "점검용 시험 데이터 · 원천 이벤트 보존", recordedAt: t("16:35") }),
 ];
 
-export const INCIDENTS: Incident[] = [INCIDENT, MERGED_INCIDENT, FALSE_INCIDENT, ...DISTRICT_FIXTURES.map((d) => d.incident)];
+export const INCIDENTS: Incident[] = [INCIDENT, MERGED_INCIDENT, ...DISTRICT_FIXTURES.map((d) => d.incident)];
 
 const CLASS_ORDER = { 원천: 0, 파생: 1, 분석: 2, 업무: 3 } as const;
 /** 이벤트 원장 — 관측시각 오름차순. 같은 시각이면 원천 → 파생 → 분석 → 업무 */

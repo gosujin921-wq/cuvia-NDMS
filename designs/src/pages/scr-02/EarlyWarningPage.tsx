@@ -20,7 +20,7 @@
  * 잘못된 사건·만료된 예측판은 임의로 바꾸지 않고 사실을 보이고 복귀 길을 준다(IA §5.2 예외).
  * ───────────────────────────────────────────── */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Icon } from "@iconify/react";
 import maplibregl from "maplibre-gl";
@@ -33,8 +33,10 @@ import { weatherLayerItems, isWeatherKey, WEATHER_OFF, type WeatherState } from 
 import { CITY_CENTER } from "../../lib/map-config";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import { MapPopup } from "../../components/MapPopup";
+import { TimeAxis } from "../../components/twin/TimeAxis";
+import { minutesBetween } from "../../lib/forecast-twin";
 import { CctvBigView } from "../../components/CctvBigView";
-import { CCTV_DOCK, CENTER_LEFT, CENTER_RIGHT, EDGE, LEFT_RAIL, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP, utilStripStyle } from "../../lib/layout";
+import { CCTV_DOCK, CENTER_LEFT, CENTER_RIGHT, EDGE, FAB_SIZE, LEFT_RAIL, RAIL_BASE, RIGHT_RAIL, UTIL_STRIP, utilStripStyle } from "../../lib/layout";
 import { useScenario } from "../../state/ScenarioProvider";
 import { formatClock, formatElapsed } from "../../lib/datetime";
 import { ALERT_GRADE_TONE, alertRoleLabel, statusTone } from "../../lib/status-tone";
@@ -46,7 +48,7 @@ import {
   chainStagesAt, channelsOfScope, currentForecastsOf, dataFaultsAt, decisionsAt, derivedFlagOf, disseminationsAt, districtViewAt, findWhatIfCase,
   districtAlertAt, riskEvidenceIdsOf, incidentViewAt, incidentsAt, isActiveStatus, recommendationsAt, relatedEventsAt, resolveForecast, sopItemsAt, watchViewAt, type CctvChannelView,
 } from "../../model/selectors";
-import { GEOMETRIES, SCOPE_ZOOM, SUBJECTS, deviceOfSubject, facilityOfSubject, isFacilitySubject, isSensorSubject } from "../../fixtures";
+import { GEOMETRIES, SCOPE_ZOOM, SUBJECTS, deviceOfSubject, facilityOfSubject, isFacilitySubject, isSensorSubject, sitePointsOf } from "../../fixtures";
 import { DISTRICTS } from "../../demo/districts";
 import { ForecastRail } from "./widgets/ForecastRail";
 import { ALTERNATIVE_LABEL } from "../../model/forecast";
@@ -59,6 +61,7 @@ import { mergeScene } from "../../model/scene";
 import { previewScene } from "../../lib/twin-preview";
 import { DeviceMarkers, type SubjectPin } from "./widgets/DeviceMarkers";
 import { FacilityMarkers } from "./widgets/FacilityMarkers";
+import { SiteMarkers } from "./widgets/SiteMarkers";
 import { DevicePopup } from "./widgets/DevicePopup";
 import { TrendPanel } from "./widgets/TrendPanel";
 import { CrossCheckPanel } from "./widgets/CrossCheckPanel";
@@ -74,9 +77,12 @@ import { type ConfirmRequest } from "./widgets/SopPanel";
 import { ResponsePopup } from "./widgets/ResponsePopup";
 import { ResponseSummaryCard } from "./widgets/ResponseSummaryCard";
 import { ExecutionPopup } from "./widgets/ExecutionPopup";
+import { dismissAlertToasts } from "../../lib/alarm-toast";
 
 
 type Mode = "judge" | "twin";
+/** 시간축 재생 속도 — 디지털트윈 침수와 같다 */
+const PLAY_MS_PER_MIN = 100;
 
 const EXTENT_SOURCE = "incident-extent";
 const SCOPE_SOURCE = "incident-scope";
@@ -87,6 +93,9 @@ export function EarlyWarningPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const { demoNow: now, ticks, tickIndex, advanceTick, agentOpen, selectDistrict, heroIncidentId, falsePositiveIds, markFalsePositive } = useScenario();
+  /* 재난관제에 들어서면 떠 있던 알림 토스트를 닫는다. 사건을 보러 왔으니 알림은 할 일을 마쳤다.
+     들어선 뒤 0 으로 새로 생긴 알림은 새 소식이라 그대로 뜬다 */
+  useEffect(() => { dismissAlertToasts(); }, [districtId]);
   /* URL 의 지구를 엔진의 선택 지구로 비춘다 — 종합상황으로 돌아가면 이 지구의 이름표·줄이 선택 상태로 선다 */
   useEffect(() => {
     if (districtId) selectDistrict(districtId);
@@ -134,6 +143,7 @@ export function EarlyWarningPage() {
   const devices = useMemo(() => (scope?.correlationKeys ?? []).filter(isSensorSubject).map((id) => deviceOfSubject(id, legacyDistrict)), [scope, legacyDistrict]);
   const sensors = devices.filter((d) => d.kind !== "CV");
   const facilities = useMemo(() => (scope?.correlationKeys ?? []).filter(isFacilitySubject).map((id) => facilityOfSubject(id, legacyDistrict)), [scope, legacyDistrict]);
+  const sitePoints = useMemo(() => sitePointsOf(legacyDistrict), [legacyDistrict]);
   const pins = useMemo<SubjectPin[]>(
     () =>
       devices.map((device) => {
@@ -150,6 +160,9 @@ export function EarlyWarningPage() {
   const mapContainer = useState(() => ({ current: null as HTMLDivElement | null }))[0];
   const { map, ready } = useMapLibre(mapContainer);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /* 핀 팝업 열림 — 선택과 따로 둔다. [근거에서 보기]는 팝업만 닫고 선택(좌측 관측)은 그 센서로 남긴다 */
+  const [popupOpen, setPopupOpen] = useState(false);
+  const pickDevice = useCallback((id: string) => { setSelectedId(id); setPopupOpen(true); }, []);
   const selected = devices.find((d) => d.id === selectedId) ?? null;
   const selectedChannel = selected?.kind === "CV" ? channels.find((c) => c.id === selected.id) ?? null : null;
 
@@ -195,13 +208,52 @@ export function EarlyWarningPage() {
   const validAt = params.get("validAt");
   const resolution = useMemo(() => (forecastId ? resolveForecast(forecastId, now) : null), [forecastId, now]);
   const twinForecast: Forecast | null = resolution?.kind === "ok" ? resolution.forecast : null;
-  const selectedMark = twinForecast ? twinForecast.marks.find((m) => m.validAt === validAt) ?? twinForecast.marks.find((m) => new Date(m.validAt) >= now) ?? twinForecast.marks[0] : null;
+  /* 시간축 커서 — 디지털트윈과 같은 슬라이더(components/twin/TimeAxis · 2026-09-17). 분 단위로 움직이고, 지도는 그 시각까지의
+     마지막 눈금을 그린다(눈금 사이 값은 판단에 쓰지 않는다 · IA §8). 재생 중에는 화면 상태로만 두고 손을 대거나 멈추면 query(validAt)에 적는다 */
+  const [cursorAt, setCursorAt] = useState<string | null>(validAt);
+  useEffect(() => setCursorAt(validAt), [validAt]);
+  const [playing, setPlaying] = useState(false);
+  const shownAt = cursorAt ?? validAt;
+  const floorMark = twinForecast && shownAt
+    ? [...twinForecast.marks].reverse().find((m) => new Date(m.validAt).getTime() <= new Date(shownAt).getTime()) ?? null
+    : null;
+  const selectedMark = twinForecast ? floorMark ?? twinForecast.marks.find((m) => new Date(m.validAt) >= now) ?? twinForecast.marks[0] : null;
+  /* 축은 지금 → 예측판 끝. 지난 눈금은 축 밖이고, 지금 위치의 장면은 그 앞 눈금이 그린다 */
+  const axisOrigin = now.toISOString();
+  const axisEnd = twinForecast
+    ? new Date(Math.max(new Date(twinForecast.validUntil).getTime(), ...twinForecast.marks.map((m) => new Date(m.validAt).getTime()))).toISOString()
+    : axisOrigin;
+  const axisSpan = Math.max(1, minutesBetween(axisOrigin, axisEnd));
+  const axisMinutes = Math.max(0, minutesBetween(axisOrigin, shownAt ?? selectedMark?.validAt ?? axisOrigin));
+  const atMinute = useCallback((m: number) => new Date(now.getTime() + m * 60_000).toISOString(), [now]);
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0, last = performance.now();
+    const tick = (t: number) => {
+      const dm = (t - last) / PLAY_MS_PER_MIN;
+      if (dm >= 1) {
+        last = t;
+        setCursorAt((prev) => {
+          const next = Math.max(0, prev ? minutesBetween(now, prev) : 0) + Math.floor(dm);
+          return atMinute(next > axisSpan ? 0 : next);
+        });
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, now, axisSpan, atMinute]);
   /* 장면 층 — 도로 상태 선 · 차단 지점 · 우회로 · 시설 상태. 디지털트윈과 같은 부품이다(03 §24).
      대안은 비교라 "통제됨"을 "통제 시"로 바꿔 올린다(lib/twin-preview) */
   const sceneLayers = useMemo(
     () => (mode === "twin" && twinForecast ? previewScene(mergeScene(twinForecast.scene, selectedMark?.scene)) : []),
     [mode, twinForecast, selectedMark],
   );
+  /* 지구 주변 주체(지하차도·대피소·마을방송·조위관측소) — 디지털트윈과 같은 목록. 전망 장면이 같은 점을 상태와 함께 그리면 그쪽이 선다 */
+  const shownSitePoints = useMemo(() => {
+    const drawn = new Set(sceneLayers.map((l) => l.id));
+    return sitePoints.filter((p) => !drawn.has(p.id));
+  }, [sceneLayers, sitePoints]);
   /* 고해상 지형 — 침수면을 지형을 따라 채운다. 전망 탭에서, 고른 눈금의 침수면이 구운 것일 때만 읽는다(lib/flood-surfaces) */
   const surfaceGeometryId = mode === "twin" && selectedMark && extentOn ? selectedMark.extentGeometryId : null;
   const surfaceEntry = useMemo(() => floodSurfaceOf(surfaceGeometryId), [surfaceGeometryId]);
@@ -233,20 +285,23 @@ export function EarlyWarningPage() {
     raiseSceneLayers(instance);
   }, [map, ready, scope, mode, selectedMark, extentOn, finePatch, surfaceEntry]);
 
-  /* 패널에서 고른 주체 — 지도도 그 주체로 끌어온다 */
+  /* 패널에서 고른 주체 — 지도도 그 주체로 끌어온다. 팝업이 열리면 팝업이 설 자리를 두고 도크 바로 위에,
+     팝업 없이 고르면(핀 팝업의 [근거에서 보기]) 지도 가운데에 세운다 */
   const focusDevice = useCallback(
-    (device: Device) => {
+    (device: Device, withPopup = true) => {
       setSelectedId(device.id);
+      setPopupOpen(withPopup);
       const instance = map.current;
       if (!instance || !ready) return;
       const el = instance.getContainer();
-      const target = { x: (CENTER_LEFT + (el.clientWidth - CENTER_RIGHT)) / 2, y: el.clientHeight - (CCTV_DOCK + EDGE * 2) - 32 };
+      const x = (CENTER_LEFT + (el.clientWidth - CENTER_RIGHT)) / 2;
+      const target = withPopup ? { x, y: el.clientHeight - (CCTV_DOCK + EDGE * 2) - 32 } : { x, y: (72 + el.clientHeight - (CCTV_DOCK + EDGE * 2)) / 2 };
       const pt = instance.project(device.center);
       instance.panBy([pt.x - target.x, pt.y - target.y], { duration: 500 });
     },
     [map, ready],
   );
-  const openChannel = (ch: CctvChannelView) => setSelectedId(ch.id);
+  const openChannel = (ch: CctvChannelView) => pickDevice(ch.id);
   const cctvOfFacility = (facility: Facility) => {
     const ch = channels.find((c) => c.id === (facility.kind === "pump" ? SUBJECTS.cctvPump : SUBJECTS.cctvPole));
     return ch ? { name: ch.label, onOpen: () => openChannel(ch) } : undefined;
@@ -254,12 +309,12 @@ export function EarlyWarningPage() {
 
   /* 근거 선택 — query 가 정본. 이벤트 줄을 누르면 그 주체를 지도에서 강조한다 */
   const selectedEventId = params.get("evidenceId");
-  const selectEvidence = (e: EventEnvelope) => {
+  const selectEvidence = (e: EventEnvelope, withPopup = true) => {
     const next = new URLSearchParams(params);
     next.set("evidenceId", e.eventId);
     setParams(next, { replace: true });
     const device = devices.find((d) => d.id === e.subjectId);
-    if (device) focusDevice(device);
+    if (device) focusDevice(device, withPopup);
   };
 
   /* ── 모드 전환과 담당자 조작 — 전이는 엔진이 소유한다 ── */
@@ -275,12 +330,21 @@ export function EarlyWarningPage() {
     setParams(next);
   };
   /* 조건을 바꾸면? — 디지털트윈 시뮬레이션(/scr-00)이 답한다(2026-09-17). 전망 탭은 기준만 보이고 시나리오 비교는 그리로 넘긴다.
-     같은 사건·같은 예측판을 기준 전망으로 연다(트윈이 두 벌이 되지 않는다). 예전에는 /scr-05 로 갔는데 그 화면은
+     같은 사건·같은 예측판을 기준 예측으로 연다(트윈이 두 벌이 되지 않는다). 예전에는 /scr-05 로 갔는데 그 화면은
      진행 중 사건을 다시 여기로 돌려보내 고리가 생겼다. 시연 시계는 "대안 비교" 칸으로 옮긴다.
      이 사건의 시뮬레이션 대상이 없으면 버튼을 닫는다(데이터가 답한다) */
   const compareInTwin = findWhatIfCase(incidentId)
     ? () => { advanceTick("d5"); navigate(`/scr-00?incident=${encodeURIComponent(incidentId)}`); }
     : null;
+  /* 예측을 열거나 탭을 바꾸면 떠 있던 핀 팝업·영상 창을 닫는다. 좌측 관측 선택(센서)은 남긴다 */
+  const devicesRef = useRef(devices);
+  devicesRef.current = devices;
+  useEffect(() => {
+    setPopupOpen(false);
+    setSelectedId((prev) => (prev && devicesRef.current.find((d) => d.id === prev)?.kind === "CV" ? null : prev));
+  }, [mode, forecastId]);
+  /* 전망 탭을 떠나면 재생을 멈춘다 */
+  useEffect(() => { if (mode !== "twin") setPlaying(false); }, [mode]);
   const pickValidAt = (at: string) => {
     const next = new URLSearchParams(params);
     next.set("validAt", at);
@@ -303,7 +367,7 @@ export function EarlyWarningPage() {
   /* 종료 → 이력. 그 사건의 기록 창이 예측 검증 탭으로 열린 채 도착한다 (IA §10.1 · §13.1 · 2026-09-16) */
   const closeReview = () => { setResponseOpen(false); advanceTick("d8-close"); navigate(`/scr-07?incident=${encodeURIComponent(incidentId)}&view=case`); };
   /* 탭 직접 클릭 — 마지막 맥락(forecastId · validAt · alternativeId)은 query 에 남아 있어 그대로 이어진다.
-     전망 탭을 처음 열면 기준 전망을 고른다(다른 전망을 자동 선택하는 것이 아니라 아직 고른 것이 없을 때만) */
+     예측 탭을 처음 열면 기준 예측을 고른다(다른 예측을 자동 선택하는 것이 아니라 아직 고른 것이 없을 때만) */
   const onTab = (value: string) => {
     if (value === "twin") {
       if (forecastId) setParams(setPanel(new URLSearchParams(params), "twin"));
@@ -355,20 +419,21 @@ export function EarlyWarningPage() {
         {!exception && (
           <>
             <SceneLayers map={map} ready={ready} layers={sceneLayers} />
-            <DeviceMarkers map={map} ready={ready} pins={pins} selectedId={selectedId} onSelect={(d) => setSelectedId(d.id)} />
+            <DeviceMarkers map={map} ready={ready} pins={pins} selectedId={selectedId} onSelect={(d) => pickDevice(d.id)} />
             <FacilityMarkers map={map} ready={ready} facilities={facilities} cctvOf={cctvOfFacility} />
+            <SiteMarkers map={map} ready={ready} points={shownSitePoints} />
             {selectedChannel && (
               <CctvBigView
-                channel={{ name: selectedChannel.label, address: "경남 창원시 마산합포구 신포동", scene: selectedChannel.scene, still: selectedChannel.still, analysis: selectedChannel.analysis ? `VLM ${Math.round(selectedChannel.analysis.confidence * 100)}% · ${selectedChannel.analysis.model} ${selectedChannel.analysis.version} · 분석 ${formatClock(selectedChannel.analysis.analyzedAt)} · ${selectedChannel.analysis.description}` : undefined, at: now }}
+                channel={{ name: selectedChannel.label, address: "경남 창원시 마산합포구 신포동", scene: selectedChannel.scene, still: selectedChannel.still, clip: selectedChannel.clip, analysis: selectedChannel.analysis ? `VLM ${Math.round(selectedChannel.analysis.confidence * 100)}% · ${selectedChannel.analysis.model} ${selectedChannel.analysis.version} · 분석 ${formatClock(selectedChannel.analysis.analyzedAt)} · ${selectedChannel.analysis.description}` : undefined, at: now }}
                 onClose={() => setSelectedId(null)}
               />
             )}
-            {selected && selected.kind !== "CV" && (
+            {selected && selected.kind !== "CV" && popupOpen && (
               <MapPopup map={map} lngLat={selected.center} onClose={() => setSelectedId(null)} offset={24}>
                 <DevicePopup device={selected} onClose={() => setSelectedId(null)} onShowEvents={() => {
                   const row = rows.find((r) => r.event.subjectId === selected.id);
-                  if (row) selectEvidence(row.event);
-                  setSelectedId(null);
+                  if (row) selectEvidence(row.event, false);
+                  else setPopupOpen(false);
                 }} onRespond={responseAvailable ? () => { setSelectedId(null); openResponse(); } : undefined} />
               </MapPopup>
             )}
@@ -466,7 +531,7 @@ export function EarlyWarningPage() {
         ) : (
           <>
             <GlassPanel className="pointer-events-auto shrink-0">
-              <TrendPanel sensors={sensors} selected={selected} onSelect={focusDevice} />
+              <TrendPanel sensors={sensors} selected={selected} onSelect={(d) => focusDevice(d)} />
             </GlassPanel>
             <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
               <CrossCheckPanel rows={rows} selectedEventId={selectedEventId} riskEventIds={riskEvidenceIds} onSelect={selectEvidence} onOpenForecast={openTwin} />
@@ -484,6 +549,24 @@ export function EarlyWarningPage() {
         </div>
       )}
 
+      {/* 하단 중앙 · 전망 시간축 — 현장영상 도크 바로 위. 디지털트윈과 같은 캡슐이고, 오른쪽은 질의 버튼 자리를 비워 둔다 */}
+      {view && !exception && mode === "twin" && twinForecast && (
+        <div className="pointer-events-none absolute z-30 flex justify-center px-3 [&>*]:w-full [&>*]:max-w-[640px]" style={{ left: CENTER_LEFT, right: CENTER_RIGHT + FAB_SIZE + EDGE, bottom: EDGE + CCTV_DOCK + EDGE }}>
+          <TimeAxis
+            origin={axisOrigin}
+            end={axisEnd}
+            ticks={twinForecast.marks.filter((m) => new Date(m.validAt) >= now).map((m) => m.validAt)}
+            minutes={axisMinutes}
+            onChange={(m) => { setPlaying(false); pickValidAt(atMinute(m)); }}
+            playing={playing}
+            onTogglePlay={() => {
+              if (playing && cursorAt) pickValidAt(cursorAt);
+              setPlaying((v) => !v);
+            }}
+          />
+        </div>
+      )}
+
       {/* 우측 레일 · 지구 현황 — 사건·알림 없음. 판단 탭 자리에 지구 현황 카드만 */}
       {district && (
         <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
@@ -491,7 +574,7 @@ export function EarlyWarningPage() {
             <Tabs value="judge">
               <TabsList variant="panel" className="w-full" aria-label="우측 레일 탭">
                 <TabsTrigger variant="panel" value="judge"><span className="size-1.5 rounded-full bg-success" aria-hidden />판단</TabsTrigger>
-                <TabsTrigger variant="panel" value="twin" disabled title="사건 후보가 생기면 열립니다">전망</TabsTrigger>
+                <TabsTrigger variant="panel" value="twin" disabled title="사건 후보가 생기면 열립니다">예측</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -512,7 +595,7 @@ export function EarlyWarningPage() {
             <Tabs value="judge">
               <TabsList variant="panel" className="w-full" aria-label="우측 레일 탭">
                 <TabsTrigger variant="panel" value="judge"><span className="size-1.5 rounded-full bg-risk-lv3" aria-hidden />판단</TabsTrigger>
-                <TabsTrigger variant="panel" value="twin" disabled title="사건 후보가 생기면 열립니다">전망</TabsTrigger>
+                <TabsTrigger variant="panel" value="twin" disabled title="사건 후보가 생기면 열립니다">예측</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -536,8 +619,8 @@ export function EarlyWarningPage() {
                   <span className={cn("size-1.5 rounded-full", tone?.dot)} aria-hidden />
                   판단
                 </TabsTrigger>
-                <TabsTrigger variant="panel" value="twin" disabled={!twinAvailable} title={twinAvailable ? undefined : "유효한 전망 없음"}>
-                  전망
+                <TabsTrigger variant="panel" value="twin" disabled={!twinAvailable} title={twinAvailable ? undefined : "유효한 예측 없음"}>
+                  예측
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -584,12 +667,10 @@ export function EarlyWarningPage() {
 
           {mode === "twin" && (
             <ForecastRail
-              now={now}
               resolution={resolution}
               forecast={twinForecast}
               mark={selectedMark}
               repick={forecasts.filter((f) => f.alternativeId === "baseline")}
-              onPickValidAt={pickValidAt}
               onBack={toJudge}
               onReview={reviewResponse}
               onRepick={(id) => setParams({ panel: "twin", forecastId: id })}

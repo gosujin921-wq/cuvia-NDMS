@@ -46,7 +46,7 @@ export function JudgeActionBar({ status, phase, assessed, approved, failure, res
   if (!next) return null;
   const controlled = status === "대응중" && phase === "안정";
   const responding = status === "대응중" && !controlled
-    ? !assessed ? "판단 갱신 전입니다. 긴급이면 전망 없이 대응을 엽니다."
+    ? !assessed ? "판단 갱신 전입니다. 긴급이면 예측 없이 대응을 엽니다."
       : !approved ? "CUVIA가 채운 SOP를 검토하고 승인합니다."
       : pendingApproval > 0 ? `위험도 상향 · 추가 조치 ${pendingApproval}건 승인이 필요합니다.`
       : failure ? `${failure} 실패 · 대체조치가 필요합니다.`

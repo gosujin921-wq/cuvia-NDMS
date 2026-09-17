@@ -12,6 +12,7 @@
 import type { SpatialRef } from "../../model/event";
 import type { Device } from "../../demo/devices";
 import type { Facility } from "../../demo/facilities";
+import { deviceKindSpec, devicesOf } from "../../demo/devices";
 import { COAST_ROAD_LINE, FLOOD_GEOMETRIES, UNDERPASS_AT } from "./geometry.generated";
 
 export const DRAINAGE_BASIN_ID = "BASIN-SH-01";
@@ -111,6 +112,42 @@ export function facilityOfSubject(id: FacilitySubjectId, legacyDistrictId = "seo
   const pump = id === SUBJECTS.pumpStation;
   return { id, districtId: legacyDistrictId, kind: pump ? "pump" : "retention", name: SUBJECT_LOCATION[id].label, spot: pump ? "해안도로 배후" : "저지대 상류", center: SUBJECT_LOCATION[id].displayAnchor, deviceSpot: pump ? "제2배수펌프장 옥상" : "저지대 상류" };
 }
+
+/**
+ * 서항 지도 주변 주체 — 사건 상관 키(correlationKeys)에 없지만 지도에 함께 서는 것들.
+ * 재난관제(/scr-02)와 디지털트윈(/scr-00)이 같은 목록을 읽는다. 상태는 각 화면이 붙인다.
+ * 지하차도 id 는 예측 장면(scene.ts)의 점과 같게 둬서 전망 장면이 오면 그 점이 이 자리를 대신한다.
+ */
+export type SitePointKind = "지하차도" | "대피소" | "마을방송" | "조위관측소";
+
+export interface SitePoint {
+  id: string;
+  kind: SitePointKind;
+  label: string;
+  at: [number, number];
+  icon: string;
+  /** 핀 보더 색 — 장치·시설 핀과 같은 문법(demo/devices · demo/facilities). 없으면 DS 중립 */
+  color?: string;
+}
+
+/** 종류별 핀 모양 — 마을방송·조위관측소는 장치 종류 표(deviceKindSpec)를 그대로 문다 */
+const SITE_KIND: Record<SitePointKind, { icon: string; color?: string }> = {
+  지하차도: { icon: "mdi:tunnel" },
+  대피소: { icon: "mdi:home-heart", color: "var(--color-primary)" },
+  마을방송: { icon: deviceKindSpec("BC").icon, color: deviceKindSpec("BC").color },
+  조위관측소: { icon: deviceKindSpec("TD").icon, color: deviceKindSpec("TD").color },
+};
+const site = (id: string, kind: SitePointKind, label: string, at: [number, number]): SitePoint => ({ id, kind, label, at, ...SITE_KIND[kind] });
+
+/* 대피소 — 저지대 건물에서 걸어 오를 수 있는 고지대 두 곳.
+   ⚠ 교체 대상: 행안부 대피소 원장에 서항 지구 행이 오면 이름·좌표를 그것으로 바꾼다 */
+export const SITE_POINTS: SitePoint[] = [
+  site("a-underpass", "지하차도", SUBJECT_LOCATION[SUBJECTS.underpass].label, SUBJECT_LOCATION[SUBJECTS.underpass].displayAnchor),
+  site("sh-shelter-w", "대피소", "서항 대피소 (서)", [128.5698, 35.2022]),
+  site("sh-shelter-e", "대피소", "서항 대피소 (동)", [128.5755, 35.2008]),
+  ...devicesOf("seohang").filter((d) => d.kind === "BC").map((d) => site(d.id, "마을방송", d.name, d.center)),
+  site(SUBJECTS.tide, "조위관측소", SUBJECT_LOCATION[SUBJECTS.tide].label, SUBJECT_LOCATION[SUBJECTS.tide].displayAnchor),
+];
 
 /** 지도 맞춤 상한 — 사건 범위 종류별 (지점·시설은 더 들어가고, 전역은 시 전체) */
 export const SCOPE_ZOOM: Record<SpatialRef["kind"], number> = { 지점: 16.5, 시설: 16.5, 회랑: 15.5, 구역: 15, 전역: 11 };

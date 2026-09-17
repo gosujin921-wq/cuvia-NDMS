@@ -28,10 +28,12 @@
  * ───────────────────────────────────────────── */
 
 import { Icon } from "@iconify/react";
-import { toast } from "@ds";
+import { Badge, Button, toast } from "@ds";
+import type { AlertGrade } from "../model/alert";
 import { levelSpec, type AlertLevel } from "../demo/levels";
 import { fadeColor } from "./color";
 import { navigateTo } from "./router-navigate";
+import { ALERT_GRADE_TONE } from "./status-tone";
 
 export interface AlarmToast {
   title: string;
@@ -154,4 +156,102 @@ export function dismissAllAlarms() {
   toast.dismiss();
   openAlarms.clear();
   dismissingAll = false;
+}
+
+/* ─────────────────────────────────────────────
+ * Phase 2 알림 토스트 · 세계 tick 이 새 알림(AttentionAlert)을 낳을 때
+ *
+ * 카드 구조는 CSMS `lib/alarm-toast.tsx` 와 같다(2026-09-17 사용자 지시 "CSMS에서 가져와").
+ * 뱃지 줄 · 아이콘+제목 줄 · 위치 줄 · 설명+버튼 바닥줄의 네 줄 카드이고, sonner 슬롯으로는
+ * 이 구조가 안 나와 toast.custom 으로 그린다. 위험색은 CSMS riskTone 자리에 ALERT_GRADE_TONE 을 문다.
+ * // TODO(ds): CSMS lib/alarm-toast.tsx 의 AlarmToastCard 와 같은 부품. DS 승격 대상
+ * ───────────────────────────────────────────── */
+
+export interface AlertToastInput {
+  alertId: string;
+  title: string;
+  kind: string;
+  grade: AlertGrade;
+  /** 위치 줄 */
+  location: string;
+  /** 바닥 줄 한 문장 */
+  summary: string;
+  /** 있으면 [사건 확인하기] 가 이 주소로 보낸다. 이미 그 화면이면 버튼을 달지 않는다 */
+  href?: string;
+}
+
+/* CSMS 와 같은 길이 · 버튼 있는 알림은 읽고 누를 만큼 더 둔다 */
+const ALERT_DURATION_MS = 8_000;
+const ALERT_ACTION_DURATION_MS = 20_000;
+
+/* 지금 떠 있는 알림 토스트 id · 재난관제에 들어서면 이것만 걷는다(조작 응답 토스트는 남긴다) */
+const openAlerts = new Set<string>();
+
+/** 재난관제에 들어섰다 · 떠 있던 알림을 전부 닫는다 (2026-09-17 사용자 지시) */
+export function dismissAlertToasts() {
+  openAlerts.forEach((id) => toast.dismiss(id));
+  openAlerts.clear();
+}
+
+export function alertToast(input: AlertToastInput) {
+  const toastId = `alert-${input.alertId}`;
+  openAlerts.add(toastId);
+  const href = input.href && !window.location.pathname.startsWith(input.href.split("?")[0]) ? input.href : undefined;
+  toast.custom((id) => <AlertToastCard id={id} {...input} href={href} />, {
+    id: toastId,
+    duration: href ? ALERT_ACTION_DURATION_MS : ALERT_DURATION_MS,
+    onDismiss: () => openAlerts.delete(toastId),
+    onAutoClose: () => openAlerts.delete(toastId),
+  });
+}
+
+function AlertToastCard({ id, title, kind, grade, location, summary, href }: AlertToastInput & { id: string | number }) {
+  const tone = ALERT_GRADE_TONE[grade];
+  return (
+    <div
+      className="relative w-[360px] rounded-lg border border-l-2 border-border bg-card/95 p-3 shadow-lg backdrop-blur-sm"
+      style={{ borderLeftColor: fadeColor(tone.color, 60) }}
+    >
+      <button
+        type="button"
+        onClick={() => toast.dismiss(id)}
+        aria-label="알림 닫기"
+        className="absolute right-2 top-2 flex size-5 cursor-pointer items-center justify-center rounded text-foreground-subtle transition-colors hover:bg-surface-raised hover:text-foreground"
+      >
+        <Icon icon="mdi:close" className="size-4" aria-hidden />
+      </button>
+
+      <div className="flex items-center gap-1.5 pb-1.5 pr-6">
+        <Badge variant={tone.badge}>{grade}</Badge>
+        <span className="text-caption text-foreground-muted">{kind}</span>
+      </div>
+
+      <div className="flex items-center gap-1.5 pr-6">
+        <Icon icon="mdi:alert" className="size-4 shrink-0" style={{ color: tone.color }} aria-hidden />
+        <span className="min-w-0 truncate text-body font-semibold text-foreground">{title}</span>
+      </div>
+
+      <p className="flex items-center gap-1 pt-1 text-caption text-foreground-muted">
+        <Icon icon="mdi:map-marker" className="size-3.5 shrink-0" aria-hidden />
+        <span className="min-w-0 truncate">{location}</span>
+      </p>
+
+      <div className="flex items-end gap-2 pt-2">
+        <p className="line-clamp-2 min-w-0 flex-1 text-caption text-foreground-muted">{summary}</p>
+        {href && (
+          <Button
+            size="sm"
+            variant="gradient"
+            className="shrink-0"
+            onClick={() => {
+              navigateTo(href);
+              toast.dismiss(id);
+            }}
+          >
+            사건 확인하기
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }

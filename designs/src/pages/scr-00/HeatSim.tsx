@@ -22,7 +22,7 @@ import { cssColor, setPolygonLayerVisible, upsertMultiPolygonLayer } from "../..
 import { loadTemperatureField, type TemperatureField } from "../../lib/temperature-field";
 import { ensureTemperatureLayer, repaintTemperature, setTemperatureVisible } from "../../lib/temperature-layer";
 import { formatClock } from "../../lib/datetime";
-import { CITY_SHAPE_BOUNDS } from "../../lib/map-config";
+import { CITY_SHAPE_BOUNDS, TILT_PITCH } from "../../lib/map-config";
 import { SCOPE_ZOOM } from "../../fixtures";
 import { useScenario } from "../../state/ScenarioProvider";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
@@ -112,13 +112,13 @@ export function HeatSim() {
 
   /* ── 지도 — 체감온도 색면. 시각·시나리오가 바뀌면 같은 램프로 다시 칠한다 ── */
   const mapContainer = useRef<HTMLDivElement>(null);
-  const { map, ready } = useMapLibre(mapContainer, { center: site.anchor, zoom: CITY_ZOOM, pitch: 0, capture: true });
+  const { map, ready } = useMapLibre(mapContainer, { center: site.anchor, zoom: CITY_ZOOM, pitch: TILT_PITCH, capture: true });
   const [layers, setLayers] = useState({ temp: true, hot: true, shelter: true });
   /* 창원시 전체 — 시 외곽 상자를 좌우 레일 안쪽 여백에 맞춘다 */
   const fitCity = useCallback((duration: number) => {
     const m = map.current;
     if (!m) return;
-    m.fitBounds(CITY_SHAPE_BOUNDS, { padding: { top: FIT_MARGIN, bottom: FIT_MARGIN + 100, left: CENTER_LEFT + FIT_MARGIN, right: CENTER_RIGHT + FIT_MARGIN }, pitch: 0, bearing: 0, duration });
+    m.fitBounds(CITY_SHAPE_BOUNDS, { padding: { top: FIT_MARGIN, bottom: FIT_MARGIN + 100, left: CENTER_LEFT + FIT_MARGIN, right: CENTER_RIGHT + FIT_MARGIN }, pitch: TILT_PITCH, bearing: 0, duration });
   }, [map]);
   useEffect(() => {
     const m = map.current;
@@ -238,7 +238,7 @@ export function HeatSim() {
         <MapUtilStrip
           map={map}
           disabled={!ready}
-          homePitch={0}
+          homePitch={TILT_PITCH}
           onReset={() => fitCity(500)}
           layers={[{
             title: "열환경",

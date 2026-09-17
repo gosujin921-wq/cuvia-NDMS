@@ -403,7 +403,7 @@ export const HEATWAVE_WHATIF: WhatIfCase = {
   closedAt: t("19:00", "07"),
   record: [
     { at: t("11:00"), label: "폭염경보 2일째 · 쉼터 운영 안내", kind: "관측" },
-    { at: t("14:00"), label: "노출 전망 · 야간 공백 격자 예상", kind: "예측", decision: true },
+    { at: t("14:00"), label: "노출 예측 · 야간 공백 격자 예상", kind: "예측", decision: true },
     { at: t("16:00"), label: "은행 냉방쉼터 운영 종료", kind: "관측" },
     { at: t("18:00"), label: "주간 쉼터 운영 종료 · 공백 발생", kind: "영향", decision: true },
     { at: t("21:00"), label: "시립도서관 운영 종료", kind: "관측" },

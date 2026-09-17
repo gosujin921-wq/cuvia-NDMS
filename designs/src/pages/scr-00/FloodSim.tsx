@@ -21,7 +21,7 @@ import { ensureFloodSurface, setFloodSurface } from "../../lib/flood-surface";
 import { loadTerrainFine, type TerrainGrid, type TerrainPatch } from "../../lib/terrain-grid";
 import { floodSurfaceOf } from "../../lib/flood-surfaces";
 import { formatClock } from "../../lib/datetime";
-import { CITY_CENTER } from "../../lib/map-config";
+import { CITY_CENTER, TILT_PITCH } from "../../lib/map-config";
 import { GEOMETRIES, SCOPE_ZOOM } from "../../fixtures";
 import { useScenario } from "../../state/ScenarioProvider";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
@@ -260,7 +260,7 @@ export function FloodSim() {
   const family = site.family;
   const center = site.anchor;
   const mapContainer = useRef<HTMLDivElement>(null);
-  const { map, ready } = useMapLibre(mapContainer, { center, zoom: TWIN_ZOOM, pitch: 0, capture: true });
+  const { map, ready } = useMapLibre(mapContainer, { center, zoom: TWIN_ZOOM, pitch: TILT_PITCH, capture: true });
   const [layers, setLayers] = useState({ scope: true, extent: true, rain: false, marks: true });
   /* ⚠ 데이터 이슈(2026-09-17): 강수 격자는 2024-09-21 한 날짜만 구워 뒀다. 창원천(2024-08-28)에도 그 격자가 그려진다.
      화면이 우선이라 인셋·레이어는 그대로 세운다(사용자). 창원천 날짜 격자를 구우면(scripts/fetch-precipitation-field.mjs) 여기서 날짜별로 읽게 바꾼다 */
@@ -273,10 +273,10 @@ export function FloodSim() {
     const padding = { top: FIT_MARGIN, bottom: FIT_MARGIN + 120, left: CENTER_LEFT + FIT_MARGIN, right: CENTER_RIGHT + FIT_MARGIN };
     if (fitPoints.length > 1) {
       const b = fitPoints.reduce((acc, p) => acc.extend(p), new maplibregl.LngLatBounds(fitPoints[0], fitPoints[0]));
-      m.fitBounds(b, { padding, pitch: 0, bearing: 0, duration });
+      m.fitBounds(b, { padding, pitch: TILT_PITCH, bearing: 0, duration });
       return;
     }
-    m.easeTo({ center: center ?? CITY_CENTER, zoom: TWIN_ZOOM, pitch: 0, bearing: 0, padding, duration });
+    m.easeTo({ center: center ?? CITY_CENTER, zoom: TWIN_ZOOM, pitch: TILT_PITCH, bearing: 0, padding, duration });
   }, [map, center, fitPoints]);
   useEffect(() => {
     const m = map.current;
@@ -405,7 +405,7 @@ export function FloodSim() {
         <MapUtilStrip
           map={map}
           disabled={!ready}
-          homePitch={0}
+          homePitch={TILT_PITCH}
           onReset={() => focusScope(500)}
           layers={[{
             title: "영향 표현",
@@ -459,8 +459,8 @@ export function FloodSim() {
             <Icon icon="mdi:file-search-outline" className="size-4" aria-hidden />
             근거
           </Button>
-          {/* 누른 순간의 지도를 한 장 떠서 보고서에 싣는다 */}
-          <Button variant="default" size="sm" className="flex-1" disabled={!forecast} onClick={() => setReportShot(captureMap(map.current) ?? "")}>
+          {/* 누른 순간의 지도를 한 장 떠서 보고서에 싣는다. 재생을 멈춰 보고서 시각이 캡처와 같은 칸에 선다 */}
+          <Button variant="default" size="sm" className="flex-1" disabled={!forecast} onClick={() => { setPlaying(false); setReportShot(captureMap(map.current) ?? ""); }}>
             <Icon icon="mdi:file-document-outline" className="size-4" aria-hidden />
             보고서
           </Button>

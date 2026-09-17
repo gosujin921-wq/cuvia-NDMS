@@ -27,6 +27,7 @@ import { ALTERNATIVE_LABEL, type AlternativeId } from "../../../model/forecast";
 import { SOP_STATUS_TONE } from "../../../lib/status-tone";
 import { formatClock } from "../../../lib/datetime";
 import { ResponseChain } from "./ResponseChain";
+import { useSopReveal } from "./useSopReveal";
 
 export type ConfirmRequest =
   | { kind: "approve"; itemLabels: string[] }
@@ -50,7 +51,9 @@ interface SopPanelProps {
 
 /* 권고를 따로 보이지 않는다 (2026-09-14 사용자 결정 "그게 SOP잖아"). 시스템이 채운 대상·시한·근거는 항목 아래 줄이고,
    어떤 항목이 서는지는 위험등급이 정한다. 승인은 SOP 승인 하나다 */
-export function SopPanel({ status, grade, approval, items, chain, basis, emergency, onRequestConfirm }: SopPanelProps) {
+export function SopPanel({ status, grade, approval, items: ledgerItems, chain, basis, emergency, onRequestConfirm }: SopPanelProps) {
+  /* 자동 조치는 한 칸씩 채워 보인다 · 값은 그대로 */
+  const items = useSopReveal(ledgerItems);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [collapsedDone, setCollapsedDone] = useState(true);
   const { done, total, pct } = sopProgress(items);
@@ -68,14 +71,14 @@ export function SopPanel({ status, grade, approval, items, chain, basis, emergen
 
   return (
     <section className="flex flex-col gap-4" aria-label="대응">
-      {emergency && <Notice inline variant="warning" title="판단·전망 없이 대응" description="위험도 판단이나 기준 전망이 아직 없습니다. 근거는 그대로 남고 승인 절차도 같습니다." />}
+      {emergency && <Notice inline variant="warning" title="판단·예측 없이 대응" description="위험도 판단이나 기준 예측이 아직 없습니다. 근거는 그대로 남고 승인 절차도 같습니다." />}
 
       {items.length > 0 && (
         <>
           {/* 머리 한 줄 — 누가 무엇을 기준으로 채웠나. 이 줄이 옛 권고 카드의 전부다 */}
           <p className="-mb-2 text-caption text-foreground-subtle">
             {grade ? `${grade} SOP ${items.length}항목` : `SOP ${items.length}항목`}
-            {basis ? ` · ${formatClock(basis.validAt)} 전망${basis.alternativeId === "baseline" ? "" : `(${ALTERNATIVE_LABEL[basis.alternativeId]})`} 기준 · CUVIA 작성` : " · 전망 없이 CUVIA 작성"}
+            {basis ? ` · ${formatClock(basis.validAt)} 예측${basis.alternativeId === "baseline" ? "" : `(${ALTERNATIVE_LABEL[basis.alternativeId]})`} 기준 · CUVIA 작성` : " · 예측 없이 CUVIA 작성"}
           </p>
           <ResponseChain stages={chain} />
 

@@ -29,7 +29,7 @@ export function EvidenceHelp() {
             <ul className="flex flex-col gap-1.5">
               <li className="flex items-start gap-2"><span className="flex w-[96px] shrink-0 items-center gap-1.5 whitespace-nowrap pt-0.5"><StatusDotLabel status="pending" label="지연" /><StatusDotLabel status="danger" label="결측" /></span><span>데이터가 늦거나 끊겼습니다. 참고만 하세요</span></li>
               <li className="flex items-start gap-2"><span className="w-[96px] shrink-0 whitespace-nowrap pt-0.5 text-foreground">위험도에 쓰인 n건만</span><span>머리의 이 토글을 누르면 위험도 계산에 들어간 근거만 남습니다</span></li>
-              <li className="flex items-start gap-2"><span className="flex w-[96px] shrink-0 items-center whitespace-nowrap"><Button size="sm" variant="outline" className="pointer-events-none h-6 px-2 text-foreground"><Icon icon="mdi:cube-scan" className="size-3.5" aria-hidden />전망 보기</Button></span><span>침수 예측입니다. 같은 지도가 그 시각의 예측으로 바뀝니다</span></li>
+              <li className="flex items-start gap-2"><span className="flex w-[96px] shrink-0 items-center whitespace-nowrap"><Button size="sm" variant="outline" className="pointer-events-none h-6 px-2 text-foreground"><Icon icon="mdi:cube-scan" className="size-3.5" aria-hidden />예측 보기</Button></span><span>침수 예측입니다. 같은 지도가 그 시각의 예측으로 바뀝니다</span></li>
             </ul>
           </section>
           <section className="flex flex-col gap-1">

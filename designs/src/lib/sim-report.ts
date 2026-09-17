@@ -14,7 +14,7 @@ import type { Report, ReportSection } from "../demo/report";
 import type { ReportDocumentProps } from "../components/ReportDocument";
 import type { ReportChart, ReportStat, ChartPoint } from "../model/report-chart";
 import type { ImpactObject, ScenarioSummary, SimAction, SimScenario, SimSop } from "../model/sim/flood";
-import { formatClock } from "./datetime";
+import { formatClock, formatStamp as stamp } from "./datetime";
 
 /** 화면이 넘기는 한 벌 — 전부 우측 패널이 이미 들고 있는 값이다 */
 export interface SimReportInput {
@@ -47,12 +47,19 @@ export interface SimReportInput {
   basisLines: string[];
 }
 
+/**
+ * 저장된 시뮬레이션 보고서 — 이력의 보고서 목록에 사건 보고서와 나란히 선다(2026-09-17 사용자 "보고서를 사건 · 시뮬레이션으로 나누면").
+ * 저장 시점의 화면 값(`input`)을 통째로 든다 — 판을 고쳐도 과거 보고서가 소급해서 바뀌지 않는다
+ */
+export interface SimReportRecord {
+  reportId: string;
+  savedAt: string;
+  title: string;
+  input: SimReportInput;
+}
+
 const dash = "-";
 
-const stamp = (d: Date): string => {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-};
 
 /** 시뮬레이션 보고서 문서 한 벌 — 머리 항목표 · 바닥 문구 · 유의사항까지 */
 export function simDocOf(input: SimReportInput, docNo: string): ReportDocumentProps {
@@ -60,13 +67,13 @@ export function simDocOf(input: SimReportInput, docNo: string): ReportDocumentPr
   return {
     report,
     meta: [
-      { label: "구분", value: "시뮬레이션 보고서" },
+      { label: "구분", value: "모의훈련 보고서" },
       { label: "번호", value: docNo },
       { label: "생성일시", value: stamp(report.issuedAt) },
     ],
-    footLabel: `CUVIA 시뮬레이션 보고서 · ${docNo}`,
+    footLabel: `CUVIA 모의훈련 보고서 · ${docNo}`,
     /* 읽는 사람에게 필요한 것 하나 — 바꾼 조건의 결과는 일어난 일이 아니라 전망이다 */
-    notice: ["바꾼 조건과 규정 적용의 결과는 실제로 일어난 일이 아니라 같은 방식으로 계산한 전망입니다."],
+    notice: ["바꾼 조건과 규정 적용의 결과는 실제로 일어난 일이 아니라 같은 방식으로 계산한 예측입니다."],
   };
 }
 
@@ -147,7 +154,7 @@ export function simReportOf(x: SimReportInput): Report {
       ? [{ id: "flow", title: "시간 전개", note: "조치와 도달 시각", rows: [], charts: [milestones] } as ReportSection]
       : []),
     ...(x.mapImage
-      ? [{ id: "map", title: "지도 결과", rows: [], figure: { src: x.mapImage, alt: `${x.siteLabel} 시뮬레이션 지도`, caption: `${x.selected.tag} · ${formatClock(x.at)} 화면` } } as ReportSection]
+      ? [{ id: "map", title: "지도 결과", rows: [], figure: { src: x.mapImage, alt: `${x.siteLabel} 모의훈련 지도`, caption: `${x.selected.tag} · ${formatClock(x.at)} 화면` } } as ReportSection]
       : []),
     {
       id: "impact", title: "영향 객체",
@@ -182,7 +189,7 @@ export function simReportOf(x: SimReportInput): Report {
   ];
 
   return {
-    title: `${x.siteLabel} 시뮬레이션 보고서`,
+    title: `${x.siteLabel} 모의훈련 보고서`,
     head: [
       { label: "대상", value: x.siteLabel },
       { label: "시나리오", value: x.scenarioLabel },

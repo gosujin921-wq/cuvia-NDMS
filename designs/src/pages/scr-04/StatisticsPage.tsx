@@ -31,6 +31,7 @@ import { useScenario } from "../../state/ScenarioProvider";
 import {
   RECORD_STATUSES,
   incidentRecordsAt,
+  recordClockOf,
   recordStatsOf,
   regionStatsOf,
   type IncidentRecord,
@@ -56,7 +57,9 @@ const daysBefore = (now: Date, days: number) => new Date(now.getTime() - days * 
 
 export function StatisticsPage() {
   const navigate = useNavigate();
-  const { demoNow: now, falsePositiveIds } = useScenario();
+  const { demoNow, falsePositiveIds } = useScenario();
+  /* 이력과 같은 시계 — 원장 끝까지 읽는다(model/records.recordClockOf). 시계가 다르면 두 메뉴의 건수가 갈린다 */
+  const now = useMemo(() => recordClockOf(demoNow), [demoNow]);
   const records = useMemo(() => incidentRecordsAt(now, { falsePositiveIds }), [now, falsePositiveIds]);
 
   const [rangeLabel, setRangeLabel] = useState(DEFAULT_RANGE);
@@ -190,7 +193,7 @@ export function StatisticsPage() {
             <span className="truncate text-caption text-foreground-subtle">점을 누르면 이력의 사건 기록이 열립니다</span>
             <span className="ml-auto flex shrink-0 items-center gap-3 text-caption text-foreground-subtle">
               <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-primary-text" aria-hidden />사건</span>
-              <span className="flex items-center gap-1.5"><span className="size-2 rounded-full border border-foreground-subtle" aria-hidden />오탐·병합</span>
+              <span className="flex items-center gap-1.5"><span className="size-2 rounded-full border border-foreground-subtle" aria-hidden />오탐</span>
             </span>
           </div>
           <div className="px-4 pb-3 pt-3">
@@ -253,7 +256,7 @@ function StatusMix({ stats }: { stats: RecordStats }) {
   const parts = [
     { key: "진행 중", n: stats.byStatus["진행 중"], bar: "bg-primary-text" },
     { key: "종료", n: stats.byStatus["종료"], bar: "bg-foreground-subtle" },
-    { key: "오탐·병합", n: stats.byStatus["오탐"] + stats.byStatus["병합"], bar: "bg-border" },
+    { key: "오탐", n: stats.byStatus["오탐"], bar: "bg-border" },
   ];
   const total = Math.max(1, stats.total);
   return (
@@ -286,7 +289,7 @@ function MeterCell({ ratio, text }: { ratio: number; text: string }) {
  * 유형별 사건 흐름 — 유형마다 한 줄, 가로축이 시간, 사건이 점이다. 줄 끝에 건수.
  *
  * 같은 날 같은 유형의 사건은 점 하나로 겹치고 옆에 수를 단다 — 겹친 점이 하나로 보이면 건수를 잃는다.
- * 오탐·병합은 속이 빈 점이다(사건이 되지 못한 것). 점은 버튼이고 누르면 이력의 사건 기록으로 간다.
+ * 오탐은 속이 빈 점이다(사건이 되지 못한 것). 점은 버튼이고 누르면 이력의 사건 기록으로 간다.
  * 눈금은 달이다. 격자는 실선 머리카락이고 점은 바탕 테두리(2px)로 줄 선과 떨어진다.
  */
 function IncidentStrip({ records, order, from, to, onOpen }: {

@@ -44,7 +44,7 @@ export const ALERT_RULES: AlertRule[] = [
   {
     ruleId: "AR-QUALITY", ruleVersion: "0.1", kind: "품질·연계", demoRole: "품질·대체 확인 알림",
     inputs: ["E10 DATA_QUALITY_CHANGED", "MODEL_RUN_FAILED", "시설 미응답"],
-    condition: "판단에 쓰는 원천이 ≥ 5분 결측·지연이거나 모델 실패. 현재 사건·전망에 영향을 줄 때",
+    condition: "판단에 쓰는 원천이 ≥ 5분 결측·지연이거나 모델 실패. 현재 사건·예측에 영향을 줄 때",
     windowMin: 5, spatialScope: "해당 원천", qualityCondition: "해당 없음", grade: "주의", suppressionMin: 15,
     releaseCondition: "수신 복구", createsIncident: false, demoValue: true,
   },

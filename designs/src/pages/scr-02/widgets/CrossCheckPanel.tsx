@@ -102,7 +102,7 @@ function Row({ row, selected, dimmed = false, onSelect, onOpenForecast, muted }:
         {forecastId && !muted && (
           <Button size="sm" variant="outline" className="h-6 shrink-0 px-2 text-foreground" onClick={() => onOpenForecast(forecastId)}>
             <Icon icon="mdi:cube-scan" className="size-3.5" aria-hidden />
-            전망 보기
+            예측 보기
           </Button>
         )}
       </div>

@@ -244,7 +244,7 @@ function ActualResponse({ item }: { item: PredictionCase }) {
       )}
       {item.alternatives.length > 0 && (
         <div className="mt-1 flex flex-col gap-0.5 border-t border-border pt-1.5">
-          <p className="text-caption text-foreground-muted">같이 만들었던 대안 전망</p>
+          <p className="text-caption text-foreground-muted">같이 만들었던 대안 예측</p>
           {item.alternatives.map((alt) => (
             <p key={alt.label} className="flex gap-2 text-caption">
               <span className="w-16 shrink-0 text-foreground-subtle">{alt.label}</span>

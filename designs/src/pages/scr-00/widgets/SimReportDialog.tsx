@@ -1,42 +1,44 @@
 /* ─────────────────────────────────────────────
  * 시뮬레이션 보고서 창 — /scr-00 에서 본 장면을 문서 한 장으로 (2026-09-17)
  *
- * 이력의 보고서 전체 화면과 같은 문서 렌더러(ReportDocument)를 쓴다. 창은 문서를 담는 틀일 뿐이다 —
- * 머리에 인쇄 · 이력으로 보내기, 몸통에 종이.
+ * 사건 보고서와 **같은 창**(ReportModal)을 쓴다. 다른 것은 바닥의 [이력에 저장] 하나다 —
+ * 저장하면 이력의 보고서 목록에 "시뮬레이션" 구분으로 선다(사용자 "보고서를 사건 · 시뮬레이션으로 나누면").
+ * 저장 뒤에는 그 자리가 [이력에서 보기]로 바뀐다.
  * ───────────────────────────────────────────── */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Icon } from "@iconify/react";
 import { FormDialog } from "../../../components/FormDialog";
-import { ReportDocument } from "../../../components/ReportDocument";
+import { ReportModal } from "../../../components/ReportModal";
 import { simDocOf, type SimReportInput } from "../../../lib/sim-report";
+import { useScenario } from "../../../state/ScenarioProvider";
 
 export function SimReportDialog({ input, onClose }: { input: SimReportInput; onClose: () => void }) {
-  /* 번호는 대상 · 시각 · 시나리오로 — 같은 장면은 같은 번호다 */
-  const docNo = `SIM-${input.at.slice(0, 10).replace(/-/g, "")}-${input.selected.tag}`;
-  const doc = useMemo(() => simDocOf(input, docNo), [input, docNo]);
+  const navigate = useNavigate();
+  const { saveSimReport } = useScenario();
+  const [savedId, setSavedId] = useState<string | null>(null);
+  /* 저장 전 번호는 임시 — 저장하면 엔진이 준 번호로 문서가 다시 선다 */
+  const doc = useMemo(() => simDocOf(input, savedId ?? "저장 전"), [input, savedId]);
   return (
-    <FormDialog
+    <ReportModal
       open
-      onClose={onClose}
-      icon="mdi:file-document-outline"
-      title={doc.report.title}
-      description={<span className="text-foreground-muted">화면에서 본 조건과 결과를 그대로 옮긴 문서입니다</span>}
-      contentClassName="w-[900px] max-w-[calc(100vw-2rem)] sm:max-w-[900px] h-[92vh]"
-      bodyClassName="flex flex-col px-0 py-0"
-      footer={
-        <>
-          <div className="flex-1" aria-hidden />
-          <FormDialog.CancelButton onClick={() => window.print()}>
-            <Icon icon="mdi:printer-outline" className="size-4 shrink-0" aria-hidden />
-            인쇄
+      onOpenChange={(next) => { if (!next) onClose(); }}
+      doc={doc}
+      kindLabel="모의훈련 보고서"
+      extraAction={
+        savedId ? (
+          <FormDialog.CancelButton onClick={() => navigate(`/scr-07?tab=report&sim=${savedId}`)}>
+            <Icon icon="mdi:history" className="size-4 shrink-0" aria-hidden />
+            이력에서 보기
           </FormDialog.CancelButton>
-        </>
+        ) : (
+          <FormDialog.CancelButton onClick={() => setSavedId(saveSimReport(input).reportId)}>
+            <Icon icon="mdi:content-save-outline" className="size-4 shrink-0" aria-hidden />
+            이력에 저장
+          </FormDialog.CancelButton>
+        )
       }
-    >
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <ReportDocument {...doc} />
-      </div>
-    </FormDialog>
+    />
   );
 }

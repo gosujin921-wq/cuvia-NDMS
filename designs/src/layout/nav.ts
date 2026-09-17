@@ -2,7 +2,7 @@
  * 내비게이션 구조 — 정본: docs/고도화/CUVIA_NDMS_기능및정보구조도.md §4 · §5.2
  *
  * 메뉴는 Phase 1 다섯 개 그대로다. IA-01 종합상황 = /scr-01, IA-02·04 사건 작업공간과 대응 패널 = /scr-02/:districtId,
- * IA-07 모의훈련 = /scr-05, IA-05 이력 = /scr-07, IA-06 통계 = /scr-04. 대응은 별도 URL 없이 우측 패널이고
+ * SCR-00 디지털트윈 = /scr-00, IA-07 모의훈련 = /scr-05(메뉴에서 닫음 · 라우트 킵), IA-05 이력 = /scr-07, IA-06 통계 = /scr-04. 대응은 별도 URL 없이 우측 패널이고
  * 사건의 트윈(IA-03)은 /scr-02 안의 예측 모드(query panel=twin)다(IA §5.2 · §8).
  *
  * 화면을 추가하거나 메뉴를 바꿀 때는 IA 문서를 먼저 고친다.
@@ -52,15 +52,6 @@ export const NAV_ITEMS: NavItem[] = [
     fullBleed: true,
   },
   {
-    /* 디지털트윈 시뮬레이션 — 실제 사건 재현(기준) → 조건 변경 → 결과 비교 → 관련 SOP (2026-09-17 새 방향 · 모의훈련은 킵) */
-    id: "sim",
-    scr: "SCR-00",
-    label: "디지털트윈",
-    route: "/scr-00",
-    icon: "mdi:cube-scan",
-    fullBleed: true,
-  },
-  {
     id: "warning",
     scr: "IA-02",
     label: "재난관제",
@@ -79,14 +70,26 @@ export const NAV_ITEMS: NavItem[] = [
     icon: "mdi:chart-line",
   },
   {
+    /* 디지털트윈 시뮬레이션 — 실제 사건 재현(기준) → 조건 변경 → 결과 비교 → 관련 SOP (2026-09-17 새 방향).
+       모의훈련이 서던 자리를 이어받았다(2026-09-17) */
+    id: "sim",
+    scr: "SCR-00",
+    label: "디지털트윈",
+    route: "/scr-00",
+    icon: "mdi:cube-scan",
+    fullBleed: true,
+  },
+  {
     id: "twin",
     scr: "IA-07",
     /* 모의훈련 — 지난 사건으로 시나리오를 만들어 조건·대응을 바꿔 돌려 보고 개선 항목을 남긴다(README §2.3 · 03 §26 · 2026-09-16).
-       진행 중 사건의 대안 비교는 재난관제의 전망 탭이 맡는다 */
+       진행 중 사건의 대안 비교는 재난관제의 예측 탭이 맡는다 */
     label: "모의훈련",
     route: "/scr-05",
     icon: "mdi:clipboard-play-outline",
     fullBleed: true,
+    /* 메뉴에서 닫았다(2026-09-17). 라우트와 화면은 킵 — /scr-05/:districtId 같은 기존 링크가 계속 열린다 */
+    hidden: true,
   },
   {
     id: "history",

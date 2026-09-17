@@ -48,7 +48,7 @@ const basis = (overrides: Partial<ForecastBasis> = {}): ForecastBasis => ({
   modelName: "시나리오 침수 결과 세트", modelVersion: "0.1", baseTime: BASE_TIME, generatedAt: t("17:13"),
   observedFrom: t("16:00"), inputs: INPUTS,
   inputEventIds: ["EV-E1-01", "EV-E3A-01", "EV-E4A-06", "EV-E4B-01", "EV-E6A-01", "EV-E6B-01"],
-  assumptions: ["현재 강우·조위 전망 유지", "펌프 가용 2/3 유지", "저류 여유 62 % 유지"],
+  assumptions: ["현재 강우·조위 예보 유지", "펌프 가용 2/3 유지", "저류 여유 62 % 유지"],
   uncertainty: { grade: "보통", sensitiveTo: ["19시 전후 강우강도", "만조 시각의 자연배수 제약"], unusableRanges: ["18:40 이후 (다음 갱신판 필요)"] },
   inputQuality: "지연", calculationActor: "해당 없음",
   replacementNote: "검증된 도시침수 모델 결과 확보 시 ModelRun 결과로 교체 (02 §5.4 P0)",
@@ -91,7 +91,7 @@ export const FORECAST_DRAIN: Forecast = {
     { kind: "대상자", id: "VEH-SH-COAST", label: "침수 구간 진입 차량 17대", arrivalAt: t("17:55"), exposure: "노출" },
     { kind: "대상자", id: "POP-SH-COAST", label: "노출 인원 29명", arrivalAt: t("17:55"), exposure: "노출" },
   ],
-  basis: basis({ assumptions: ["현재 강우·조위 전망 유지", "펌프 2호기 재가동 가정", "저류시설 추가 유입 가정"] }),
+  basis: basis({ assumptions: ["현재 강우·조위 예보 유지", "펌프 2호기 재가동 가정", "저류시설 추가 유입 가정"] }),
   availability: "가용", sourceEventId: "EV-E8-01", validUntil: t("18:40"),
   conditions: COND_DRAIN,
   conditionMarkers: TIDE_MARKER,
@@ -109,7 +109,7 @@ export const FORECAST_ROAD: Forecast = {
     { kind: "대상자", id: "VEH-SH-COAST", label: "침수 구간 진입 차량 2대", exposure: "통제됨" },
     { kind: "대상자", id: "POP-SH-COAST", label: "노출 인원 6명", exposure: "통제됨" },
   ],
-  basis: basis({ assumptions: ["침수면은 기준 전망과 동일", "통제 완료 시각 17:50 가정"] }),
+  basis: basis({ assumptions: ["침수면은 기준 예측과 동일", "통제 완료 시각 17:50 가정"] }),
   availability: "가용", sourceEventId: "EV-E8-01", validUntil: t("18:40"),
   conditions: COND_BASE,
   conditionMarkers: TIDE_MARKER,
@@ -148,7 +148,7 @@ function roadVariant(id: string, at: string, when: string, steps: [RoadStateStep
       { kind: "중요시설", id: SUBJECTS.underpass, label: "신포 지하차도", arrivalAt: t("18:20"), exposure: "부분 중단" },
       { kind: "건물", id: "BLD-SH-LOW", label: "저지대 건물", arrivalAt: t("18:05"), exposure: "노출" },
     ],
-    basis: basis({ assumptions: ["침수면은 기준 전망과 동일", `통제 완료 ${at.slice(11, 16)} 가정`] }),
+    basis: basis({ assumptions: ["침수면은 기준 예측과 동일", `통제 완료 ${at.slice(11, 16)} 가정`] }),
     availability: "가용", sourceEventId: "EV-E8-01", validUntil: t("18:40"),
     conditions: COND_BASE, conditionMarkers: TIDE_MARKER,
     actionAt: { label: "통제 시점", at },
@@ -183,7 +183,7 @@ function drainVariant(id: string, at: string, when: string, rows: { depth: [numb
       underpass,
       { kind: "건물", id: "BLD-SH-LOW", label: "저지대 건물", arrivalAt: buildings.at, exposure: "노출" },
     ],
-    basis: basis({ assumptions: ["현재 강우·조위 전망 유지", `펌프 2호기 ${at.slice(11, 16)} 재가동 가정`, "저류시설 추가 유입 가정"] }),
+    basis: basis({ assumptions: ["현재 강우·조위 예보 유지", `펌프 2호기 ${at.slice(11, 16)} 재가동 가정`, "저류시설 추가 유입 가정"] }),
     availability: "가용", sourceEventId: "EV-E8-01", validUntil: t("18:40"),
     conditions: COND_DRAIN, conditionMarkers: TIDE_MARKER,
     actionAt: { label: "재가동 시점", at },
@@ -233,7 +233,7 @@ export const WHATIF_RAIN120: Forecast = {
     { kind: "중요시설", id: SUBJECTS.underpass, label: "신포 지하차도", arrivalAt: t("18:10"), exposure: "중단" },
     { kind: "건물", id: "BLD-SH-LOW", label: "저지대 건물", arrivalAt: t("17:58"), exposure: "노출" },
   ],
-  basis: basis({ assumptions: ["강우 예보 +20% (예보 상위 시나리오)", "조위 전망 · 펌프 가용 2/3 유지"] }),
+  basis: basis({ assumptions: ["강우 예보 +20% (예보 상위 시나리오)", "조위 예보 · 펌프 가용 2/3 유지"] }),
   availability: "가용", sourceEventId: "EV-E8-01", validUntil: t("18:40"),
   conditions: floodConditions("24 mm/h 매우 강함 · 19시 최대 21.4", "18:24 · 176 cm", "2호기 정지 · 가용 2/3"),
   conditionMarkers: TIDE_MARKER,
@@ -241,7 +241,7 @@ export const WHATIF_RAIN120: Forecast = {
 
 /* ── 상황과 대응을 함께 — 비가 예보보다 더 오면 지금 대응으로 버티나 (2026-09-16 사용자 "같이 선택할 수 있어야") ─────────
  * 강우 +20% 판 위에 대응 선택지를 얹은 사전 계산 판이다. 편집 규칙 둘:
- *   배수(현상 대응)   침수심 = 강우 판 + (배수 판 − 기준 전망). 범위는 그 깊이의 구운 단계, 영향 건물·도달은 차이만큼 옮긴다
+ *   배수(현상 대응)   침수심 = 강우 판 + (배수 판 − 기준 예측). 범위는 그 깊이의 구운 단계, 영향 건물·도달은 차이만큼 옮긴다
  *   도로 통제         강우 판 그대로에 통제 시각만 바꿔 같은 노출 규칙 — 침수가 17:47 로 당겨져 "10분 뒤"도 3분 늦는다
  * 실개발은 조합마다 같은 조건의 ModelRun 으로 교체한다.
  * ───────────────────────────────────────────────────────────────────────── */
@@ -297,7 +297,7 @@ const rainDrain = (key: string, drain: Forecast, when: string): Forecast => {
       { kind: "중요시설", id: SUBJECTS.underpass, label: "신포 지하차도", ...(worst === "정상" ? {} : { arrivalAt: t("18:15") }), exposure: worst === "정상" ? "영향 없음" : worst === "유입 시작" ? "노출" : worst === "통제됨" ? "통제됨" : worst },
       { kind: "건물", id: "BLD-SH-LOW", label: "저지대 건물", arrivalAt: t("18:00"), exposure: "노출" },
     ],
-    basis: basis({ assumptions: [RAIN_LINE, `펌프 2호기 ${at.slice(11, 16)} 재가동 가정`, "조합 판 = 강우 판 + (배수 판 − 기준 전망)"] }),
+    basis: basis({ assumptions: [RAIN_LINE, `펌프 2호기 ${at.slice(11, 16)} 재가동 가정`, "조합 판 = 강우 판 + (배수 판 − 기준 예측)"] }),
     conditions: floodConditions("24 mm/h 매우 강함 · 19시 최대 21.4", "18:24 · 176 cm", "2호기 재가동 · 3/3"),
     actionAt: { label: "재가동 시점", at },
   };
@@ -387,6 +387,6 @@ function forecastEvent(args: { id: string; observedAt: string; forecastIds: stri
 }
 
 export const E8_FORECAST_1 = forecastEvent({ id: "EV-E8-01", observedAt: t("17:13"), baseTime: BASE_TIME, forecastIds: [FORECAST_BASE_ID, FORECAST_DRAIN_ID, FORECAST_ROAD_ID], derivedFrom: FORECAST_BASE.basis.inputEventIds, summary: "침수예측판 생성 · 18:00 최대 0.32 m · 해안도로 17:52 도달 예상" });
-export const E8_FORECAST_2 = forecastEvent({ id: "EV-E8-02", observedAt: t("18:10"), baseTime: t("18:00"), forecastIds: [FORECAST_BASE_2_ID], supersedes: "EV-E8-01", derivedFrom: FORECAST_BASE_2.basis.inputEventIds, summary: "침수예측판 갱신 · 만조 이후 축소 전망 · 20:30 물 빠짐" });
+export const E8_FORECAST_2 = forecastEvent({ id: "EV-E8-02", observedAt: t("18:10"), baseTime: t("18:00"), forecastIds: [FORECAST_BASE_2_ID], supersedes: "EV-E8-01", derivedFrom: FORECAST_BASE_2.basis.inputEventIds, summary: "침수예측판 갱신 · 만조 이후 축소 예측 · 20:30 물 빠짐" });
 
 export const FORECAST_EVENTS: EventEnvelope[] = [E8_FORECAST_1, E8_FORECAST_2];

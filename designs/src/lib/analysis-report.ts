@@ -42,7 +42,7 @@ export function analysisReportOf(a: AnalysisResult): Report {
       ? { id: "state", title: "당시 관측·기상·시설 상태", rows: a.stateRows }
       : { id: "state", title: "당시 관측·기상·시설 상태", rows: [], footnote: "이 시점에 복원한 상태 값이 없습니다.", pending: true },
     {
-      id: "baseline", title: closed ? "기준 재현" : "기준 전망",
+      id: "baseline", title: closed ? "기준 재현" : "기준 예측",
       note: closed ? "실제 대응을 넣어 같은 방식으로 다시 계산" : "추가 대응 없이 지금 상태 유지",
       rows: [
         { label: "보던 시각", value: formatClock(a.validAt) },
@@ -122,7 +122,7 @@ export function analysisReportOf(a: AnalysisResult): Report {
       { label: "분석 기준", value: formatClock(a.basisAt) },
       { label: "보던 시각", value: formatClock(a.validAt) },
       { label: "바꾼 조건", value: analysisConditionText(a) },
-      { label: "기준", value: closed ? "기준 재현(실제 대응)" : "기준 전망(그대로 두면)" },
+      { label: "기준", value: closed ? "기준 재현(실제 대응)" : "기준 예측(그대로 두면)" },
     ],
     sections,
     /* 대안 분석에는 대응 경과가 없다 — 대안은 일어난 일이 아니라 가정이다 */

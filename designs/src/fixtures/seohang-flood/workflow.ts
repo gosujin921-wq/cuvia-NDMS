@@ -151,7 +151,7 @@ export const W_ASSESSMENT = work<HazardAssessment>({
       "영상·계측·시설 근거가 맞아떨어져 확실성이 높아졌고, 심각 문턱 직전입니다.",
       "펌프 2호기 복구 시각은 아직 모릅니다.",
     ],
-    riskFactors: ["강우 지속 (18시 이후 정점 전망)", "관로수위 2.2 m 상승 지속", "조위 상승 · 만조 18:24", "펌프 2호기 정지 · 가용 2/3"],
+    riskFactors: ["강우 지속 (18시 이후 정점 예보)", "관로수위 2.2 m 상승 지속", "조위 상승 · 만조 18:24", "펌프 2호기 정지 · 가용 2/3"],
     mitigatingFactors: ["도로수위 아직 12 cm", "저류시설 여유 62 %", "펌프 1·3호기 정상"],
     counterEvidence: ["배수관리용 폴 CCTV(CV-SH-02)는 아직 물고임 미확인"],
     uncertainties: ["강우계 지연 구간(17:16~17:34) 동안 강우 추세 미확인 · 예측강우로 대체", "침수예측판은 시나리오 결과 세트 · 불확실성 보통"],
@@ -164,42 +164,42 @@ export const W_ASSESSMENT = work<HazardAssessment>({
    아래 EV-W-07 이 같은 권고를 갱신한다. 권고는 사람이 만들라고 기다리는 것이 아니라 시스템이 내놓고 사람이 승인하는 것이다 */
 export const W_RECOMMENDATION_AUTO = work<Recommendation>({
   id: "EV-W-07A", type: "RECOMMENDATION_UPDATED", eventClass: "분석", producerRole: "CUVIA 규칙", at: t("17:30"), actor: "CUVIA",
-  summary: "SOP 조치안 작성 · 기준 전망(18:00)", derivedFrom: ["EV-W-06B", "EV-E8-01"],
+  summary: "SOP 조치안 작성 · 기준 예측(18:00)", derivedFrom: ["EV-W-06B", "EV-E8-01"],
   payload: {
     recommendationId: "RC-01", incidentId: INCIDENT_ID, status: "제안", proposedLevel: "선제 통제",
     basis: { forecastId: FORECAST_BASE_ID, validAt: t("18:00"), alternativeId: "baseline" },
-    reasons: ["18:00 해안도로 통행 불가 전망 (최대 0.32 m)", "17:52 도달 예상 · 통제 완료까지 남은 시간 20분 안팎", "지하차도 진입부 유입 전망"],
-    counterReasons: ["도로수위 현재 8 cm · 통행 가능 수준", "펌프 2호기 복구 시 침수심 0.22 m 로 감소 전망"],
+    reasons: ["18:00 해안도로 통행 불가 예측 (최대 0.32 m)", "17:52 도달 예상 · 통제 완료까지 남은 시간 20분 안팎", "지하차도 진입부 유입 예측"],
+    counterReasons: ["도로수위 현재 8 cm · 통행 가능 수준", "펌프 2호기 복구 시 침수심 0.22 m 로 감소 예측"],
     proposedActions: [
-      { kind: "도로 통제", target: "해안도로 저지대 구간", organization: "교통과", summary: "17:50 이전 양방향 통제 · 우회 안내", basis: "18:00 통행 불가 전망 · 최대 0.32 m · 17:52 도달" },
-      { kind: "시설 점검", target: "제2배수펌프장 2호기", organization: "하수과", summary: "전기 계통 점검 · 재가동", basis: "펌프 복구 시 침수심 0.22 m 로 감소 전망" },
-      { kind: "현장 확인", target: "신포 지하차도", organization: "안전총괄과", summary: "진입부 유입 여부 확인 · 필요 시 진입 통제", basis: "18:20 지하차도 진입부 유입 전망" },
+      { kind: "도로 통제", target: "해안도로 저지대 구간", organization: "교통과", summary: "17:50 이전 양방향 통제 · 우회 안내", basis: "18:00 통행 불가 예측 · 최대 0.32 m · 17:52 도달" },
+      { kind: "시설 점검", target: "제2배수펌프장 2호기", organization: "하수과", summary: "전기 계통 점검 · 재가동", basis: "펌프 복구 시 침수심 0.22 m 로 감소 예측" },
+      { kind: "현장 확인", target: "신포 지하차도", organization: "안전총괄과", summary: "진입부 유입 여부 확인 · 필요 시 진입 통제", basis: "18:20 지하차도 진입부 유입 예측" },
     ],
     producer: "CUVIA",
   },
 });
 
 /* D6 영향 기반 대응 — 담당자가 전망 탭에서 고른 시각의 기준 전망으로 권고 갱신 → 승인 → 조치 배정 → 전파 요청.
-   대응을 바꿔 본 비교는 디지털트윈이 맡고 실행 경로가 아니다(2026-09-16) — 권고의 기준은 기준 전망이다 */
+   대응을 바꿔 본 비교는 디지털트윈이 맡고 실행 경로가 아니다(2026-09-16) — 권고의 기준은 기준 예측이다 */
 export const W_RECOMMENDATION = work<Recommendation>({
   id: "EV-W-07", type: "RECOMMENDATION_UPDATED", eventClass: "분석", producerRole: "CUVIA 규칙", at: t("17:44"), actor: "CUVIA",
-  summary: "SOP 조치안 갱신 · 담당자가 고른 18:00 전망 기준", derivedFrom: ["EV-W-06", "EV-E8-01"], references: ["EV-W-07A"],
+  summary: "SOP 조치안 갱신 · 담당자가 고른 18:00 예측 기준", derivedFrom: ["EV-W-06", "EV-E8-01"], references: ["EV-W-07A"],
   payload: {
     recommendationId: "RC-01", incidentId: INCIDENT_ID, status: "변경", proposedLevel: "선제 통제",
     basis: { forecastId: FORECAST_BASE_ID, validAt: t("18:00"), alternativeId: "baseline" },
-    reasons: ["18:00 해안도로 통행 불가 전망 (최대 0.32 m)", "17:52 도달 예상 · 통제 완료까지 남은 시간 8분 미만", "지하차도 진입부 유입 전망"],
-    counterReasons: ["도로수위 현재 17 cm · 통행 가능 수준", "펌프 2호기 복구 시 침수심 0.22 m 로 감소 전망"],
+    reasons: ["18:00 해안도로 통행 불가 예측 (최대 0.32 m)", "17:52 도달 예상 · 통제 완료까지 남은 시간 8분 미만", "지하차도 진입부 유입 예측"],
+    counterReasons: ["도로수위 현재 17 cm · 통행 가능 수준", "펌프 2호기 복구 시 침수심 0.22 m 로 감소 예측"],
     proposedActions: [
-      { kind: "도로 통제", target: "해안도로 저지대 구간", organization: "교통과", summary: "17:50 이전 양방향 통제 · 우회 안내", basis: "18:00 통행 불가 전망 · 최대 0.32 m · 17:52 도달" },
-      { kind: "시설 점검", target: "제2배수펌프장 2호기", organization: "하수과", summary: "전기 계통 점검 · 재가동", basis: "펌프 복구 시 침수심 0.22 m 로 감소 전망" },
-      { kind: "현장 확인", target: "신포 지하차도", organization: "안전총괄과", summary: "진입부 유입 여부 확인 · 필요 시 진입 통제", basis: "18:20 지하차도 진입부 유입 전망" },
+      { kind: "도로 통제", target: "해안도로 저지대 구간", organization: "교통과", summary: "17:50 이전 양방향 통제 · 우회 안내", basis: "18:00 통행 불가 예측 · 최대 0.32 m · 17:52 도달" },
+      { kind: "시설 점검", target: "제2배수펌프장 2호기", organization: "하수과", summary: "전기 계통 점검 · 재가동", basis: "펌프 복구 시 침수심 0.22 m 로 감소 예측" },
+      { kind: "현장 확인", target: "신포 지하차도", organization: "안전총괄과", summary: "진입부 유입 여부 확인 · 필요 시 진입 통제", basis: "18:20 지하차도 진입부 유입 예측" },
     ],
     producer: "RULE-RECOMMEND-FLOOD 0.1",
   },
 });
 export const W_DECISION_APPROVE = work<Decision>({
   id: "EV-W-08", type: "DECISION_RECORDED", at: t("17:46"), actor: APPROVER, summary: "SOP 승인 · 도로 통제 대응안", references: ["EV-W-07", "EV-E8-01"],
-  payload: { decisionId: "DC-02", incidentId: INCIDENT_ID, kind: "대응 승인", status: "승인", level: "선제 통제", references: ["EV-W-07", "EV-E8-01"], approver: APPROVER, recordedAt: t("17:46"), reason: "18:00 전망 기준 도로 통제 권고 채택. 배수 대응은 펌프 복구 시점 불확실로 병행" },
+  payload: { decisionId: "DC-02", incidentId: INCIDENT_ID, kind: "대응 승인", status: "승인", level: "선제 통제", references: ["EV-W-07", "EV-E8-01"], approver: APPROVER, recordedAt: t("17:46"), reason: "18:00 예측 기준 도로 통제 권고 채택. 배수 대응은 펌프 복구 시점 불확실로 병행" },
 });
 
 const ACTIONS: Action[] = [
@@ -263,10 +263,10 @@ export const W_ASSESSMENT_SEVERE = work<HazardAssessment>({
     severity: "높음", urgency: "즉시", certainty: "높음", trend: "악화",
     narrative: [
       "도로수위가 26 cm로 침수 기준(20 cm)을 10분 넘게 넘어 심각으로 올렸습니다.",
-      "만조 18:24까지 배수가 막혀 지하차도 진입부와 저지대 건물로 번질 전망입니다.",
+      "만조 18:24까지 배수가 막혀 지하차도 진입부와 저지대 건물로 번질 것으로 예측됩니다.",
       "해안도로 통제는 이미 진행 중이고, 지하차도 진입 통제와 저지대 대피 권고가 추가로 필요합니다.",
     ],
-    riskFactors: ["도로수위 26 cm · 침수 기준 지속", "만조 18:24 · 조위 166 cm 상승 중", "펌프 2호기 정지 · 가용 2/3", "지하차도 진입부 18:20 유입 전망"],
+    riskFactors: ["도로수위 26 cm · 침수 기준 지속", "만조 18:24 · 조위 166 cm 상승 중", "펌프 2호기 정지 · 가용 2/3", "지하차도 진입부 18:20 유입 예측"],
     mitigatingFactors: ["해안도로 통제 진행 중", "저류시설 여유 62 %"],
     counterEvidence: [],
     uncertainties: ["펌프 2호기 복구 시각 미정"],
@@ -280,14 +280,14 @@ export const W_RECOMMENDATION_ESCALATE = work<Recommendation>({
   payload: {
     recommendationId: "RC-01", incidentId: INCIDENT_ID, status: "변경", proposedLevel: "선제 통제",
     basis: { forecastId: FORECAST_BASE_ID, validAt: t("18:00"), alternativeId: "road-control" },
-    reasons: ["도로수위 침수 기준 지속 · 심각", "18:20 지하차도 진입부 유입 전망", "저지대 건물 12동 18:05 도달 전망"],
-    counterReasons: ["펌프 2호기 복구 시 침수심 0.22 m 로 감소 전망"],
+    reasons: ["도로수위 침수 기준 지속 · 심각", "18:20 지하차도 진입부 유입 예측", "저지대 건물 12동 18:05 도달 예측"],
+    counterReasons: ["펌프 2호기 복구 시 침수심 0.22 m 로 감소 예측"],
     proposedActions: [
-      { kind: "도로 통제", target: "해안도로 저지대 구간", organization: "교통과", summary: "17:50 이전 양방향 통제 · 우회 안내", basis: "18:00 통행 불가 전망 · 최대 0.32 m · 17:52 도달" },
-      { kind: "시설 점검", target: "제2배수펌프장 2호기", organization: "하수과", summary: "전기 계통 점검 · 재가동", basis: "펌프 복구 시 침수심 0.22 m 로 감소 전망" },
-      { kind: "현장 확인", target: "신포 지하차도", organization: "안전총괄과", summary: "진입부 유입 여부 확인 · 필요 시 진입 통제", basis: "18:20 지하차도 진입부 유입 전망" },
-      { kind: "도로 통제", target: "신포 지하차도", organization: "안전총괄과", summary: "진입부 차단 · 차량 우회 안내", basis: "도로수위 26 cm 지속 · 18:20 진입부 유입 전망" },
-      { kind: "대피 안내", target: "저지대 건물 12동", organization: "재난안전 상황실", summary: "마을방송·통장 연락으로 상층 이동 권고", basis: "저지대 건물 12동 18:05 도달 전망 · 최대 0.32 m" },
+      { kind: "도로 통제", target: "해안도로 저지대 구간", organization: "교통과", summary: "17:50 이전 양방향 통제 · 우회 안내", basis: "18:00 통행 불가 예측 · 최대 0.32 m · 17:52 도달" },
+      { kind: "시설 점검", target: "제2배수펌프장 2호기", organization: "하수과", summary: "전기 계통 점검 · 재가동", basis: "펌프 복구 시 침수심 0.22 m 로 감소 예측" },
+      { kind: "현장 확인", target: "신포 지하차도", organization: "안전총괄과", summary: "진입부 유입 여부 확인 · 필요 시 진입 통제", basis: "18:20 지하차도 진입부 유입 예측" },
+      { kind: "도로 통제", target: "신포 지하차도", organization: "안전총괄과", summary: "진입부 차단 · 차량 우회 안내", basis: "도로수위 26 cm 지속 · 18:20 진입부 유입 예측" },
+      { kind: "대피 안내", target: "저지대 건물 12동", organization: "재난안전 상황실", summary: "마을방송·통장 연락으로 상층 이동 권고", basis: "저지대 건물 12동 18:05 도달 예측 · 최대 0.32 m" },
     ],
     producer: "CUVIA",
   },
@@ -321,13 +321,13 @@ export const W_ASSESSMENT_CONTROL = work<HazardAssessment>({
     severity: "보통", urgency: "주의", certainty: "높음", trend: "완화",
     narrative: [
       "도로수위가 21 cm로 내려가고 만조가 지나 경계로 내렸습니다.",
-      "펌프 2호기가 다시 돌아 배수가 재개됐고, 20:30 물 빠짐 전망입니다.",
+      "펌프 2호기가 다시 돌아 배수가 재개됐고, 20:30에 물이 빠질 것으로 예측됩니다.",
       "통제·대피 조치는 유지하고 잔여 조치를 감시합니다.",
     ],
     riskFactors: ["도로수위 21 cm · 하강 중", "강우 지속"],
     mitigatingFactors: ["만조 경과 · 조위 하강", "펌프 2호기 재가동", "해안도로·지하차도 통제 유지"],
     counterEvidence: [],
-    uncertainties: ["19시 강우 정점 전망"],
+    uncertainties: ["19시 강우 정점 예보"],
     missingData: [],
     evidenceEventIds: ["EV-E5A-13", "EV-E6A-02", "EV-E8-02", "EV-E3B-05"],
   },
@@ -390,9 +390,9 @@ export const W_REPORT = work<Report>({
     sections: [
       { title: "사건 개요", body: "창원 검증 배수권역 복합침수 위험 · 17:13 복합 알림 · 17:14 후보 생성 · 21:05 종료", evidenceEventIds: ["EV-W-01", "EV-W-05"] },
       { title: "관측 근거", body: "관로수위 최대 2.48 m(18:00) · 도로수위 최대 27 cm(18:10) · 만조 175 cm(18:20)", evidenceEventIds: ["EV-E4A-12", "EV-E5A-11", "EV-E3B-05"] },
-      { title: "위험판단", body: "매트릭스 경계 0.77 · 수위·변화율 기여 0.26 · 예측 0.15 · 강우 0.16(지연 대체)", evidenceEventIds: ["EV-W-06"] },
-      { title: "예측과 검증", body: "18:00 전망 최대 0.32 m 대 실측 0.27 m · 과대예측", evidenceEventIds: ["EV-E8-01", "EV-W-16"] },
-      { title: "대응과 실행", body: "도로 통제 18:06 완료 · 마을방송 실패 후 유선 대체 · 펌프 2호기 18:35 재가동", evidenceEventIds: ["EV-W-14-4", "EV-W-12-3", "EV-W-14-6"] },
+      { title: "위험판단", body: "매트릭스 심각 0.83 · 수위·변화율 기여 0.30 · 강우 0.16 · 예측 0.15 · 시설 0.14", evidenceEventIds: ["EV-W-06C"] },
+      { title: "예측과 검증", body: "18:00 예측 최대 0.32 m 대 실측 0.27 m · 과대예측", evidenceEventIds: ["EV-E8-01", "EV-W-16"] },
+      { title: "대응과 실행", body: "도로 통제 18:06 완료 · 마을방송 실패 후 유선 대체 · 펌프 2호기 18:36 재가동", evidenceEventIds: ["EV-W-14-4", "EV-W-12-3", "EV-W-14-6"] },
     ],
   },
 });

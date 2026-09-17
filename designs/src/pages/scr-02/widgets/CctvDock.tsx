@@ -25,7 +25,7 @@ export function CctvDock({ channels, onSelect }: { channels: CctvChannelView[]; 
         {channels.length === 0 && <EmptyState variant="inline" icon="mdi:cctv-off" message="이 사건에 연결된 CCTV 가 없습니다." />}
         {channels.map((ch) => (
           <button key={ch.id} type="button" onClick={() => onSelect(ch)} className="relative aspect-video h-full shrink-0 cursor-pointer overflow-hidden rounded border-none bg-black p-0 text-left" aria-label={`${ch.label} 영상 열기`}>
-            <CctvStill src={{ still: ch.still }} className="absolute inset-0" />
+            <CctvStill src={{ still: ch.still, clip: ch.clip }} className="absolute inset-0" />
             <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-surface px-1.5 py-0.5 text-caption text-foreground">
               <span className="size-1.5 animate-pulse rounded-full bg-danger" aria-hidden />
               LIVE

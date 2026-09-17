@@ -71,12 +71,12 @@ export function ForecastBasisDialog({ wcase, forecast, onClose, onOpenLive }: {
     >
       <p className="break-keep rounded-md border border-border bg-card px-3 py-2 text-caption leading-snug text-foreground-muted">
         진행 중 사건은 <span className="text-foreground">훈련할 수 없습니다</span>. 훈련은 실제로 한 대응과 견주는 것인데
-        그 실제가 아직 없습니다. 여기서는 <span className="text-foreground">지금 서 있는 전망이 무엇으로 계산됐는지</span>만 봅니다.
+        그 실제가 아직 없습니다. 여기서는 <span className="text-foreground">지금 서 있는 예측이 무엇으로 계산됐는지</span>만 봅니다.
         대응 판단은 재난관제에서 합니다.
       </p>
 
       {!b ? (
-        <p className="break-keep text-caption text-foreground-subtle">이 사건에 아직 기준 전망이 붙지 않았습니다.</p>
+        <p className="break-keep text-caption text-foreground-subtle">이 사건에 아직 기준 예측이 붙지 않았습니다.</p>
       ) : (
         <>
           <section className="flex flex-col gap-1.5" aria-label="무엇이 계산했나">

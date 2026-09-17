@@ -28,7 +28,7 @@ export const ALERTS: AttentionAlert[] = [
     alertId: "AL-02", title: "관로·도로 수위 동반 상승", kind: "복합 징후", demoRole: "복합 징후 알림", grade: "경계", status: "생성", createdAt: t("17:13"), updatedAt: t("17:13"),
     target: BASIN_SCOPE, task: "사건 후보 검토 인수",
     evidenceEventIds: ["EV-E4B-01", "EV-E5A-03", "EV-E6A-01"], forecastIds: [FORECAST_BASE_ID],
-    reason: "같은 배수권역에서 15분 안에 관로가 급상승하고 도로수위가 따라 올랐다. 침수가 60분 안에 도달할 전망이고 펌프 한 대가 서 있어 등급을 올렸다",
+    reason: "같은 배수권역에서 15분 안에 관로가 급상승하고 도로수위가 따라 올랐다. 침수가 60분 안에 도달할 것으로 예측되고 펌프 한 대가 서 있어 등급을 올렸다",
     ruleId: "AR-COMPOSITE", ruleVersion: "0.1", suppression: { windowMin: 30, releaseCondition: "사건 후보 생성 시 이관" },
     updates: [
       { at: t("17:13"), status: "생성", eventIds: ["EV-E4B-01", "EV-E8-01"], note: "복합 조건 충족 · 후보 생성 기준 충족" },
@@ -51,14 +51,14 @@ export const ALERTS: AttentionAlert[] = [
     incidentId: INCIDENT_ID, createdIncident: false, assignee: "김상황", acknowledgedAt: t("17:30"),
   },
   {
-    alertId: "AL-04", title: "도로 침수 도달 전망", kind: "예측 영향", demoRole: "예측 영향 알림", grade: "경계", status: "생성", createdAt: t("17:13"), updatedAt: t("17:13"),
+    alertId: "AL-04", title: "도로 침수 도달 예측", kind: "예측 영향", demoRole: "예측 영향 알림", grade: "경계", status: "생성", createdAt: t("17:13"), updatedAt: t("17:13"),
     target: { kind: "회랑", displayAnchor: [128.5663, 35.1961], affectedGeometryId: "GEO-ROAD-COAST", label: "해안도로 저지대 구간" }, task: "예측 유효시각·영향 공간 검토 · [디지털트윈 보기]",
     evidenceEventIds: ["EV-E8-01"], forecastIds: [FORECAST_BASE_ID, FORECAST_DRAIN_ID, FORECAST_ROAD_ID],
-    reason: "18:00에 최대 0.32 m까지 잠기고 해안도로에는 17:52에 닿을 전망이라 검토 기준을 넘었다",
+    reason: "18:00에 최대 0.32 m까지 잠기고 해안도로에는 17:52에 닿을 것으로 예측되어 검토 기준을 넘었다",
     ruleId: "AR-FORECAST", ruleVersion: "0.1", suppression: { windowMin: 30, releaseCondition: "예측판 만료·갱신" },
     updates: [
-      { at: t("17:13"), status: "생성", eventIds: ["EV-E8-01"], note: "기준 전망 영향 기준 초과" },
-      { at: t("18:10"), status: "갱신", eventIds: ["EV-E8-02"], note: "갱신판 · 축소 전망 · 20:30 물 빠짐" },
+      { at: t("17:13"), status: "생성", eventIds: ["EV-E8-01"], note: "기준 예측 영향 기준 초과" },
+      { at: t("18:10"), status: "갱신", eventIds: ["EV-E8-02"], note: "갱신판 · 축소 예측 · 20:30 물 빠짐" },
       { at: t("21:00"), status: "해제", eventIds: ["EV-E8-02"], note: "예측판 만료" },
     ],
     incidentId: INCIDENT_ID, createdIncident: false,

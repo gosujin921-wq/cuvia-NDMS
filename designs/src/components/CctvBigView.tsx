@@ -42,6 +42,7 @@ export interface CctvChannelView {
   address: string;
   scene: string;
   still: string;
+  clip?: string;
   /** 장면 분석이 있으면 라벨에 함께 세운다 */
   analysis?: string;
   at: Date;
@@ -102,7 +103,7 @@ export function CctvBigView({ device, channel, onClose }: { device?: Device; cha
                 />
               </div>
             ) : (
-              <CctvStill device={device} src={channel ? { still: channel.still } : undefined} className="absolute inset-0" />
+              <CctvStill device={device} src={channel ? { still: channel.still, clip: channel.clip } : undefined} className="absolute inset-0" />
             )}
 
             <div
