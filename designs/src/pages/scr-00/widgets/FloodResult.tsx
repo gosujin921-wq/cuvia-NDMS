@@ -62,7 +62,7 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
           <span className="shrink-0 text-caption text-foreground-subtle">기준은 실제 사건</span>
         </header>
         <div className="overflow-x-auto rounded-md border border-border bg-card px-2.5 py-2 text-caption">
-          <div className="grid gap-x-2 gap-y-1" style={{ gridTemplateColumns: `auto repeat(${cols.length}, minmax(0, 1fr))` }}>
+          <div className="grid gap-x-2 gap-y-1" style={{ gridTemplateColumns: `auto repeat(${cols.length}, minmax(64px, 1fr))` }}>
             <span />
             {cols.map(({ s }) => (
               <button key={s.id} type="button" onClick={() => onSelect(s.id)} aria-pressed={s.id === selected.id}
