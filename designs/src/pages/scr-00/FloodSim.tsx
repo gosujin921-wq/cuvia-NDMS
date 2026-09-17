@@ -35,13 +35,15 @@ import { mergeScene } from "../../model/scene";
 import {
   depthAt, floodSites, floorMarkAt, horizonOf, impactsAt, ringAreaHa, ringOf, scenariosOf, sopEventsOf, stageAt, stateRowsAt, summarizeForecast, surfaceLevelAt,
 } from "../../model/sim/flood";
-import { SimBasisDialog } from "./widgets/SimBasisDialog";
+import { SimBasisDialog, type BasisNote } from "./widgets/SimBasisDialog";
+import { SimReportDialog } from "./widgets/SimReportDialog";
+import { captureMap } from "../../lib/map-capture";
 import { SimScenarios } from "./widgets/SimScenarios";
 import { FacilityMarkers } from "./widgets/FacilityMarkers";
 import type { ScenePoint } from "../../model/scene";
 import type { SimScenario } from "../../model/sim/flood";
 import { FloodResult } from "./widgets/FloodResult";
-import { TimeAxis } from "./widgets/TimeAxis";
+import { TimeAxis } from "../../components/twin/TimeAxis";
 
 const TWIN_ZOOM = SCOPE_ZOOM.구역 + 0.8;
 const FIT_MARGIN = 32;
@@ -162,8 +164,59 @@ export function FloodSim() {
   }, [playing, span]);
   const at = plusMin(origin, Math.min(span, minutes));
 
+  /* 근거 절 — 창과 보고서가 같은 값을 쓴다 */
+  const basisNotes = useMemo<BasisNote[]>(() => [
+            { id: "input", rows: [
+              { label: "강우", value: site.rule
+                ? (site.id === "seohang" ? `${site.now.slice(0, 10)} 기상청 국지예보모델 재분석 격자 · 배수권역 최근접 칸` : "상류 강우계 시계열 · 사건 기록")
+                : "사전 작성 판의 강우 조건" },
+              { label: "지형", value: "10 m 수치표고 · 침수면은 여기서 채운다" },
+              { label: "한계강우량", value: "24년 도시침수 완료보고 p.41 표(40 · 50 · 70 mm)" },
+              ...(site.marks ? [{ label: "침수흔적도", value: `생활안전지도 IF_0092 · 범위 안 ${site.marks.areaHa.toFixed(1)} ha` }] : []),
+              ...site.observed.map((o) => ({ label: `실측 · ${o.label}`, value: o.value })),
+            ] },
+            { id: "calc", rows: [
+              { label: "수위 → 범위·수심", value: "지형 채우기. 수위(해발)를 넣으면 잠기는 면과 깊이가 지형에서 나온다" },
+              { label: "강우 → 수위", value: site.rule
+                ? (site.id === "seohang"
+                  ? "누적 강우 규칙. 침수흔적 면적에 맞춰 보정했고 수리 모델이 오면 교체한다"
+                  : "편집 판 세 벌(당시 · +20% · +50%) 사이 보간. 실측 보정은 없고 수위 시계열이 오면 규칙으로 교체한다")
+                : "사전 작성 판. 모델이 오면 교체한다" },
+              { label: "침수 범위", value: `도로가 잠기는 수위 위만 센다${site.rule ? ` (${site.rule.levelLabel} ${site.rule.floodLevel} EL.m 기준)` : ""}` },
+              ...(site.id === "seohang" ? [{ label: "펌프 재가동", value: "켜면 그 시각부터 누적 강우에서 배수 환산량을 뺀다. 펌프 제원이 오면 그 값으로 바꾼다" }] : []),
+            ] },
+            { id: "assume", lines: [
+              "한계강우량 표의 값을 이 지점에 그대로 대응시킨다",
+              ...(site.marks ? [site.marks.note] : []),
+              "통제·대피는 물을 바꾸지 않는다. 사람이 빠지는 것이라 결과는 도달 전 여유 시간 하나다",
+            ] },
+            { id: "limit", lines: [
+              "하천·노면 수위 시계열, 펌프 제원과 가동 기록, 조위는 아직 반영하지 않았다",
+              ...(site.sopNote ? [site.sopNote] : []),
+            ] },
+            { id: "read", lines: [
+              "그 시각 상태의 파란 값은 이 시나리오의 계산값, 주황 값은 조건대로 환산한 관측값, 나머지는 관측 기록이다",
+              "해당 규정은 이 조건이면 해당되는 기존 SOP다. 당시 실행 여부가 아니며 발령·전파는 승인 뒤에 한다",
+            ] }
+  ], [site]);
+
+  /* 보고서 그래프 — 30분 간격 도로 수심. 규칙 대상은 연속값, 판 대상은 눈금 보간 */
+  const depthSeriesOf = useCallback((sc: SimScenario) => {
+    const f = site.boardOf(sc.choice);
+    const pts: { at: string; value: number }[] = [];
+    for (let m = 0; m <= span; m += 30) {
+      const iso = plusMin(origin, m);
+      const lv = site.rule ? site.rule.levelAt(sc.choice, iso) : null;
+      const d = site.rule && lv !== null ? site.rule.depthOfLevel(lv) : f ? depthAt(f, iso) : 0;
+      pts.push({ at: iso, value: Number(d.toFixed(2)) });
+    }
+    return pts;
+  }, [site, span, origin]);
+
   const [compare, setCompare] = useState(false);
   const [basisOpen, setBasisOpen] = useState(false);
+  /* 보고서 — 누른 순간의 지도를 한 장 떠서 문서에 싣는다(나중에 다시 그리지 않는다) */
+  const [reportShot, setReportShot] = useState<string | null>(null);
   const [profileCollapsed, setProfileCollapsed] = useState(false);
 
   /* ── 그 시각의 계산값 ── */
@@ -400,11 +453,18 @@ export function FloodSim() {
             <p className="p-3 text-caption text-foreground-muted">이 조합은 계산한 판이 없습니다. 아무 판이나 대신 보이지 않습니다.</p>
           )}
         </GlassPanel>
-        {/* 근거는 패널 밖 바닥에 — 결과를 스크롤해 내려야 닿던 자리였다(2026-09-17 사용자) */}
-        <Button variant="outline" size="sm" className="pointer-events-auto w-full shrink-0 bg-surface/95 backdrop-blur" onClick={() => setBasisOpen(true)}>
-          <Icon icon="mdi:file-search-outline" className="size-4" aria-hidden />
-          근거 · 입력과 계산
-        </Button>
+        {/* 근거·보고서는 패널 밖 바닥에 — 결과를 스크롤해 내려야 닿던 자리였다(2026-09-17 사용자) */}
+        <div className="pointer-events-auto flex shrink-0 gap-2">
+          <Button variant="outline" size="sm" className="flex-1 bg-surface/95 backdrop-blur" onClick={() => setBasisOpen(true)}>
+            <Icon icon="mdi:file-search-outline" className="size-4" aria-hidden />
+            근거
+          </Button>
+          {/* 누른 순간의 지도를 한 장 떠서 보고서에 싣는다 */}
+          <Button variant="default" size="sm" className="flex-1" disabled={!forecast} onClick={() => setReportShot(captureMap(map.current) ?? "")}>
+            <Icon icon="mdi:file-document-outline" className="size-4" aria-hidden />
+            보고서
+          </Button>
+        </div>
       </div>
 
       {basisOpen && (
@@ -413,40 +473,29 @@ export function FloodSim() {
           subtitle={site.dateLabel}
           forecast={forecast}
           onClose={() => setBasisOpen(false)}
-          notes={[
-            { id: "input", rows: [
-              { label: "강우", value: site.rule
-                ? (site.id === "seohang" ? `${site.now.slice(0, 10)} 기상청 국지예보모델 재분석 격자 · 배수권역 최근접 칸` : "상류 강우계 시계열 · 사건 기록")
-                : "사전 작성 판의 강우 조건" },
-              { label: "지형", value: "10 m 수치표고 · 침수면은 여기서 채운다" },
-              { label: "한계강우량", value: "24년 도시침수 완료보고 p.41 표(40 · 50 · 70 mm)" },
-              ...(site.marks ? [{ label: "침수흔적도", value: `생활안전지도 IF_0092 · 범위 안 ${site.marks.areaHa.toFixed(1)} ha` }] : []),
-              ...site.observed.map((o) => ({ label: `실측 · ${o.label}`, value: o.value })),
-            ] },
-            { id: "calc", rows: [
-              { label: "수위 → 범위·수심", value: "지형 채우기. 수위(해발)를 넣으면 잠기는 면과 깊이가 지형에서 나온다" },
-              { label: "강우 → 수위", value: site.rule
-                ? (site.id === "seohang"
-                  ? "누적 강우 규칙. 침수흔적 면적에 맞춰 보정했고 수리 모델이 오면 교체한다"
-                  : "편집 판 세 벌(당시 · +20% · +50%) 사이 보간. 실측 보정은 없고 수위 시계열이 오면 규칙으로 교체한다")
-                : "사전 작성 판. 모델이 오면 교체한다" },
-              { label: "침수 범위", value: `도로가 잠기는 수위 위만 센다${site.rule ? ` (${site.rule.levelLabel} ${site.rule.floodLevel} EL.m 기준)` : ""}` },
-              ...(site.id === "seohang" ? [{ label: "펌프 재가동", value: "켜면 그 시각부터 누적 강우에서 배수 환산량을 뺀다. 펌프 제원이 오면 그 값으로 바꾼다" }] : []),
-            ] },
-            { id: "assume", lines: [
-              "한계강우량 표의 값을 이 지점에 그대로 대응시킨다",
-              ...(site.marks ? [site.marks.note] : []),
-              "통제·대피는 물을 바꾸지 않는다. 사람이 빠지는 것이라 결과는 도달 전 여유 시간 하나다",
-            ] },
-            { id: "limit", lines: [
-              "하천·노면 수위 시계열, 펌프 제원과 가동 기록, 조위는 아직 반영하지 않았다",
-              ...(site.sopNote ? [site.sopNote] : []),
-            ] },
-            { id: "read", lines: [
-              "그 시각 상태의 파란 값은 이 시나리오의 계산값, 주황 값은 조건대로 환산한 관측값, 나머지는 관측 기록이다",
-              "해당 규정은 이 조건이면 해당되는 기존 SOP다. 당시 실행 여부가 아니며 발령·전파는 승인 뒤에 한다",
-            ] },
-          ]}
+          notes={basisNotes}
+        />
+      )}
+      {reportShot !== null && (
+        <SimReportDialog
+          onClose={() => setReportShot(null)}
+          input={{
+            siteLabel: site.label, dateLabel: site.dateLabel,
+            origin, end, at,
+            base: baseCol, selected,
+            scenarioLabel: `${picked.tag} · ${picked.label}`,
+            summaries, leadRows,
+            observed: site.observed,
+            impacts,
+            marks: site.marks ? { areaHa: site.marks.areaHa, floodedAt: site.marks.floodedAt(selected.choice) } : null,
+            sop, actions,
+            /* 규정 시각은 칩과 같은 말로 — 원시값("60")은 "20:29 · 1시간 전"이 된다 */
+            sopOn: Object.fromEntries(sopIds.map((id) => [id, site.sopApply?.[id]?.times(picked.choice).find((t) => t.at === sopOn[id])?.label ?? sopOn[id]])),
+            depthSeries: { base: depthSeriesOf(baseCol), selected: depthSeriesOf(selected) },
+            mapImage: reportShot || undefined,
+            basisRows: basisNotes.flatMap((n) => (n.id === "input" || n.id === "calc" ? n.rows ?? [] : [])),
+            basisLines: basisNotes.flatMap((n) => (n.id === "assume" || n.id === "limit" ? n.lines ?? [] : [])),
+          }}
         />
       )}
     </div>

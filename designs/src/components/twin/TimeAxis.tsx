@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────
- * 시간축 — 지도 하단 (scr-00 · 2026-09-17)
+ * 시간축 — 지도 하단 (scr-00 · 2026-09-17 · 재난관제 전망 탭도 같은 것을 쓴다)
  *
  * `현재 ───── 미래`. 연속 슬라이더다. 정지점이 없다 — 시뮬레이션은 조치를 정하는 자리가 아니라 결과를 읽는 자리라
  * 시간을 되돌려도 고장이 아니다(모의훈련 시계와 다른 점). 판의 눈금은 눈금 표시로만 선다.
@@ -10,8 +10,8 @@
 import { useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import { cn } from "@ds";
-import { formatClock } from "../../../lib/datetime";
-import { useElementWidth } from "../../../lib/useElementWidth";
+import { formatClock } from "../../lib/datetime";
+import { useElementWidth } from "../../lib/useElementWidth";
 
 /** 눈금 두 개가 이보다 가까우면 하나로 묶는다(px) — 사실상 같은 자리. 겹치면 개수가 뒤 눈금에 가려 안 읽힌다 */
 const CLUSTER_PX = 14;

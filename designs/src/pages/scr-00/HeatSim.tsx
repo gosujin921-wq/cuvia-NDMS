@@ -37,7 +37,7 @@ import { setCircleLayerVisible, upsertCircleLayer } from "../../lib/map-points";
 import { SimScenarios } from "./widgets/SimScenarios";
 import { HeatResult } from "./widgets/HeatResult";
 import { SimBasisDialog } from "./widgets/SimBasisDialog";
-import { TimeAxis } from "./widgets/TimeAxis";
+import { TimeAxis } from "../../components/twin/TimeAxis";
 
 /** 시 전역 배율 — 지도 첫 생성용. 실제 화면 맞춤은 fitCity(창원시 외곽 상자)가 한다 */
 const CITY_ZOOM = SCOPE_ZOOM.구역 - 3.2;
