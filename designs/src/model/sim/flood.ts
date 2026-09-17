@@ -207,8 +207,9 @@ export interface SimScenario {
 }
 
 export function scenariosOf(site: SimSiteBase): SimScenario[] {
-  const cond = site.conditions.find((c) => c.kind === "조건");
-  const act = site.conditions.find((c) => c.kind === "조치");
+  /* A 는 첫 축, B 는 둘째 축 — 침수는 조건 · 조치, 폭염은 조건 · 조건(기온 · 습도)이다. 축의 종류가 아니라 순서가 열을 정한다 */
+  const cond = site.conditions[0];
+  const act = site.conditions[1];
   const altCond = cond?.options.find((o) => o.id !== site.defaults[cond.id]) ?? null;
   const altAct = act?.options.find((o) => o.id !== site.defaults[act.id]) ?? null;
   const out: SimScenario[] = [{
@@ -217,9 +218,11 @@ export function scenariosOf(site: SimSiteBase): SimScenario[] {
     label: site.baselineLabel ?? (site.status === "재현" ? "그날 조건 · 그날 조치" : "예보대로 · 지금 상태"),
     choice: { ...site.defaults }, baseline: true,
   }];
-  if (cond && altCond) out.push({ id: "A", tag: "A", label: `${cond.label} ${altCond.label}`, choice: { ...site.defaults, [cond.id]: altCond.id }, baseline: false });
-  if (act && altAct) out.push({ id: "B", tag: "B", label: altAct.label, choice: { ...site.defaults, [act.id]: altAct.id }, baseline: false });
-  if (cond && altCond && act && altAct) out.push({ id: "AB", tag: "A+B", label: `${altCond.label} · ${altAct.label}`, choice: { ...site.defaults, [cond.id]: altCond.id, [act.id]: altAct.id }, baseline: false });
+  /* 조건 축은 축 이름을 앞에 붙인다("강우 +20%" · "습도 +10 %p"). 조치 축은 선택지가 이미 문장이다("14:35 조기 방류") */
+  const nameOf = (c: SimCondition, o: SimOption) => (c.kind === "조건" ? `${c.label} ${o.label}` : o.label);
+  if (cond && altCond) out.push({ id: "A", tag: "A", label: nameOf(cond, altCond), choice: { ...site.defaults, [cond.id]: altCond.id }, baseline: false });
+  if (act && altAct) out.push({ id: "B", tag: "B", label: nameOf(act, altAct), choice: { ...site.defaults, [act.id]: altAct.id }, baseline: false });
+  if (cond && altCond && act && altAct) out.push({ id: "AB", tag: "A+B", label: `${nameOf(cond, altCond)} · ${nameOf(act, altAct)}`, choice: { ...site.defaults, [cond.id]: altCond.id, [act.id]: altAct.id }, baseline: false });
   return out;
 }
 

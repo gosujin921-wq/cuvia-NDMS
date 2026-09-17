@@ -50,7 +50,8 @@ export function HeatSim() {
     for (const [k, v] of Object.entries(patch)) { if (v === null) next.delete(k); else next.set(k, v); }
     setParams(next, { replace: true });
   };
-  const offset = offsetOf(selected.choice);
+  /* 객체라 시나리오 id 로 메모한다 — 매 렌더 새 객체면 색면 다시 칠하기·고온 칸 계산이 렌더마다 돈다 */
+  const offset = useMemo(() => offsetOf(selected.choice), [selected.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* 시간축 — 자료의 첫 시각부터 마지막 시각까지, 분 단위 */
   const origin = site.now;
@@ -117,7 +118,7 @@ export function HeatSim() {
     `${field?.source ?? "기상청(KMA) 국지예보모델"} · ${site.date} ${field?.hours[0] ?? 12}~${field?.hours[field.hours.length - 1] ?? 21}시 · 격자 ${field ? `${field.nx}×${field.ny} · ${field.step}°(약 1.5 km)` : "1.5 km"}`,
     "체감온도 = 기상청 여름철 산식(습구온도 Stull 2011 입력) · 기온·상대습도 격자값으로 칸마다 계산",
     `특보 기준 = 일 최고 체감온도 주의보 ${HEAT_ADVISORY}°C · 경보 ${HEAT_WARNING}°C 이상(2일 이상 지속 예상). 하루치 자료라 도달만 판정`,
-    "시나리오 A = 예보 기온 +2°C 균일 가정 · 습도 그대로. 도시 열환경(녹지·포장) 모델은 없어 저감 대책 비교는 두지 않는다",
+    "시나리오 A = 예보 기온 +2°C 균일 가정 · B = 예보 습도 +10 %p 균일 가정(100 % 상한). 도시 열환경(녹지·포장) 모델은 없어 저감 대책 비교는 두지 않는다",
     "열돔 인셋 = 상층(500 · 200 hPa) 지위고도 재분석 격자. 원인 맥락이며 결과 계산엔 쓰지 않는다",
   ], [field, site.date]);
 

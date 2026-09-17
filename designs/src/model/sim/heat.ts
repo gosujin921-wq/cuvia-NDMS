@@ -8,7 +8,7 @@
  *   (public/weather/temperature-field.json · Open-Meteo 로 받아 구웠다). 편집 숫자는 없다.
  * ★ 체감온도는 기상청 여름철 산식이다(습구온도 Stull 2011 → 체감온도). 특보 기준도 기상청 것이다:
  *   주의보 = 일 최고 체감온도 33°C 이상, 경보 = 35°C 이상 (둘 다 "2일 이상 지속 예상"이 조건인데 하루치 자료라 여기서는 도달만 본다).
- * ★ 시나리오 A 는 "예보 기온 +2°C 균일, 습도 그대로"다. 조건 변경이지 결과가 아니다.
+ * ★ 시나리오 A 는 "예보 기온 +2°C 균일", B 는 "예보 습도 +10 %p 균일"이다. 조건 변경이지 결과가 아니다.
  *   "녹지 확대 · 고반사 포장 적용 후" 같은 저감 대책 비교는 **열환경 모델이 없어 만들지 않는다.** 모델이 오면 같은 자리에 선다.
  * ★ 열돔(상층 지위고도)은 원인 맥락이라 광역 인셋으로만 선다. 여기서 보여 주는 대상은 도시 열환경이다.
  * ───────────────────────────────────────────── */
@@ -55,12 +55,20 @@ export function heatSite(field: TemperatureField | null): HeatSite {
       {
         id: "temp", label: "기온", kind: "조건",
         options: [
-          { id: "fc", label: "예보대로", detail: "기상청 국지예보 기온·습도 그대로" },
-          { id: "p2", label: "+2°C", detail: "예보 기온에 2°C 균일 가정 · 습도 그대로" },
+          { id: "fc", label: "예보대로", detail: "기상청 국지예보 기온 그대로" },
+          { id: "p2", label: "+2°C", detail: "예보 기온에 2°C 균일 가정" },
+        ],
+      },
+      {
+        /* 둘째 축도 조건이다 — 체감온도는 습도에 크게 움직여 "같은 기온이라도 습하면 경보"가 보인다 */
+        id: "rh", label: "습도", kind: "조건",
+        options: [
+          { id: "fc", label: "예보대로", detail: "기상청 국지예보 상대습도 그대로" },
+          { id: "p10", label: "+10 %p", detail: "예보 습도에 10 %p 균일 가정(100 % 상한)" },
         ],
       },
     ],
-    defaults: { temp: "fc" },
+    defaults: { temp: "fc", rh: "fc" },
     baselineTag: "예보",
     baselineLabel: "기상청 국지예보 그대로",
     date,
@@ -69,7 +77,10 @@ export function heatSite(field: TemperatureField | null): HeatSite {
   };
 }
 
-export const offsetOf = (choice: Record<string, string>): number => (choice.temp === "p2" ? 2 : 0);
+/** 시나리오가 예보에 더하는 값 — 기온(°C) · 상대습도(%p). 둘 다 조건 변경이지 결과가 아니다 */
+export interface HeatOffset { t: number; rh: number }
+export const offsetOf = (choice: Record<string, string>): HeatOffset => ({ t: choice.temp === "p2" ? 2 : 0, rh: choice.rh === "p10" ? 10 : 0 });
+const OFFSETS_ALL: HeatOffset[] = [{ t: 0, rh: 0 }, { t: 2, rh: 0 }, { t: 0, rh: 10 }, { t: 2, rh: 10 }];
 
 export const hourIso = (field: TemperatureField, h: number): string => `${field.date}T${String(field.hours[h]).padStart(2, "0")}:00:00+09:00`;
 
@@ -82,24 +93,25 @@ export function cellIndexOf(field: TemperatureField, at: LngLat): number {
 }
 
 /** 한 시각 · 한 칸의 값. 습도가 없으면 체감을 못 낸다(null) */
-export function feelOf(field: TemperatureField, h: number, cell: number, offset: number): { ta: number; rh: number | null; feel: number | null } {
-  const ta = field.temp[h][cell] + offset;
-  const rh = field.rh?.[h]?.[cell] ?? null;
+export function feelOf(field: TemperatureField, h: number, cell: number, off: HeatOffset): { ta: number; rh: number | null; feel: number | null } {
+  const ta = field.temp[h][cell] + off.t;
+  const raw = field.rh?.[h]?.[cell] ?? null;
+  const rh = raw === null ? null : Math.min(100, raw + off.rh);
   return { ta, rh, feel: rh === null ? null : apparentTemp(ta, rh) };
 }
 
 /** 한 시각의 전체 칸 값 — 지도 색면 입력. 체감이 없으면 기온 */
-export function fieldValuesAt(field: TemperatureField, h: number, offset: number): number[] {
+export function fieldValuesAt(field: TemperatureField, h: number, off: HeatOffset): number[] {
   const n = field.nx * field.ny;
   const out = new Array<number>(n);
-  for (let i = 0; i < n; i += 1) out[i] = feelOf(field, h, i, offset).feel ?? field.temp[h][i] + offset;
+  for (let i = 0; i < n; i += 1) out[i] = feelOf(field, h, i, off).feel ?? field.temp[h][i] + off.t;
   return out;
 }
 
 /** 색 램프 양끝 — 모든 시각·두 시나리오를 한 램프에 놓는다(비교가 뜻을 가지려면 색이 같은 값이어야 한다) */
 export function fieldRange(field: TemperatureField): { min: number; max: number } {
   let min = Infinity, max = -Infinity;
-  for (const off of [0, 2]) for (let h = 0; h < field.hours.length; h += 1) for (const v of fieldValuesAt(field, h, off)) { if (v < min) min = v; if (v > max) max = v; }
+  for (const off of OFFSETS_ALL) for (let h = 0; h < field.hours.length; h += 1) for (const v of fieldValuesAt(field, h, off)) { if (v < min) min = v; if (v > max) max = v; }
   return { min: Math.floor(min), max: Math.ceil(max) };
 }
 
@@ -120,11 +132,11 @@ export interface HeatSummary {
   feelAvailable: boolean;
 }
 
-export function summarizeHeat(field: TemperatureField, offset: number, anchorCell: number): HeatSummary {
+export function summarizeHeat(field: TemperatureField, off: HeatOffset, anchorCell: number): HeatSummary {
   const n = field.nx * field.ny;
   const H = field.hours.length;
   const feelAvailable = Boolean(field.rh);
-  const valueAt = (h: number, c: number) => feelOf(field, h, c, offset).feel ?? field.temp[h][c] + offset;
+  const valueAt = (h: number, c: number) => feelOf(field, h, c, off).feel ?? field.temp[h][c] + off.t;
   let maxFeel = -Infinity, maxH = 0, advisoryHours = 0, warningHours = 0;
   let advisoryAt: string | null = null, warningAt: string | null = null;
   for (let h = 0; h < H; h += 1) {
@@ -143,7 +155,7 @@ export function summarizeHeat(field: TemperatureField, offset: number, anchorCel
 }
 
 /** 고온 지속 지역의 칸 링 — 지도에 면으로 세운다. 판정은 `summarizeHeat` 와 같은 규칙(33°C↑ 가 HOT_HOURS 이상 연속) */
-export function hotCellRings(field: TemperatureField, offset: number): LngLat[][] {
+export function hotCellRings(field: TemperatureField, off: HeatOffset): LngLat[][] {
   const [west, south] = field.bbox;
   const half = field.step / 2;
   const H = field.hours.length;
@@ -152,7 +164,7 @@ export function hotCellRings(field: TemperatureField, offset: number): LngLat[][
     for (let ix = 0; ix < field.nx; ix += 1) {
       const c = iy * field.nx + ix;
       let run = 0, best = 0;
-      for (let h = 0; h < H; h += 1) { const v = feelOf(field, h, c, offset).feel ?? field.temp[h][c] + offset; run = v >= HEAT_ADVISORY ? run + 1 : 0; if (run > best) best = run; }
+      for (let h = 0; h < H; h += 1) { const v = feelOf(field, h, c, off).feel ?? field.temp[h][c] + off.t; run = v >= HEAT_ADVISORY ? run + 1 : 0; if (run > best) best = run; }
       if (best < HOT_HOURS) continue;
       const x0 = west + ix * field.step - half, y0 = south + iy * field.step - half;
       out.push([[x0, y0], [x0 + field.step, y0], [x0 + field.step, y0 + field.step], [x0, y0 + field.step]]);
@@ -162,23 +174,23 @@ export function hotCellRings(field: TemperatureField, offset: number): LngLat[][
 }
 
 /** 그 시각(분 단위) 기준 칸의 상태 줄 — 시각 사이는 직선 보간 */
-export function heatStateAt(field: TemperatureField, offset: number, anchorCell: number, minutesFromStart: number): { rows: StateRow[]; feel: number | null; hourIndex: number } {
+export function heatStateAt(field: TemperatureField, off: HeatOffset, anchorCell: number, minutesFromStart: number): { rows: StateRow[]; feel: number | null; hourIndex: number } {
   const H = field.hours.length;
   const pos = Math.min(H - 1, Math.max(0, minutesFromStart / 60));
   const h0 = Math.floor(pos), h1 = Math.min(H - 1, h0 + 1), p = pos - h0;
-  const a = feelOf(field, h0, anchorCell, offset), b = feelOf(field, h1, anchorCell, offset);
+  const a = feelOf(field, h0, anchorCell, off), b = feelOf(field, h1, anchorCell, off);
   const lerp = (x: number | null, y: number | null) => (x === null || y === null ? x ?? y : x + (y - x) * p);
   const ta = lerp(a.ta, b.ta) as number, rh = lerp(a.rh, b.rh), feel = lerp(a.feel, b.feel);
   const rows: StateRow[] = [
-    { label: "기온", value: `${ta.toFixed(1)}°C`, note: offset ? `예보 +${offset}°C` : "예보" },
-    { label: "상대습도", value: rh === null ? "자료 없음" : `${Math.round(rh)} %` },
+    { label: "기온", value: `${ta.toFixed(1)}°C`, note: off.t ? `예보 +${off.t}°C` : "예보" },
+    { label: "상대습도", value: rh === null ? "자료 없음" : `${Math.round(rh)} %`, note: off.rh ? `예보 +${off.rh} %p` : undefined },
     { label: "체감온도", value: feel === null ? "습도 없어 계산 못 함" : `${feel.toFixed(1)}°C`, note: feel === null ? undefined : feel >= HEAT_WARNING ? "경보 기준" : feel >= HEAT_ADVISORY ? "주의보 기준" : undefined },
   ];
   return { rows, feel, hourIndex: p >= 0.5 ? h1 : h0 };
 }
 
 /** 그 시각의 고온 칸 비율 — 지도 색면이 말하는 "어디가" 를 숫자로 */
-export function hotShareAt(field: TemperatureField, offset: number, h: number): number {
-  const vals = fieldValuesAt(field, h, offset);
+export function hotShareAt(field: TemperatureField, off: HeatOffset, h: number): number {
+  const vals = fieldValuesAt(field, h, off);
   return vals.filter((v) => v >= HEAT_ADVISORY).length / vals.length;
 }
