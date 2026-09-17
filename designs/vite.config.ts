@@ -3,7 +3,15 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  /* ⚠ 프로덕션 CSS 의 LightningCSS 가공(Tailwind 플러그인 optimize + vite cssMinify)이
+     `backdrop-filter` 와 `-webkit-backdrop-filter` 를 같은 속성으로 병합해 뒤에 쓴
+     -webkit- 쪽만 남긴다. 크롬은 -webkit- 별칭을 안 받아 글래스 블러가 프로덕션
+     빌드에서만 전부 죽는다 (dev 는 비가공이라 정상). CSMS 2026-09-01 과 같은 건.
+     타깃 지정(cssTarget · css.lightningcss.targets)으로는 안 잡혀 두 단계를 모두 끈다 */
+  plugins: [react(), tailwindcss({ optimize: false })],
+  build: {
+    cssMinify: false,
+  },
   resolve: {
     // ds:link 시 @cuvia/* 가 클론(../../_ref/CUVIA_PLATFORM_DESIGN)에서 심링크로 들어오므로
     // react 가 두 번 로드되지 않도록 단일 인스턴스로 강제한다(Hooks 에러 방지).
