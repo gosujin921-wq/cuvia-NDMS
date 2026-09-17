@@ -19,13 +19,15 @@ import type { AlertLevel } from "../../../demo/levels";
 const LEVEL_LABEL: Record<AlertLevel, string> = { advisory: "주의보", warning: "경보", evacuate: "대피" };
 const LEVEL_RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
 
-export function FloodResult({ scenarios, selected, onSelect, summaries, observed, at, stateRows, depthNow, areaHa, impacts, actions, sop, stage, focus, onFocus, compare, onCompare, onBasis }: {
+export function FloodResult({ scenarios, selected, onSelect, summaries, observed, sourceNote, at, stateRows, depthNow, areaHa, impacts, actions, sop, stage, focus, onFocus, compare, onCompare, onBasis }: {
   scenarios: SimScenario[];
   selected: SimScenario;
   onSelect: (id: string) => void;
   summaries: Record<string, ScenarioSummary | null>;
   /** 실제 사건의 실측 — 사건 원장. 없으면 비운다 */
   observed: { label: string; value: string }[];
+  /** 숫자 출처 한 줄 — 대상마다 다르다(규칙 계산 / 사전 작성 판) */
+  sourceNote: string;
   at: string;
   stateRows: (StateRow & { computed?: boolean; scaled?: boolean })[];
   depthNow: number;
@@ -98,9 +100,7 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
             <span className="font-mono text-foreground-subtle">{compare ? "점선 = 실제" : "끔"}</span>
           </button>
         )}
-        <p className="break-keep text-caption leading-snug text-foreground-subtle">
-          수위 → 범위·수심은 지형 계산 · 강우 → 수위는 사전 작성 판(모델 연결 시 교체) · 실측은 사건 원장
-        </p>
+        <p className="break-keep text-caption leading-snug text-foreground-subtle">{sourceNote}</p>
       </section>
 
       <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="그 시각 상태">

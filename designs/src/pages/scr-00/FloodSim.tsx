@@ -54,10 +54,10 @@ const spanMin = (a: string, b: string) => Math.max(1, Math.round((new Date(b).ge
 export function FloodSim() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  const { agentOpen, demoNow } = useScenario();
+  const { agentOpen } = useScenario();
 
   /* ── 상태 셋: 대상 · 시나리오 · 시각 ── */
-  const sites = useMemo(() => floodSites(demoNow), [demoNow]);
+  const sites = useMemo(() => floodSites(), []);
   /* `site` 로도, 사건 ID(`incident`)로도 연다 — 재난관제 전망 탭이 사건으로 넘긴다 */
   const site = sites.find((s) => s.id === params.get("site") || (params.get("incident") !== null && s.incidentId === params.get("incident"))) ?? sites[0];
   const scenarios = useMemo(() => scenariosOf(site), [site]);
@@ -71,7 +71,14 @@ export function FloodSim() {
   const forecast = useMemo(() => site.boardOf(selected.choice), [site, selected]);
   const baseline = useMemo(() => site.boardOf(scenarios[0].choice), [site, scenarios]);
   const summaries = useMemo(
-    () => Object.fromEntries(scenarios.map((s) => { const f = site.boardOf(s.choice); return [s.id, f ? summarizeForecast(f) : null]; })),
+    () => Object.fromEntries(scenarios.map((s) => {
+      const f = site.boardOf(s.choice);
+      if (!f) return [s.id, null];
+      const sum = summarizeForecast(f);
+      /* 규칙 대상은 면적이 연속값이다 — 눈금 링의 면적이 아니라 첨두 수위의 지형 채우기 면적 */
+      if (site.rule) { const rule = site.rule; sum.maxAreaHa = rule.areaOfLevel(Math.max(...f.marks.map((m) => rule.levelAt(s.choice, m.validAt)))); }
+      return [s.id, sum];
+    })),
     [site, scenarios],
   );
 
@@ -101,10 +108,12 @@ export function FloodSim() {
 
   /* ── 그 시각의 계산값 ── */
   const floorMark = forecast ? floorMarkAt(forecast, at) : null;
-  const level = forecast ? surfaceLevelAt(forecast, site.wcase, at) : null;
-  const depthNow = forecast ? depthAt(forecast, at) : 0;
+  /* 규칙 대상은 수위·수심·면적이 연속값(규칙)이고, 사전 작성 판은 눈금 사이를 보간한다 */
+  const level = forecast ? (site.rule ? site.rule.levelAt(selected.choice, at) : surfaceLevelAt(forecast, site.wcase, at)) : null;
+  const depthNow = forecast ? (site.rule && level !== null ? site.rule.depthOfLevel(level) : depthAt(forecast, at)) : 0;
   const ring = ringOf(floorMark?.extentGeometryId);
-  const areaHa = ring ? ringAreaHa(ring) : null;
+  const ruleArea = site.rule && level !== null ? site.rule.areaOfLevel(level) : null;
+  const areaHa = site.rule ? (ruleArea !== null && ruleArea > 0.005 ? ruleArea : null) : ring ? ringAreaHa(ring) : null;
   const sceneLayers = useMemo(() => mergeScene(forecast?.scene, floorMark?.scene), [forecast, floorMark]);
   const impacts = useMemo(() => (forecast ? impactsAt(forecast, at, sceneLayers) : []), [forecast, at, sceneLayers]);
   /* 조치 — 이 시나리오에서 일어나는 것. 시간축 눈금 · 마커 배지 · 조치 이력이 같은 목록을 읽는다 */
@@ -151,7 +160,7 @@ export function FloodSim() {
   }, [map, ready, focusScope]);
 
   /* 지형을 채운 침수면 — 수위(해발)를 넣으면 범위·수심이 지형에서 나온다 */
-  const surfaceGeometryId = floorMark?.extentGeometryId ?? null;
+  const surfaceGeometryId = site.rule ? site.rule.surfaceGeometryId : floorMark?.extentGeometryId ?? null;
   const surfaceEntry = useMemo(() => floodSurfaceOf(surfaceGeometryId), [surfaceGeometryId]);
   const [fineGrid, setFineGrid] = useState<TerrainGrid | null>(null);
   useEffect(() => {
@@ -271,7 +280,10 @@ export function FloodSim() {
               selected={selected}
               onSelect={(id) => setQuery({ sc: id })}
               summaries={summaries}
-              observed={site.status === "재현" ? site.wcase?.observed ?? [] : []}
+              observed={site.observed}
+              sourceNote={site.rule
+                ? "수위 → 범위·수심은 지형 계산 · 강우 → 수위는 규칙 계산(2024-09-21 강우 실자료 · 침수흔적으로 보정 · 수리 모델 연결 시 교체) · 실측은 침수흔적도"
+                : "수위 → 범위·수심은 지형 계산 · 강우 → 수위는 사전 작성 판(모델 연결 시 교체) · 이 사례의 수치는 편집값"}
               at={at}
               stateRows={stateRows}
               depthNow={depthNow}

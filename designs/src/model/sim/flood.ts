@@ -16,17 +16,15 @@ import type { Forecast, ForecastMark } from "../forecast";
 import type { LngLat, SceneLayer, ScenePoint } from "../scene";
 import type { TwinFamily } from "../incident";
 import type { WhatIfCase } from "../whatif";
-import { FORECAST_BASE, RAIN120_COMBOS, WHATIF_DRAIN_NOW, WHATIF_RAIN120 } from "../../fixtures/seohang-flood/forecasts";
 import { INCIDENT_ID as SH_INCIDENT_ID } from "../../fixtures/seohang-flood/incident";
 import { CW_INCIDENT_ID } from "../../fixtures/changwoncheon/whatif";
 import { GEOMETRIES } from "../../fixtures";
 import { findWhatIfCase, trainingResultOf, whatIfStateRowsAt } from "../selectors";
 import { deviceKindSpec, devicesOf } from "../../demo/devices";
-import { latestValue, tideReadingAt, trendSummaryAt } from "../../demo/measurements";
-import { drainageOf } from "../../demo/drainage";
 import { sopItemsFor } from "../../demo/sop";
 import { floodSurfaceOf } from "../../lib/flood-surfaces";
 import { formatMarkMetric, markMetricLabel } from "../../lib/forecast-twin";
+import { HEAVY_RAIN_ADVISORY_3H, HEAVY_RAIN_WARNING_3H, OBS_AREA_HA, RULE_DATE, RULE_MAX_3H, RULE_START, RULE_TOTAL_MM, areaOfLevel, cumulativeAt, depthOfLevel, factorForWarning, levelAtMinutes, ruleForecast, type RuleChoice } from "./rain-rule";
 
 export interface SimOption { id: string; label: string; detail?: string; /** 당시 관측값에 곱하는 배율(조건의 정의가 "당시 × 1.2"일 때) */ factor?: number }
 export interface SimCondition {
@@ -86,6 +84,18 @@ export interface FloodSite extends SimSiteBase {
   baselineOf(choice: Record<string, string>): Forecast | null;
   /** 현재 상태 — 관측·운영값. 시뮬레이션 결과가 아니다 */
   currentRows(now: Date): StateRow[];
+  /** 시나리오·시각에 따른 상태 줄 — 규칙 대상은 이것으로(누적 강우 · 도로 수위). 있으면 `currentRows` 대신 쓴다 */
+  stateRowsOf?(choice: Record<string, string>, atIso: string): (StateRow & { computed?: boolean; scaled?: boolean })[];
+  /** 실측 — 사건 원장·흔적. 편집 사례는 비운다(실측이라 부르지 않는다) */
+  observed: { label: string; value: string }[];
+  /** 규칙 대상 — 수위·면적·수심이 연속값이다. 없으면 사전 작성 판의 눈금을 보간한다 */
+  rule?: {
+    levelAt(choice: Record<string, string>, atIso: string): number;
+    areaOfLevel(level: number): number;
+    depthOfLevel(level: number): number;
+    /** 지형 채우기 패치를 찾는 링 id — 규칙은 링이 아니라 수위로 채우므로 하나면 된다 */
+    surfaceGeometryId: string;
+  };
   /** 이 대상에 매칭되는 기존 SOP */
   sop: SimSop[];
   /** 장면 점 밖의 시설 — SOP 가 가리키는 장치(CCTV · 마을방송). 장면 점과 같은 모양으로 선다 */
@@ -113,61 +123,71 @@ const actionsOfCase = (wcase: WhatIfCase | null, acts: Record<string, string>, f
 
 const ms = (iso: string) => new Date(iso).getTime();
 
-/* ── 서항 — 진행 중 사건. 판은 사건에 붙은 전망(예보대로 · 예보 +20%) × 펌프(정지 · 재가동) ── */
-const seohangSite = (demoNow: Date): FloodSite => {
+/* ── 서항 — 2024-09-21 실제 사건 재현. 강우 실자료 + 침수흔적으로 보정한 규칙(model/sim/rain-rule.ts)이 판을 만든다 ──
+   축은 강우(실제 · 호우경보 기준) × 한계강우량(p.41 · 50 · 40 mm). 펌프 축은 제원·가동 로그가 없어 규칙에 없다(오면 같은 자리에 선다) */
+const LIM_OPTIONS: SimOption[] = [
+  { id: "50", label: "50 mm · p.41 중앙값", detail: "24년 도시침수 완료보고 p.41 한계강우량 표의 중앙값" },
+  { id: "40", label: "40 mm · p.41 최소", detail: "표에서 가장 취약한 지점의 값 · 더 빨리 잠기는 경우" },
+];
+const seohangSite = (): FloodSite => {
   const wcase = findWhatIfCase(SH_INCIDENT_ID) ?? null;
-  const rainDrain = RAIN120_COMBOS.find((c) => c.responseId === "drainage" && c.presetId === "now")?.forecast ?? null;
-  /* 재가동 판은 **조치 시각이 있는 것**(`WHATIF_DRAIN_NOW` · 17:40 즉시)을 쓴다 — 시각이 없으면 조치가 "일어난 일"로 못 선다 */
-  const board = (rain: string, pump: string): Forecast | null =>
-    rain === "p20" ? (pump === "on" ? rainDrain : WHATIF_RAIN120) : pump === "on" ? WHATIF_DRAIN_NOW : FORECAST_BASE;
+  const fWarn = factorForWarning(HEAVY_RAIN_WARNING_3H);
+  const rainOptions: SimOption[] = [
+    { id: "fc", label: "실제", detail: `누적 ${RULE_TOTAL_MM} mm · 3시간 최대 ${RULE_MAX_3H} mm`, factor: 1 },
+    fWarn > 1
+      ? { id: "warn", label: "호우경보 기준", detail: `3시간 ${HEAVY_RAIN_WARNING_3H} mm 에 닿는 세기 · 실제 × ${fWarn}`, factor: fWarn }
+      /* 실제가 이미 경보 기준을 넘었으면 앵커가 없다 — 배율을 숨기지 않고 그대로 적는다 */
+      : { id: "x15", label: "실제 × 1.5", detail: `실제가 이미 호우경보 3시간 기준(${HEAVY_RAIN_WARNING_3H} mm)을 넘었다 · 배율로만 올린다`, factor: 1.5 },
+  ];
+  const conditions: SimCondition[] = [
+    { id: "rain", label: "강우", kind: "조건", options: rainOptions },
+    { id: "lim", label: "한계강우량", kind: "조건", options: LIM_OPTIONS },
+  ];
+  const defaults = { rain: "fc", lim: "50" };
+  const ruleChoice = (c: Record<string, string>): RuleChoice => {
+    const r = rainOptions.find((o) => o.id === (c.rain ?? defaults.rain)) ?? rainOptions[0];
+    const lim = Number(c.lim ?? defaults.lim);
+    return { factor: r.factor ?? 1, pLim: lim, label: [r.factor !== 1 ? `강우 ${r.label}` : null, lim !== 50 ? `한계강우량 ${lim} mm` : null].filter(Boolean).join(" · ") };
+  };
+  const minutesOf = (atIso: string) => (new Date(atIso).getTime() - new Date(RULE_START).getTime()) / 60_000;
   return {
     id: "seohang",
     label: "서항 배수권역",
     incidentId: SH_INCIDENT_ID,
     family: wcase?.twinFamily ?? "A",
-    status: "진행 중",
+    status: "재현",
     anchor: wcase?.scope.displayAnchor ?? [128.567, 35.197],
     scopeGeometryId: wcase?.scope.affectedGeometryId,
-    now: demoNow.toISOString(),
-    dateLabel: "진행 중 · 지금",
-    conditions: [
-      {
-        id: "rain", label: "강우", kind: "조건",
-        options: [
-          { id: "fc", label: "예보대로", detail: "현재 강우·조위 전망 유지" },
-          { id: "p20", label: "예보 +20%", detail: "19시 최대 21.4 mm/h · 상위 시나리오" },
-        ],
-      },
-      {
-        id: "pump", label: "배수펌프", kind: "조치",
-        options: [
-          { id: "off", label: "2호기 정지 · 가용 2/3", detail: "지금 상태 그대로" },
-          { id: "on", label: "2호기 재가동 · 3/3", detail: "저류시설 추가 유입" },
-        ],
-      },
-    ],
-    defaults: { rain: "fc", pump: "off" },
-    boardOf: (c) => board(c.rain ?? "fc", c.pump ?? "off"),
-    baselineOf: (c) => board(c.rain ?? "fc", "off"),
-    currentRows: (at) => {
-      /* 진행 중 사건의 관측은 **지금까지**만 있다. 시간축을 미래로 옮겨도 관측 줄은 현재 값에 머문다(미래 관측을 지어내지 않는다) */
-      const now = at.getTime() > demoNow.getTime() ? demoNow : at;
-      const rows: StateRow[] = [];
-      const wl = devicesOf("seohang").find((d) => d.kind === "WL");
-      if (wl) {
-        const v = latestValue(wl, now);
-        const tr = trendSummaryAt(wl, now);
-        rows.push({ label: wl.name, value: `${v.value.toFixed(2)} ${deviceKindSpec("WL").unit ?? ""}`.trim(), note: tr ? `최근 30분 ${tr.delta30 >= 0 ? "+" : ""}${tr.delta30.toFixed(2)} m · ${tr.direction}` : undefined });
-      }
-      const tide = tideReadingAt(now);
-      rows.push({ label: "조위 (실측)", value: `${tide.measured.toFixed(2)} EL.m`, note: `해일 편차 +${tide.surge.toFixed(2)} m` });
-      const dr = drainageOf("seohang");
-      if (dr) rows.push({ label: "배수펌프", value: `${dr.pumpsRunning}/${dr.pumpsTotal} 가동` });
-      for (const c of FORECAST_BASE.conditions ?? []) if (/강우|예보/.test(c.label)) rows.push({ label: c.label, value: c.value });
-      return rows;
+    now: RULE_START,
+    dateLabel: `${RULE_DATE.replace(/-/g, ".")} 재현 · 강우 실자료 · 규칙 계산`,
+    baselineTag: "실제 사건",
+    baselineLabel: "그날 강우 · 한계강우량 50 mm",
+    conditions,
+    defaults,
+    boardOf: (c) => { const rc = ruleChoice(c); return ruleForecast(rc, `FC-SH-RULE-${c.rain ?? defaults.rain}-${c.lim ?? defaults.lim}`, rc.label === ""); },
+    baselineOf: () => ruleForecast(ruleChoice(defaults), "FC-SH-RULE-fc-50", true),
+    currentRows: () => [],
+    stateRowsOf: (c, atIso) => {
+      const rc = ruleChoice(c);
+      const m = minutesOf(atIso);
+      const cum = cumulativeAt(m, rc.factor);
+      const last3 = cum - cumulativeAt(m - 180, rc.factor);
+      const level = levelAtMinutes(m, rc.factor, rc.pLim);
+      return [
+        { label: "누적 강우", value: `${Math.round(cum)} mm`, note: rc.factor === 1 ? "실자료" : `실제 × ${rc.factor}`, scaled: rc.factor !== 1 },
+        { label: "3시간 강우", value: `${Math.round(last3)} mm`, note: last3 >= HEAVY_RAIN_WARNING_3H ? "경보 기준" : last3 >= HEAVY_RAIN_ADVISORY_3H ? "주의보 기준" : undefined },
+        { label: "한계강우량", value: `${rc.pLim} mm`, note: cum >= rc.pLim ? "초과" : `${Math.round(rc.pLim - cum)} mm 남음` },
+        { label: "도로 수위", value: `${level.toFixed(2)} EL.m`, note: "규칙 계산", computed: true },
+      ];
     },
-    /* 서항의 SOP 표본은 해일 절차(SOP_ITEMS · 서항지구 대상값)다. 사건이 든 규정이 있으면 그것을 앞에 둔다.
-       시설 연결: CCTV 감시 → CCTV 장치, 마을방송 → 방송 장치, 해안도로 차단 → 차단 지점(통제되면 장면에 선다) */
+    observed: [{ label: "침수흔적도 · 권역 안 면적", value: `${OBS_AREA_HA} ha` }],
+    rule: {
+      levelAt: (c, atIso) => { const rc = ruleChoice(c); return levelAtMinutes(minutesOf(atIso), rc.factor, rc.pLim); },
+      areaOfLevel,
+      depthOfLevel,
+      surfaceGeometryId: "GEO-FLOOD-T10",
+    },
+    /* 서항의 SOP 표본은 해일 절차(SOP_ITEMS · 서항지구 대상값)다. 시설 연결: CCTV 감시 → CCTV 장치, 마을방송 → 방송 장치, 해안도로 차단 → 차단 지점 */
     sop: [
       ...sopOfCase(wcase),
       ...sopItemsFor("evacuate").map((s) => ({
@@ -176,12 +196,8 @@ const seohangSite = (demoNow: Date): FloodSite => {
       })),
     ],
     extraFacilities: SH_DEVICE_POINTS,
-    /* 서항의 조치는 판이 든다(`actionAt`) — 펌프 재가동은 펌프장·저류시설, 통제는 차단 지점 */
-    actionsOf: (_c, f) => {
-      if (!f?.actionAt) return [];
-      const drain = f.alternativeId === "drainage";
-      return [{ id: f.alternativeId, at: f.actionAt.at, label: drain ? "펌프 2호기 재가동" : "해안도로 통제", kind: drain ? "환경" : "노출", facilityIds: drain ? ["a-pump", "a-retention"] : ["a-block-s", "a-block-n"] }];
-    },
+    /* 조치 축이 없다 — 펌프 제원·가동 로그가 오면 규칙에 넣고 여기 선다 */
+    actionsOf: () => [],
     wcase,
   };
 };
@@ -216,7 +232,10 @@ const changwoncheonSite = (): FloodSite | null => {
     anchor: wcase.scope.displayAnchor,
     scopeGeometryId: wcase.scope.affectedGeometryId,
     now,
-    dateLabel: `${now.slice(0, 10).replace(/-/g, ".")} 재현 · ${now.slice(11, 16)} 기준`,
+    /* 이 사건의 수치는 원장이 아니라 시나리오 편집값이다(fixtures/changwoncheon/whatif.ts 머리말). "실제 사건 · 실측"이라 부르지 않는다 */
+    dateLabel: `${now.slice(0, 10).replace(/-/g, ".")} 사례(편집) · ${now.slice(11, 16)} 기준`,
+    baselineTag: "사례 시나리오",
+    baselineLabel: "편집 사례 · 그날 조건 · 그날 조치",
     conditions: [
       { id: "rain", label: "강우", kind: "조건", stateLabel: t.conditions[0]?.stateLabel, options: rainSteps.map((s) => ({ id: s.id, label: s.label, detail: s.detail, factor: s.factor })) },
       {
@@ -231,6 +250,7 @@ const changwoncheonSite = (): FloodSite | null => {
     boardOf: (c) => trainingResultOf(wcase, c.rain ?? "now", actsOf(c.discharge ?? "actual")).mine,
     baselineOf: (c) => trainingResultOf(wcase, c.rain ?? "now", {}).mine,
     currentRows: (at) => whatIfStateRowsAt(wcase, at.toISOString()).rows.map((r) => ({ label: r.label, value: r.value })),
+    observed: [],
     /* 창원천은 사건이 든 규정(S1 둔치 통제 · S2 상류 저류지 방류 · S3 천변도로 통제)만. 봉암 표본을 끌어오지 않는다(지명이 틀린다) */
     sop: sopOfCase(wcase, CW_SOP_FACILITIES),
     extraFacilities: [],
@@ -246,11 +266,11 @@ const changwoncheonSite = (): FloodSite | null => {
 const CW_SOP_FACILITIES: Record<string, string[]> = { S2: ["cw-st-a"], S3: ["cw-block-w", "cw-block-e"] };
 
 /**
- * 대상 목록 — **과거 실제 사건이 먼저다.** 실측 결과가 있어 기준(Baseline)을 설명할 수 있다(2026-09-17 방향:
- * 과거 사건으로 모델 신뢰를 확보하고 그 모델로 "그때 조건이 달랐다면"을 본다). 진행 중 사건은 기준이 전망이라 둘째다.
+ * 대상 목록 — **실제 사건이 먼저다.** 서항 2024-09-21 은 강우 실자료와 침수흔적으로 보정한 규칙이 있어 기준(Baseline)을 설명할 수 있다
+ * (2026-09-17 방향: 과거 사건으로 모델 신뢰를 확보하고 그 모델로 "그때 조건이 달랐다면"을 본다). 창원천은 편집 사례라 둘째다.
  */
-export function floodSites(demoNow: Date): FloodSite[] {
-  return [changwoncheonSite(), seohangSite(demoNow)].filter((s): s is FloodSite => s !== null);
+export function floodSites(): FloodSite[] {
+  return [seohangSite(), changwoncheonSite()].filter((s): s is FloodSite => s !== null);
 }
 
 /* ═══ 시나리오 — 실제 사건(기준) · A 조건 변경 · B 조치 변경 · A+B. 조건 축의 선택지에서 만든다 ═══ */
@@ -371,6 +391,7 @@ export function depthAt(f: Forecast, atIso: string): number {
  *   나머지                              당시 기록 그대로
  */
 export function stateRowsAt(site: FloodSite, f: Forecast | null, choice: Record<string, string>, atIso: string): (StateRow & { computed?: boolean; scaled?: boolean })[] {
+  if (site.stateRowsOf) return site.stateRowsOf(choice, atIso);
   const raw = site.currentRows(new Date(atIso));
   const mark = f ? floorMarkAt(f, atIso) : null;
   const metricLabel = mark ? markMetricLabel(mark) : null;
