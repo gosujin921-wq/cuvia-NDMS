@@ -34,8 +34,8 @@ export function SimulationPage() {
     <div className="relative h-full w-full overflow-hidden">
       {type === "flood" ? <FloodSim /> : <HeatSim />}
 
-      {/* 상단 중앙 유형 탭 */}
-      <div className="pointer-events-none absolute top-3 z-30 flex justify-center" style={{ left: CENTER_LEFT, right: CENTER_RIGHT }}>
+      {/* 상단 유형 탭 — 오른쪽 끝. 왼쪽 위는 종단도 자리다(FloodSim) */}
+      <div className="pointer-events-none absolute top-3 z-30 flex justify-end" style={{ left: CENTER_LEFT, right: CENTER_RIGHT }}>
         <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg border border-border bg-surface/95 p-0.5 backdrop-blur" role="tablist" aria-label="재난 유형">
           {TYPES.map((t) => (
             <button

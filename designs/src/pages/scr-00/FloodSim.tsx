@@ -202,10 +202,10 @@ export function FloodSim() {
         />
       </div>
 
-      {/* 상단 중앙 — 종단도(있으면), 유형 탭 아래에 작게. 지도 가운데를 비워 두고 위에 얹는다(2026-09-17 사용자 "종단도를 작게 상단으로") */}
+      {/* 상단 좌측 — 종단도(있으면). 좌측 레일 `대상` 옆에 작게 붙는다. 유형 탭은 오른쪽 끝으로 비켜 있다(2026-09-17 사용자) */}
       {forecast?.profile && profileAt && (
-        <div className="pointer-events-none absolute z-20 flex justify-center" style={{ top: 56, left: CENTER_LEFT, right: CENTER_RIGHT }}>
-          <GlassPanel className="pointer-events-auto w-full max-w-[640px]">
+        <div className="pointer-events-none absolute top-3 z-20" style={{ left: CENTER_LEFT, width: 340 }}>
+          <GlassPanel className="pointer-events-auto w-full">
             <ProfileView
               profile={forecast.profile}
               validAt={profileAt}
