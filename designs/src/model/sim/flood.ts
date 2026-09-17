@@ -26,7 +26,8 @@ import { floodSurfaceOf } from "../../lib/flood-surfaces";
 import { formatMarkMetric, markMetricLabel } from "../../lib/forecast-twin";
 import { CW_FACTORS, CW_ROAD_LEVEL, cwAreaOfLevel, cwInterp, cwMarksFloodedAt } from "./cw-interp";
 import { CW_FLUDMARKS_HA } from "../../fixtures/changwoncheon/area-table.generated";
-import { HEAVY_RAIN_ADVISORY_3H, HEAVY_RAIN_WARNING_3H, OBS_AREA_HA, RULE_DATE, RULE_MAX_3H, RULE_START, RULE_TOTAL_MM, areaOfLevel, cumulativeAt, depthOfLevel, factorForWarning, levelAtMinutes, ruleForecast, type RuleChoice } from "./rain-rule";
+import { RISK_DISTRICT_DAMAGE_MM_PER_H } from "../../fixtures/risk-districts.generated";
+import { HEAVY_RAIN_ADVISORY_3H, HEAVY_RAIN_WARNING_3H, OBS_AREA_HA, RULE_DATE, RULE_MAX_3H, RULE_MAX_HOURLY, RULE_START, RULE_TOTAL_MM, areaOfLevel, cumulativeAt, depthOfLevel, factorForWarning, levelAtMinutes, ruleForecast, type RuleChoice } from "./rain-rule";
 
 export interface SimOption { id: string; label: string; detail?: string; /** 당시 관측값에 곱하는 배율(조건의 정의가 "당시 × 1.2"일 때) */ factor?: number }
 export interface SimCondition {
@@ -199,6 +200,8 @@ const seohangSite = (): FloodSite => {
         { value: 1, label: "실제" },
         { value: factorForWarning(HEAVY_RAIN_ADVISORY_3H), label: "주의보" },
         { value: factorForWarning(HEAVY_RAIN_WARNING_3H), label: "경보" },
+        /* 전국 재해위험지구 표본의 피해 당시 시간강우 중앙값(행안부 · 창원 행 없음) — 시간 최대가 그 세기에 닿는 배율 */
+        { value: Number((RISK_DISTRICT_DAMAGE_MM_PER_H / RULE_MAX_HOURLY).toFixed(2)), label: "위험지구 피해" },
       ].filter((a) => a.value >= 0.5 && a.value <= 2),
       valueOf: (c) => ruleChoice(c).factor,
       encode: (v) => `x:${v}`,
@@ -268,6 +271,7 @@ const changwoncheonSite = (): FloodSite | null => {
   const rainSteps = t.conditions[0]?.steps ?? [];
   const actsOf = (discharge: string): Record<string, string> => (discharge === "early" ? { S2: now } : {});
   const horizon = t.stops[t.stops.length - 1]?.at ?? now;
+  const cwMaxHourly = Math.max(0, ...(wcase.stateByTime ?? []).map((s) => Number.parseFloat(s.rows.find((r) => r.label === "상류 강우계")?.value ?? "")).filter((v) => Number.isFinite(v)));
   /* 강우 선택은 판 단계 id 이거나 슬라이더의 직접 배율("x:1.35"). 판 사이는 보간(cw-interp) */
   const factorOf = (c: Record<string, string>): number => {
     const r = c.rain ?? rainSteps[0]?.id ?? "now";
@@ -303,7 +307,11 @@ const changwoncheonSite = (): FloodSite | null => {
     describeChoice: (c) => [factorOf(c) !== 1 ? `강우 당시 × ${factorOf(c)}` : null, (c.discharge ?? "actual") === "early" ? `${now.slice(11, 16)} 조기 방류` : null].filter(Boolean).join(" · ") || "그날 조건 · 그날 조치",
     slider: {
       condId: "rain", min: 1, max: 1.5, step: 0.05,
-      anchors: CW_FACTORS.map((f) => ({ value: f.factor, label: f.label })),
+      anchors: [
+        ...CW_FACTORS.map((f) => ({ value: f.factor, label: f.label })),
+        /* 편집 강우계 최대(35 mm/h)가 전국 위험지구 피해 시간강우 중앙값에 닿는 배율 — 판 범위 안이면 눈금으로 */
+        ...(cwMaxHourly > 0 && RISK_DISTRICT_DAMAGE_MM_PER_H / cwMaxHourly <= 1.5 ? [{ value: Number((RISK_DISTRICT_DAMAGE_MM_PER_H / cwMaxHourly).toFixed(2)), label: "위험지구 피해" }] : []),
+      ],
       valueOf: factorOf,
       encode: (v) => `x:${v}`,
       format: (v) => `당시 × ${v.toFixed(2)}`,

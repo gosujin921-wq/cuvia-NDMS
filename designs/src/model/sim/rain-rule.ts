@@ -22,6 +22,7 @@ import { FORECAST_BASE } from "../../fixtures/seohang-flood/forecasts";
 import { INCIDENT_ID, SCENARIO_DATE } from "../../fixtures/seohang-flood/incident";
 import { SUBJECTS } from "../../fixtures/seohang-flood/subjects";
 import { floodScene, type RoadState, type UnderpassState } from "../../fixtures/seohang-flood/scene";
+import { RISK_DISTRICT_DAMAGE_MM_PER_H, RISK_DISTRICT_HOURLY } from "../../fixtures/risk-districts.generated";
 
 export const RULE_DATE = SCENARIO_DATE;
 /** 해안도로 저지대 가장 낮은 꼭짓점(EL.m) — 도로 침수심은 수위에서 이것을 뺀 값이다(bake-flood-seohang 머리말) */
@@ -35,6 +36,8 @@ export const RULE_START = hourIso(RAIN_SERIES[0][0]);
 export const RULE_END = hourIso(RAIN_SERIES[RAIN_SERIES.length - 1][0] + 1);
 export const RULE_TOTAL_MM = Number(RAIN_SERIES.reduce((a, [, v]) => a + v, 0).toFixed(1));
 /** 3시간 연속 최대 합(mm) — 특보 기준과 견준다 */
+/** 시간 최대(mm/h) — 재해위험지구 피해 강우(시간)와 견준다 */
+export const RULE_MAX_HOURLY = Math.max(...RAIN_SERIES.map(([, v]) => v));
 export const RULE_MAX_3H = Number(Math.max(...RAIN_SERIES.map((_, i) => RAIN_SERIES.slice(Math.max(0, i - 2), i + 1).reduce((a, [, v]) => a + v, 0))).toFixed(1));
 
 /** 특보 기준에 닿는 배율 — 실제가 이미 넘었으면 1 아래로 내려온다(그때는 앵커로 안 쓴다) */
@@ -127,6 +130,7 @@ export function ruleForecast(c: RuleChoice, id: string, baseline: boolean): Fore
         `수위 = ${L_BASE} + ${K} × (누적 − 한계) · K 는 첨두 면적을 침수흔적도 ${OBS_AREA_HA} ha 에 맞춘 보정값`,
         "하천·노면 수위 시계열 · 펌프 가동 · 조위는 미반영",
         `수위는 그릇 가장자리 ${RIM} m 에서 멈춘다 · 그 위(권역 밖 범람)는 규칙 밖`,
+        `참고 눈금: 전국 지역재해위험지구 표본의 피해 당시 시간강우 중앙값 ${RISK_DISTRICT_DAMAGE_MM_PER_H} mm/h(n=${RISK_DISTRICT_HOURLY.n} · 행안부 표본, 창원 행 없음)`,
       ],
       uncertainty: { grade: "높음", sensitiveTo: ["한계강우량의 지점 대응", "침수흔적도가 이 사건의 것인지", "펌프·조위 미반영"], unusableRanges: [] },
       replacementNote: "SWMM 등 수리 모델 연결 시 같은 자리에서 교체 · 수위 시계열이 오면 재보정",
