@@ -24,7 +24,8 @@ import { HeatDomeGlobe, type HeatDomeData } from "../heat-dome";
 
 type InsetKind = "rain" | "wind" | "globe";
 const KIND: Partial<Record<TwinFamily, InsetKind>> = { A: "rain", B: "rain", F: "rain", C: "wind", D: "wind", E: "globe" };
-const TITLE: Partial<Record<TwinFamily, string>> = { A: "광역 강우 분포", B: "유역 강우", C: "광역 풍향", D: "광역 풍향", E: "열돔 · 상층 기압 높이", F: "누적 강우" };
+/* A·B 는 같은 강수 격자를 그린다 — 이름도 하나로(2026-09-17 서항·창원천 통일) */
+const TITLE: Partial<Record<TwinFamily, string>> = { A: "광역 강우 분포", B: "광역 강우 분포", C: "광역 풍향", D: "광역 풍향", E: "열돔 · 상층 기압 높이", F: "누적 강우" };
 
 /** 작은 상태 — 좌측 열 폭(lib/layout LEFT_RAIL)과 같다. 열 안의 날씨·범례와 너비를 맞춘다 */
 export const INSET_SIZE = { w: 300, h: 188 };

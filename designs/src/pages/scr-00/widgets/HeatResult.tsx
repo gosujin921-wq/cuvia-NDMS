@@ -1,20 +1,23 @@
 /* ─────────────────────────────────────────────
  * 폭염 결과 — 우측 레일 (scr-00 · 2026-09-17)
  *
- *   비교표      예보대로 | A(+2°C). 행은 최고 체감온도 · 주의보 기준(33°C↑) 시간 · 경보 기준(35°C↑) 시간 · 고온 지속 지역
- *   그 시각     도심 기준 칸의 기온 · 습도 · 체감, 고온 칸 비율
- *   관련 SOP    폭염 대응 규정 매칭 — 단계는 체감온도 기준에서 읽은 강조
- *   근거        출처 · 격자 · 산식. 한 줄씩
- * 침수처럼 "이 건물이 위험"으로 잇지 않는다. 폭염의 결과는 공간적 위험 상태의 지속이다.
+ *   결과 · 기준 대비   두 열뿐. 예보대로 | 고른 시나리오. 행은 최고 체감온도 · 주의보 기준(33°C↑) 시간 · 경보 기준(35°C↑) 시간 · 고온 지속 지역
+ *   그 시각 열환경     고온 격자 비율과 무더위쉼터(원장 집계 · 그 시각 운영 중 · 야간 개방)
+ *   해당 규정          폭염 대응 규정 매칭. 단계는 체감온도 기준에서 읽은 강조
+ *   근거               버튼 하나. 출처·격자·산식·셈 기준 문장은 전부 그 창에 있다
+ * ★ 좌 = 입력(기온·습도·체감은 좌측 "그 시각"), 우 = 결과. 절 = 머리 한 줄 + 상자 하나(panel-style).
+ *   침수처럼 "이 건물이 위험"으로 잇지 않는다. 폭염의 결과는 공간적 위험 상태의 지속이다.
  * ───────────────────────────────────────────── */
 
 import { Icon } from "@iconify/react";
-import { Tag, cn } from "@ds";
+import { Button, Tag, cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
-import type { SimScenario, SimSop, StateRow } from "../../../model/sim/flood";
-import { HEAT_ADVISORY, HEAT_WARNING, HOT_HOURS, type HeatSummary } from "../../../model/sim/heat";
+import type { SimScenario, SimSop } from "../../../model/sim/flood";
+import { HEAT_ADVISORY, HEAT_WARNING, type HeatSummary } from "../../../model/sim/heat";
 import type { ShelterSummary } from "../../../model/sim/shelters";
 import { ACTION_STYLE, SOP_ICON } from "./action-style";
+import { FirstLine } from "./FirstLine";
+import { PANEL } from "./panel-style";
 
 const num = (n: number) => n.toLocaleString("ko-KR");
 
@@ -22,153 +25,117 @@ type Stage = "none" | "advisory" | "warning";
 const LEVEL_LABEL = { advisory: "주의보", warning: "경보", evacuate: "대피" } as const;
 const RANK = { none: 0, advisory: 1, warning: 2, evacuate: 3 } as const;
 
-export function HeatResult({ scenarios, selected, onSelect, summaries, at, rows, hotShareNow, stage, shelters, sop, range, basis }: {
-  scenarios: SimScenario[];
+export function HeatResult({ base, selected, summaries, hotShareNow, stage, shelters, sop, onBasis }: {
+  base: SimScenario;
   selected: SimScenario;
-  onSelect: (id: string) => void;
   summaries: Record<string, HeatSummary | null>;
-  at: string;
-  rows: StateRow[];
   hotShareNow: number;
   stage: Stage;
   /** 무더위쉼터 원장 집계(그 시각) · 아직 못 읽었으면 null */
   shelters: ShelterSummary | null;
   sop: SimSop[];
-  range: { min: number; max: number } | null;
-  basis: string[];
+  onBasis: () => void;
 }) {
-  const cols = scenarios.map((s) => ({ s, sum: summaries[s.id] ?? null }));
-  const base = summaries[scenarios[0]?.id ?? ""] ?? null;
-  const cell = (v: string, worse: boolean | null, on: boolean) => (
-    <span className={cn("whitespace-nowrap text-right font-mono tabular-nums", on ? "font-semibold" : "", worse === null ? (on ? "text-foreground" : "text-foreground-muted") : worse ? "text-warning" : "text-success")}>{v}</span>
-  );
+  const same = base.id === selected.id;
+  const cols = same ? [base] : [base, selected];
+  const bs = summaries[base.id] ?? null;
   const worse = (v: number | null | undefined, b: number | null | undefined) => (v == null || b == null || v === b ? null : v > b);
+  const cell = (v: string, w: boolean | null, on: boolean) => (
+    <span className={cn("whitespace-nowrap text-right font-mono tabular-nums", on ? "font-semibold text-foreground" : "text-foreground-muted", w === true && "text-warning", w === false && "text-success")}>{v}</span>
+  );
+  const row = (label: string, pick: (s: HeatSummary) => number, fmt: (s: HeatSummary) => string, sub?: (s: HeatSummary) => string) => (
+    <>
+      <span className="whitespace-nowrap py-0.5 text-foreground-muted">{label}</span>
+      {cols.map((s) => {
+        const sum = summaries[s.id] ?? null;
+        const on = s.id === selected.id && !same;
+        return (
+          <span key={s.id} className="flex flex-col items-end py-0.5 leading-tight">
+            {cell(sum ? fmt(sum) : "-", on && sum && bs ? worse(pick(sum), pick(bs)) : null, on)}
+            {sub && sum && <span className="whitespace-nowrap font-mono text-foreground-subtle">{sub(sum)}</span>}
+          </span>
+        );
+      })}
+    </>
+  );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto overflow-x-hidden rounded-[inherit]">
-      <section className="flex shrink-0 flex-col gap-2 p-3" aria-label="시나리오 비교">
-        <header className="flex items-baseline justify-between gap-2">
-          <h2 className="text-body font-semibold text-foreground">시나리오 비교</h2>
-          <span className="shrink-0 text-caption text-foreground-subtle">도심 기준 칸 · 하루치</span>
+    <div className={PANEL.rail}>
+      <section className={PANEL.section} aria-label="결과 · 기준 대비">
+        <header className={PANEL.header}>
+          <h2 className={PANEL.title}>결과</h2>
+          <span className={PANEL.meta}>{same ? "도심 기준 칸 · 하루치" : `${base.tag} 대비 · 하루치`}</span>
         </header>
-        <div className="overflow-x-auto rounded-md border border-border bg-card px-2.5 py-2 text-caption">
-          <div className="grid gap-x-2 gap-y-1" style={{ gridTemplateColumns: `auto repeat(${cols.length}, minmax(64px, 1fr))` }}>
+        <div className={PANEL.box}>
+          <div className="grid gap-x-3" style={{ gridTemplateColumns: `auto repeat(${cols.length}, minmax(72px, 1fr))` }}>
             <span />
-            {cols.map(({ s }) => (
-              <button key={s.id} type="button" onClick={() => onSelect(s.id)} aria-pressed={s.id === selected.id}
-                className={cn("cursor-pointer whitespace-nowrap rounded px-1 text-right font-mono font-semibold", s.id === selected.id ? (s.baseline ? "bg-surface-raised text-foreground" : "bg-primary text-primary-foreground") : "text-foreground-muted hover:text-foreground")}>
-                {s.tag}
-              </button>
+            {cols.map((s) => (
+              <span key={s.id} className={cn("whitespace-nowrap py-0.5 text-right font-mono font-semibold", s.id === selected.id && !same ? "text-primary-text" : "text-foreground-muted")}>{s.tag}</span>
             ))}
-            <span className="whitespace-nowrap text-foreground-muted">최고 체감온도</span>
-            {/* 값과 시각을 두 줄로 — 열이 셋 넘으면 한 줄엔 안 든다 */}
-            {cols.map(({ s, sum }) => (
-              <span key={s.id} className="flex flex-col items-end leading-tight">
-                {cell(sum ? `${sum.maxFeel.toFixed(1)}°C` : "-", worse(sum?.maxFeel, base?.maxFeel), s.id === selected.id)}
-                {sum && <span className="whitespace-nowrap font-mono text-foreground-subtle">{formatClock(sum.maxFeelAt)}</span>}
-              </span>
-            ))}
-            <span className="whitespace-nowrap text-foreground-muted">{HEAT_ADVISORY}°C↑ 시간</span>
-            {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.advisoryHours}시간` : "-", worse(sum?.advisoryHours, base?.advisoryHours), s.id === selected.id)}</span>)}
-            <span className="whitespace-nowrap text-foreground-muted">{HEAT_WARNING}°C↑ 시간</span>
-            {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.warningHours}시간` : "-", worse(sum?.warningHours, base?.warningHours), s.id === selected.id)}</span>)}
-            <span className="whitespace-nowrap text-foreground-muted">고온 지속 지역</span>
-            {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${Math.round(sum.hotShare * 100)} %` : "-", worse(sum?.hotShare, base?.hotShare), s.id === selected.id)}</span>)}
+            {row("최고 체감온도", (s) => s.maxFeel, (s) => `${s.maxFeel.toFixed(1)}°C`, (s) => formatClock(s.maxFeelAt))}
+            {row(`${HEAT_ADVISORY}°C↑ 시간`, (s) => s.advisoryHours, (s) => `${s.advisoryHours}시간`)}
+            {row(`${HEAT_WARNING}°C↑ 시간`, (s) => s.warningHours, (s) => `${s.warningHours}시간`)}
+            {row("고온 지속 지역", (s) => s.hotShare, (s) => `${Math.round(s.hotShare * 100)} %`)}
           </div>
         </div>
-        <p className="break-keep text-caption leading-snug text-foreground-subtle">
-          고온 지속 지역 = 체감 {HEAT_ADVISORY}°C 이상이 {HOT_HOURS}시간 넘게 이어지는 격자의 비율 · 특보 기준은 기상청(주의보 {HEAT_ADVISORY} · 경보 {HEAT_WARNING}°C, 2일 이상 지속 예상). 하루치라 도달만 봅니다
-        </p>
       </section>
 
-      <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="그 시각 상태">
-        <header className="flex items-baseline justify-between gap-2">
-          <h2 className="text-body font-semibold text-foreground">그 시각 · {selected.tag}</h2>
-          <span className="shrink-0 font-mono text-caption text-foreground-subtle">{formatClock(at)}</span>
+      <section className={PANEL.section} aria-label="그 시각 열환경">
+        <header className={PANEL.header}>
+          <h2 className={PANEL.title}>그 시각 열환경</h2>
+          <span className={cn(PANEL.meta, "font-mono")}>고온 격자 {Math.round(hotShareNow * 100)} %</span>
         </header>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-border bg-card px-2.5 py-2 text-caption">
-          {rows.map((r) => (
-            <div key={r.label} className="contents">
-              <dt className="truncate text-foreground-muted">{r.label}</dt>
-              <dd className={cn("text-right font-mono tabular-nums", r.label === "체감온도" ? "font-semibold text-foreground" : "text-foreground")}>
-                {r.value}{r.note && <span className={cn("ml-1 font-sans", r.note.includes("기준") ? "text-warning" : "text-foreground-subtle")}>{r.note}</span>}
-              </dd>
-            </div>
-          ))}
-          <div className="contents">
-            <dt className="truncate text-foreground-muted">고온 격자 (지금)</dt>
-            <dd className="text-right font-mono tabular-nums text-foreground">{Math.round(hotShareNow * 100)} %</dd>
-          </div>
-        </dl>
-        {range && (
-          <p className="break-keep text-caption leading-snug text-foreground-subtle">
-            지도 색면은 체감온도 {range.min}~{range.max}°C 한 램프입니다. 시각과 시나리오를 바꿔도 같은 색은 같은 값입니다
-          </p>
-        )}
-      </section>
-
-      {shelters && (
-        <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="무더위쉼터">
-          <header className="flex items-baseline justify-between gap-2">
-            <h2 className="text-body font-semibold text-foreground">무더위쉼터 · 그 시각</h2>
-            <span className="shrink-0 text-caption text-foreground-subtle">행정안전부 원장 · 창원</span>
-          </header>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-border bg-card px-2.5 py-2 text-caption">
+        {shelters && (
+          <dl className={cn(PANEL.box, PANEL.dl)}>
             <div className="contents">
-              <dt className="truncate text-foreground-muted">전체 · 수용 인원</dt>
-              <dd className="text-right font-mono tabular-nums text-foreground">{num(shelters.total)}곳 · {num(shelters.capacity)}명</dd>
+              <dt className="truncate py-0.5 text-foreground-muted">무더위쉼터 · 수용</dt>
+              <dd className="py-0.5 text-right font-mono tabular-nums text-foreground">{num(shelters.total)}곳 · {num(shelters.capacity)}명</dd>
             </div>
             <div className="contents">
-              <dt className="truncate text-foreground-muted">운영시간 등록 {num(shelters.withHours)}곳 중 운영 중</dt>
-              <dd className={cn("text-right font-mono tabular-nums", shelters.closedNow > 0 ? "text-warning" : "text-foreground")}>
+              <dt className="truncate py-0.5 text-foreground-muted">운영 중</dt>
+              <dd className={cn("py-0.5 text-right font-mono tabular-nums", shelters.closedNow > 0 ? "text-warning" : "text-foreground")}>
                 {num(shelters.openNow)}곳{shelters.closedNow > 0 && <span className="ml-1 font-sans text-foreground-subtle">종료 {num(shelters.closedNow)}</span>}
               </dd>
             </div>
             <div className="contents">
-              <dt className="truncate text-foreground-muted">야간 개방</dt>
-              <dd className="text-right font-mono tabular-nums text-primary-text">{num(shelters.night)}곳</dd>
+              <dt className="truncate py-0.5 text-foreground-muted">야간 개방</dt>
+              <dd className="py-0.5 text-right font-mono tabular-nums text-primary-text">{num(shelters.night)}곳</dd>
             </div>
           </dl>
-          <p className="break-keep text-caption leading-snug text-foreground-subtle">
-            운영시간이 등록되지 않은 {num(shelters.total - shelters.withHours)}곳은 세지 않습니다. 야간 개방은 지도에 큰 점으로 섭니다. 쉼터가 덮는 인원은 셈하지 않습니다
-          </p>
-        </section>
-      )}
+        )}
+      </section>
 
-      <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="관련 SOP">
-        <header className="flex items-baseline justify-between gap-2">
-          <h2 className="text-body font-semibold text-foreground">관련 SOP</h2>
+      <section className={PANEL.section} aria-label="해당 규정">
+        <header className={PANEL.header}>
+          <h2 className={PANEL.title}>해당 규정</h2>
           {stage === "none"
-            ? <span className="shrink-0 text-caption text-foreground-subtle">해당 단계 없음</span>
-            : <Tag tone={stage === "warning" ? "danger" : "warning"}>폭염{LEVEL_LABEL[stage]} 기준 해당</Tag>}
+            ? <span className={PANEL.meta}>해당 단계 없음</span>
+            : <Tag tone={stage === "warning" ? "danger" : "warning"}>폭염{LEVEL_LABEL[stage]} 기준</Tag>}
         </header>
-        <ul className="flex flex-col text-caption">
+        <ul className={cn(PANEL.box, PANEL.list)}>
           {sop.map((s) => {
             const hit = RANK[s.from] <= RANK[stage];
             return (
-              <li key={s.id} className={cn("flex flex-col gap-0.5 border-b border-border py-1 last:border-0", hit ? "text-foreground" : "text-foreground-subtle")}>
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="flex min-w-0 items-baseline gap-1.5">
-                    <Icon icon={SOP_ICON} className={cn("size-3.5 shrink-0 self-center", hit ? ACTION_STYLE.규정.text : "text-border-light")} aria-hidden />
+              <li key={s.id} className={cn(PANEL.row, "flex-col gap-0.5", hit ? "text-foreground" : "text-foreground-subtle")}>
+                <span className="flex w-full items-start justify-between gap-2">
+                  <span className="flex min-w-0 items-start gap-1.5">
+                    <FirstLine><Icon icon={SOP_ICON} className={cn("size-3.5", hit ? ACTION_STYLE.규정.text : "text-border-light")} aria-hidden /></FirstLine>
                     <span className="min-w-0 break-keep">{s.label}</span>
                   </span>
                   <span className="shrink-0 font-mono text-foreground-subtle">{LEVEL_LABEL[s.from]}부터</span>
                 </span>
-                {s.detail && <span className="break-keep pl-4 text-caption leading-snug text-foreground-subtle">{s.detail}</span>}
+                {s.detail && <span className="break-keep pl-5 text-caption leading-snug text-foreground-subtle">{s.detail}</span>}
               </li>
             );
           })}
         </ul>
-        <p className="break-keep text-caption leading-snug text-foreground-subtle">
-          이 조건이면 해당되는 기존 SOP입니다. 쉼터·살수차의 효과는 모델이 없어 계산하지 않습니다
-        </p>
       </section>
 
-      <section className="flex shrink-0 flex-col gap-1 p-3" aria-label="근거">
-        <h2 className="text-body font-semibold text-foreground">근거 · 입력과 산식</h2>
-        <ul className="flex flex-col gap-0.5 text-caption text-foreground-muted">
-          {basis.map((b) => <li key={b} className="break-keep leading-snug">· {b}</li>)}
-        </ul>
+      <section className={cn(PANEL.section, "py-3")}>
+        <Button variant="outline" size="sm" className="w-full" onClick={onBasis}>
+          <Icon icon="mdi:file-search-outline" className="size-4" aria-hidden />
+          근거 · 입력과 산식
+        </Button>
       </section>
     </div>
   );

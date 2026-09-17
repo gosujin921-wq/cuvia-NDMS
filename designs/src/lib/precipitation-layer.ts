@@ -152,9 +152,11 @@ export function setPrecipitationHour(
   const source = map.getSource(RAIN_SOURCE) as maplibregl.CanvasSource | undefined;
   if (!source?.getCanvas) return;
 
+  /* 시간축이 자정(00:00)에 닿으면 hour=0 이 온다. 첫 프레임(12시)으로 되감지 않고 마지막 프레임에 붙인다(2026-09-17) */
+  const h = hour < field.hours[0] ? hour + 24 : hour;
   let best = 0;
   for (let i = 1; i < field.hours.length; i += 1) {
-    if (Math.abs(field.hours[i] - hour) < Math.abs(field.hours[best] - hour)) best = i;
+    if (Math.abs(field.hours[i] - h) < Math.abs(field.hours[best] - h)) best = i;
   }
 
   paint(source.getCanvas() as HTMLCanvasElement, field, best);

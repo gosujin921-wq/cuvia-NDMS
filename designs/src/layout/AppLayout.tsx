@@ -157,7 +157,7 @@ export function AppLayout() {
         onSubmit={(text) => {
           const matched = matchQuery(text);
           /* ★ panelOnly 질의는 오버레이에 남는다 (demo/ai.ts).
-               열돔이 그 예다 — 답이 흐르는 동안 왼쪽 배경이 트윈 열돔으로 바뀌는 형태라
+               열돔이 그 예다 — 답이 흐르는 동안 뒤가 종합상황(시 전체 + 열돔 인셋)으로 바뀌는 형태라
                전용 화면에 옮기면 그 연출이 설 자리가 없고, SCR-06 은 그 종류를 그리지 않는다.
                데이터가 "이 질의는 패널에서만 산다"고 이미 말하고 있으므로 그것을 따른다 */
           if (!onHub || matched?.panelOnly) {

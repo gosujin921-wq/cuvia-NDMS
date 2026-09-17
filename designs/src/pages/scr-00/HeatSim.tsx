@@ -3,12 +3,15 @@
  *
  *   기상청 예보 격자(기온·습도) → 체감온도 → 고온이 언제·어디에 오래 남나 → 폭염 단계 → 관련 SOP
  *
- * 좌: 대상 · 시나리오(예보대로 | A +2°C)      중앙: 체감온도 색면 + 열돔 인셋 + 시간축(12시 → 21시)      우: 비교표 · 그 시각 · 관련 SOP · 근거
- * ★ 열돔을 움직이는 덩어리로 그리지 않는다. 열돔은 원인이고, 보여 주는 건 도시 열환경이다.
+ * 좌(입력): 대상 · 시나리오 · 슬라이더 · 그 시각(기온·습도·체감)      중앙: 체감온도 색면 + 열돔 인셋 + 시간축(12시 → 21시)      우(결과): 기준 대비 · 그 시각 열환경 · 해당 규정 · 근거
+ * ★ 열돔을 메인 지도에 움직이는 덩어리로 그리지 않는다. 열돔은 원인이고, 보여 주는 건 도시 열환경이다.
+ *   다만 좌측 열돔 인셋은 시계에 걸려 움직인다 — 한 시간에 한 프레임씩 넘어가 시간축 끝에서 자료의 가장 깊은 프레임에 닿는다
+ *   (2026-09-17 사용자 "열돔 패널에서 열돔 이동 안 함"). ⚠ 데이터 이슈: 상층장은 6~7월 44프레임이고 폭염일(8-24)이 아니다. 보이는 게 우선.
+ * ★ 메인 지도는 창원시 전체가 들어오게 시 외곽 상자에 맞춘다(2026-09-17 사용자 "메인 지도는 창원시가 나와야 함").
  * ★ 저감 대책 전후 비교는 모델이 없어 없다. 지어내지 않는다.
  * ───────────────────────────────────────────── */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { GlassPanel } from "@ds";
 import { useMapLibre } from "../../lib/useMapLibre";
@@ -18,21 +21,26 @@ import { cssColor, setPolygonLayerVisible, upsertMultiPolygonLayer } from "../..
 import { loadTemperatureField, type TemperatureField } from "../../lib/temperature-field";
 import { ensureTemperatureLayer, repaintTemperature, setTemperatureVisible } from "../../lib/temperature-layer";
 import { formatClock } from "../../lib/datetime";
+import { CITY_SHAPE_BOUNDS } from "../../lib/map-config";
 import { SCOPE_ZOOM } from "../../fixtures";
 import { useScenario } from "../../state/ScenarioProvider";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import { ContextInset } from "../../components/twin/ContextInset";
+import { MapLegend } from "../../components/twin/MapLegend";
+import { HOT_AREA_PAINT, SHELTER_DOT } from "../../lib/heat-paint";
 import { useHeatDomeData } from "../../components/heat-dome";
 import { scenariosOf } from "../../model/sim/flood";
-import { cellIndexOf, fieldRange, fieldValuesAt, heatSite, heatStateAt, hotCellRings, hotShareAt, HEAT_ADVISORY, HEAT_WARNING, offsetOf, summarizeHeat } from "../../model/sim/heat";
+import { cellIndexOf, fieldRange, fieldValuesAt, heatSite, heatStateAt, hotCellRings, hotShareAt, HEAT_ADVISORY, HEAT_WARNING, HOT_HOURS, offsetOf, summarizeHeat } from "../../model/sim/heat";
 import { loadShelters, sheltersGeoJson, summarizeShelters, type Shelter } from "../../model/sim/shelters";
 import { setCircleLayerVisible, upsertCircleLayer } from "../../lib/map-points";
 import { SimScenarios } from "./widgets/SimScenarios";
 import { HeatResult } from "./widgets/HeatResult";
+import { SimBasisDialog } from "./widgets/SimBasisDialog";
 import { TimeAxis } from "./widgets/TimeAxis";
 
-/** 시 전역 배율 — 격자가 1.5 km 라 동네 배율에선 한 색이다. 어느 동네가 뜨거운지는 시역이 다 보여야 읽힌다 */
+/** 시 전역 배율 — 지도 첫 생성용. 실제 화면 맞춤은 fitCity(창원시 외곽 상자)가 한다 */
 const CITY_ZOOM = SCOPE_ZOOM.구역 - 3.2;
+const FIT_MARGIN = 24;
 const PLAY_MS_PER_MIN = 40;
 const HOT_SOURCE = "sim-heat-hot";
 const SHELTER_SOURCE = "sim-heat-shelters";
@@ -69,6 +77,7 @@ export function HeatSim() {
   const end = plusMin(origin, span);
   const [minutes, setMinutes] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [basisOpen, setBasisOpen] = useState(false);
   useEffect(() => {
     if (!playing) return;
     let raf = 0, last = performance.now();
@@ -95,12 +104,21 @@ export function HeatSim() {
   /* 쉼터는 시각(그 날의 몇 시 몇 분)만 본다 — 시나리오와 무관하다 */
   const minuteOfDay = new Date(at).getHours() * 60 + new Date(at).getMinutes();
   const shelterSummary = useMemo(() => (shelters ? summarizeShelters(shelters, minuteOfDay) : null), [shelters, minuteOfDay]);
-  const shelterGeo = useMemo(() => (shelters ? sheltersGeoJson(shelters, minuteOfDay) : null), [shelters, minuteOfDay]);
+  /* 지도에 찍는 점은 운영시간이 등록된 곳(132)과 야간 개방(15)뿐 — 등록 없는 835곳까지 찍으면 점이 지도를 덮는다(2026-09-17 사용자 "지도 영역에 dot 들").
+     패널이 세는 기준과 같다(등록 없는 곳은 세지 않는다) */
+  const shelterRows = useMemo(() => (shelters ? shelters.filter((s) => (s.open && s.close) || s.night) : null), [shelters]);
+  const shelterGeo = useMemo(() => (shelterRows ? sheltersGeoJson(shelterRows, minuteOfDay) : null), [shelterRows, minuteOfDay]);
 
   /* ── 지도 — 체감온도 색면. 시각·시나리오가 바뀌면 같은 램프로 다시 칠한다 ── */
   const mapContainer = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(mapContainer, { center: site.anchor, zoom: CITY_ZOOM, pitch: 0, capture: true });
   const [layers, setLayers] = useState({ temp: true, hot: true, shelter: true });
+  /* 창원시 전체 — 시 외곽 상자를 좌우 레일 안쪽 여백에 맞춘다 */
+  const fitCity = useCallback((duration: number) => {
+    const m = map.current;
+    if (!m) return;
+    m.fitBounds(CITY_SHAPE_BOUNDS, { padding: { top: FIT_MARGIN, bottom: FIT_MARGIN + 100, left: CENTER_LEFT + FIT_MARGIN, right: CENTER_RIGHT + FIT_MARGIN }, pitch: 0, bearing: 0, duration });
+  }, [map]);
   useEffect(() => {
     const m = map.current;
     if (!ready || !m) return;
@@ -108,8 +126,8 @@ export function HeatSim() {
     setBuildings3D(m, false);
     setTerrain(m, false);
     setHillshadeVisible(m, true);
-    m.easeTo({ center: site.anchor, zoom: CITY_ZOOM, pitch: 0, bearing: 0, duration: 800 });
-  }, [map, ready, site.anchor]);
+    fitCity(800);
+  }, [map, ready, fitCity]);
   useEffect(() => {
     const m = map.current;
     if (!ready || !m || !field || !range) return;
@@ -122,32 +140,45 @@ export function HeatSim() {
   useEffect(() => {
     const m = map.current;
     if (!ready || !m) return;
-    upsertMultiPolygonLayer(m, HOT_SOURCE, hotRings, { fill: cssColor("--color-danger", "#ef4444"), line: cssColor("--color-danger", "#ef4444"), opacity: 0.2 }, 0);
+    upsertMultiPolygonLayer(m, HOT_SOURCE, hotRings, HOT_AREA_PAINT(), 0);
     setPolygonLayerVisible(m, HOT_SOURCE, layers.hot);
   }, [map, ready, hotRings, layers.hot]);
   /* 무더위쉼터 점 — 야간 개방은 primary 로 크게, 그 시각 문 닫은 곳은 옅게. 갈 수 있는지를 지도에서 바로 읽는다 */
   useEffect(() => {
     const m = map.current;
     if (!ready || !m || !shelterGeo) return;
+    /* 색·크기·농도는 heat-paint 한 벌 — 범례가 같은 값을 그린다 */
     upsertCircleLayer(m, SHELTER_SOURCE, shelterGeo, {
-      color: ["case", ["==", ["get", "night"], 1], cssColor("--color-primary", "#3b82f6"), cssColor("--color-foreground-muted", "#6b7280")],
-      radius: ["case", ["==", ["get", "night"], 1], 5, 3],
-      opacity: ["case", ["==", ["get", "open"], 0], 0.3, 0.9],
-      stroke: cssColor("--color-surface", "#ffffff"),
+      color: ["case", ["==", ["get", "night"], 1], SHELTER_DOT.night.color(), SHELTER_DOT.open.color()],
+      radius: ["case", ["==", ["get", "night"], 1], SHELTER_DOT.night.radius, SHELTER_DOT.open.radius],
+      opacity: ["case", ["==", ["get", "open"], 0], SHELTER_DOT.closed.opacity, SHELTER_DOT.open.opacity],
+      stroke: SHELTER_DOT.stroke(),
     });
     setCircleLayerVisible(m, SHELTER_SOURCE, layers.shelter);
   }, [map, ready, shelterGeo, layers.shelter]);
 
   const dome = useHeatDomeData(undefined, true);
+  /* 열돔 프레임을 시계에 건다 — 시간축 끝(마지막 시각)에 자료의 기본(가장 깊은) 프레임, 그 앞은 한 시간에 한 프레임씩 거슬러 */
+  const domeIndex = useMemo(() => {
+    const n = dome.labels.length;
+    if (!n) return dome.index;
+    const deepest = (dome.lower?.meta as { defaultIndex?: number } | undefined)?.defaultIndex ?? dome.index;
+    const back = Math.round((span - Math.min(span, minutes)) / 60);
+    return Math.max(0, Math.min(n - 1, deepest - back));
+  }, [dome.labels.length, dome.index, dome.lower, span, minutes]);
   const ticks = useMemo(() => (field ? field.hours.map((_, h) => plusMin(origin, h * 60)) : []), [field, origin]);
   const basis = useMemo(() => [
+    `고온 지속 지역 = 체감 ${HEAT_ADVISORY}°C 이상이 ${HOT_HOURS}시간 넘게 이어지는 격자의 비율`,
+    `지도 색면은 체감온도 ${range ? `${range.min}~${range.max}°C` : ""} 한 램프. 시각과 시나리오를 바꿔도 같은 색은 같은 값`,
     `${field?.source ?? "기상청(KMA) 국지예보모델"} · ${site.date} ${field?.hours[0] ?? 12}~${field?.hours[field.hours.length - 1] ?? 21}시 · 격자 ${field ? `${field.nx}×${field.ny} · ${field.step}°(약 1.5 km)` : "1.5 km"}`,
     "체감온도 = 기상청 여름철 산식(습구온도 Stull 2011 입력) · 기온·상대습도 격자값으로 칸마다 계산",
     `특보 기준 = 일 최고 체감온도 주의보 ${HEAT_ADVISORY}°C · 경보 ${HEAT_WARNING}°C 이상(2일 이상 지속 예상). 하루치 자료라 도달만 판정`,
     "시나리오 A = 예보 기온 +2°C 균일 가정 · B = 예보 습도 +10 %p 균일 가정(100 % 상한). 도시 열환경(녹지·포장) 모델은 없어 저감 대책 비교는 두지 않는다",
     "열돔 인셋 = 상층(500 · 200 hPa) 지위고도 재분석 격자. 원인 맥락이며 결과 계산엔 쓰지 않는다",
     `무더위쉼터 = 행정안전부 원장(재난안전데이터 공유플랫폼 · 2026) 창원 ${shelters?.length ?? 967}곳. 운영시간·야간 개방은 등록값 그대로. 쉼터가 덮는 인원은 셈하지 않는다`,
-  ], [field, site.date, shelters]);
+    `운영 중·종료는 운영시간이 등록된 ${shelterSummary ? shelterSummary.withHours : ""}곳만 센다. 등록이 없는 곳은 세지 않는다`,
+    "해당 규정은 이 조건이면 해당되는 기존 SOP다. 쉼터·살수차의 효과는 모델이 없어 계산하지 않는다",
+  ], [field, site.date, shelters, range, shelterSummary]);
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -160,9 +191,18 @@ export function HeatSim() {
           <SimScenarios
             sites={sites} site={site} onSite={() => undefined} scenarios={scenarios} selected={selected} onSelect={(id) => setQuery({ sc: id })}
             onSlide={(v) => setQuery({ rf: String(Number(v.toFixed(1))), ro: selected.choice.rh ?? null, sc: "C" })}
+            at={at}
+            stateRows={state.rows}
           />
         </GlassPanel>
-        <ContextInset family="E" anchor={site.anchor} hour={new Date(at).getHours()} meta={formatClock(at)} dome={dome} />
+        <ContextInset family="E" anchor={site.anchor} hour={new Date(at).getHours()} meta={formatClock(at)} dome={{ ...dome, index: domeIndex }} />
+        {/* 범례 — 침수 탭과 같은 자리. 켜진 층만 선다 */}
+        <MapLegend
+          feel={layers.temp ? range : null}
+          hot={layers.hot}
+          shelter={layers.shelter && Boolean(shelterRows)}
+          inset="globe"
+        />
       </div>
 
       <div className="pointer-events-none absolute bottom-3 z-30 flex justify-center px-3 [&>*]:w-full [&>*]:max-w-[640px]" style={{ left: CENTER_LEFT, right: CENTER_RIGHT + FAB_SIZE + EDGE }}>
@@ -182,13 +222,13 @@ export function HeatSim() {
           map={map}
           disabled={!ready}
           homePitch={0}
-          onReset={() => map.current?.easeTo({ center: site.anchor, zoom: CITY_ZOOM, pitch: 0, bearing: 0, duration: 500 })}
+          onReset={() => fitCity(500)}
           layers={[{
             title: "열환경",
             items: [
               { id: "temp", label: "체감온도 색면", color: cssColor("--color-warning", "#eb6834"), icon: "mdi:thermometer", shape: "raster" as const, visible: layers.temp },
               { id: "hot", label: "고온 지속 지역", color: cssColor("--color-danger", "#ef4444"), icon: "mdi:vector-square", shape: "area" as const, visible: layers.hot },
-              { id: "shelter", label: "무더위쉼터", color: cssColor("--color-primary", "#3b82f6"), icon: "mdi:home-thermometer-outline", shape: "point" as const, count: shelters?.length, visible: layers.shelter },
+              { id: "shelter", label: "무더위쉼터", color: cssColor("--color-primary", "#3b82f6"), icon: "mdi:home-thermometer-outline", shape: "point" as const, count: shelterRows?.length, visible: layers.shelter },
             ],
             onToggle: (id) => setLayers((p) => ({ ...p, [id as keyof typeof p]: !p[id as keyof typeof p] })),
             onSetAll: (visible) => setLayers({ temp: visible, hot: visible, shelter: visible }),
@@ -200,24 +240,24 @@ export function HeatSim() {
         <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
           {field ? (
             <HeatResult
-              scenarios={scenarios}
+              base={scenarios[0]}
               selected={selected}
-              onSelect={(id) => setQuery({ sc: id })}
               summaries={summaries}
-              at={at}
-              rows={state.rows}
               hotShareNow={hotShareNow}
               stage={stage}
               shelters={shelterSummary}
               sop={site.sop}
-              range={range}
-              basis={basis}
+              onBasis={() => setBasisOpen(true)}
             />
           ) : (
             <p className="p-3 text-caption text-foreground-muted">기온 격자를 읽는 중입니다.</p>
           )}
         </GlassPanel>
       </div>
+
+      {basisOpen && (
+        <SimBasisDialog title={site.label} onClose={() => setBasisOpen(false)} notes={[{ heading: "입력과 산식", lines: basis }]} />
+      )}
     </div>
   );
 }

@@ -1,270 +1,221 @@
 /* ─────────────────────────────────────────────
  * 침수 결과 — 우측 레일 (scr-00 · 2026-09-17)
  *
- *   비교표      실제 사건 | A | B | A+B. 행은 침수 시작 · 최대 수심 · 침수 면적 · 영향 시설. 실제 사건 열엔 실측이 함께 선다
- *   그 시각     고른 시나리오의 그 시각 상태(재현 관측 · 시뮬레이션 값)
- *   영향 객체   판의 대상 + 범위 링과 공간 교차한 지점
- *   관련 SOP    기존 SOP 를 **매칭**한다(발동이 아니다). 단계는 영향에서 읽은 강조이고 발령은 승인 경계다
- *   근거        입력 · 관측시각 · 모델 · 불확실성 (접힌 창)
- * ★ 숫자마다 출처가 갈린다 — 수위→범위·수심은 지형 계산, 강우→수위는 사전 작성 판, 실측은 사건 원장.
+ *   결과 · 기준 대비   두 열뿐. 기준 | 고른 시나리오(규정 스위치를 켰으면 실제 시각 | 규정 시각). 행은 침수 시작 · 최대 수심 · 침수 면적 · 영향 시설.
+ *                      실측은 같은 상자의 바닥 줄. 아래에 "지도에 기준 겹쳐 보기" 스위치 한 줄
+ *   그 시각 영향       침수 범위 · 수심 타일과 영향 객체 상자(과거 침수 지점도 한 줄로)
+ *   해당 규정          기존 SOP 를 **매칭**한다(발동이 아니다). 조치 기록이 있으면 같은 줄에 시각이 선다. 조치 이력을 따로 두지 않는다.
+ *                      환경을 바꾸는 규정(방류 · 펌프)엔 "규정 시각 hh:mm 에 …했다면" 스위치가 붙는다 — 켜면 그 열이 다시 계산된다
+ *   근거               버튼 하나. 출처·산식·범례 문장은 전부 그 창에 있다
+ * ★ 좌 = 입력, 우 = 결과. 절 = 머리 한 줄 + 상자 하나(panel-style). 시나리오를 고르는 자리는 좌측 하나뿐이라 여기 표 머리는 버튼이 아니다.
  * ★ "당시 실제로 이 SOP 가 실행됐다"고 말하지 않는다. "이 조건이면 이 SOP 가 해당된다"만 말한다.
  * ───────────────────────────────────────────── */
 
 import { Icon } from "@iconify/react";
-import { Badge, Button, Tag, cn } from "@ds";
+import { Badge, Button, Switch, Tag, cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
-import { isPast, type ImpactObject, type ScenarioSummary, type SimAction, type SimScenario, type SimSop, type StateRow } from "../../../model/sim/flood";
+import { isPast, type ImpactObject, type ScenarioSummary, type SimAction, type SimScenario, type SimSop } from "../../../model/sim/flood";
 import type { AlertLevel } from "../../../demo/levels";
 import { ACTION_STYLE, SOP_ICON } from "./action-style";
+import { FirstLine } from "./FirstLine";
+import { PANEL } from "./panel-style";
 
 const LEVEL_LABEL: Record<AlertLevel, string> = { advisory: "주의보", warning: "경보", evacuate: "대피" };
 const LEVEL_RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
 
-export function FloodResult({ scenarios, selected, onSelect, summaries, observed, sourceNote, at, stateRows, depthNow, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, sopApplicable, sopOn, onToggleSop, compare, onCompare, onBasis }: {
-  scenarios: SimScenario[];
+export function FloodResult({ base, selected, summaries, observed, at, depthNow, headroomM, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, sopApply, sopOn, onToggleSop, compare, onCompare, onBasis }: {
+  /** 비교의 왼쪽 열 — 기준 시나리오. 규정 스위치를 켰으면 "그 규정을 실제 시각에 했을 때" */
+  base: SimScenario;
   selected: SimScenario;
-  onSelect: (id: string) => void;
   summaries: Record<string, ScenarioSummary | null>;
   /** 실제 사건의 실측 — 사건 원장. 없으면 비운다 */
   observed: { label: string; value: string }[];
-  /** 숫자 출처 한 줄 — 대상마다 다르다(규칙 계산 / 사전 작성 판) */
-  sourceNote: string;
   at: string;
-  stateRows: (StateRow & { computed?: boolean; scaled?: boolean })[];
   depthNow: number;
+  /** 아직 안 잠겼을 때 도로 잠김 수위까지 남은 높이(m). 규칙 대상만 */
+  headroomM: number | null;
   areaHa: number | null;
   impacts: ImpactObject[];
   /** 시가지 과거 침수 지점(침수흔적도) — 실자료. 잠김 시각은 누적 강우 ≥ 한계강우량 */
-  marks: { areaHa: number; floodedAt: string | null; note: string } | null;
-  /** 이 시나리오의 조치(시각순). 지난 것과 앞의 것을 갈라 보인다 */
+  marks: { areaHa: number; floodedAt: string | null } | null;
+  /** 이 시나리오의 조치(시각순). 규정 줄이 자기 시각을 여기서 찾는다 */
   actions: SimAction[];
   sop: SimSop[];
   stage: "none" | AlertLevel;
-  /** 켜진 시설 id — SOP 줄·영향 객체 줄과 지도 마커가 같은 집합을 본다 */
+  /** 켜진 시설 id — 규정 줄·영향 객체 줄과 지도 마커가 같은 집합을 본다 */
   focus: Set<string>;
   onFocus: (facilityIds: string[] | null) => void;
-  /** "이 규정대로 하면"을 켤 수 있는 SOP id — 환경을 바꾸는 규정(방류 · 펌프)만 */
-  sopApplicable: string[];
+  /** 스위치를 붙일 규정 id → 스위치 문구("규정 시각 14:35에 방류했다면"). 환경을 바꾸는 규정만 */
+  sopApply: Record<string, string>;
   sopOn: string | null;
   onToggleSop: (id: string) => void;
   compare: boolean;
   onCompare: (v: boolean) => void;
   onBasis: () => void;
 }) {
-  const cols = scenarios.map((s) => ({ s, sum: summaries[s.id] ?? null }));
-  const base = summaries[scenarios[0]?.id ?? ""] ?? null;
+  const same = base.id === selected.id;
+  const cols = same ? [base] : [base, selected];
+  const bs = summaries[base.id] ?? null;
   const better = (v: number | string | null, b: number | string | null, lowerIsBetter: boolean) =>
     v === null || b === null || v === b ? null : lowerIsBetter ? v < b : v > b;
   const cell = (v: string, good: boolean | null, on: boolean) => (
-    <span className={cn("whitespace-nowrap text-right font-mono tabular-nums", on ? "font-semibold" : "", good === null ? (on ? "text-foreground" : "text-foreground-muted") : good ? "text-success" : "text-warning")}>{v}</span>
+    <span className={cn("whitespace-nowrap py-0.5 text-right font-mono tabular-nums", on ? "font-semibold text-foreground" : "text-foreground-muted", good === true && "text-success", good === false && "text-warning")}>{v}</span>
   );
+  const row = (label: string, pick: (s: ScenarioSummary) => number | string | null, fmt: (s: ScenarioSummary) => string, lowerIsBetter: boolean) => (
+    <>
+      <span className="whitespace-nowrap py-0.5 text-foreground-muted">{label}</span>
+      {cols.map((s) => {
+        const sum = summaries[s.id] ?? null;
+        const on = s.id === selected.id && !same;
+        return <span key={s.id} className="contents">{cell(sum ? fmt(sum) : "-", on && sum && bs ? better(pick(sum), pick(bs), lowerIsBetter) : null, on)}</span>;
+      })}
+    </>
+  );
+  const flooded = marks?.floodedAt ? isPast(marks.floodedAt, at) : false;
+  /* 집계에 과거 침수 지점도 한 줄로 센다 — 목록과 머리 숫자가 같아야 한다 */
+  const hit = impacts.filter((i) => i.status === "영향" || i.status === "범위 안").length + (flooded ? 1 : 0);
+  const soon = impacts.filter((i) => i.status === "예상").length + (marks?.floodedAt && !flooded ? 1 : 0);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto overflow-x-hidden rounded-[inherit]">
-      <section className="flex shrink-0 flex-col gap-2 p-3" aria-label="시나리오 비교">
-        <header className="flex items-baseline justify-between gap-2">
-          <h2 className="text-body font-semibold text-foreground">시나리오 비교</h2>
-          <span className="shrink-0 text-caption text-foreground-subtle">기준 = 그날 그대로</span>
+    <div className={PANEL.rail}>
+      <section className={PANEL.section} aria-label="결과 · 기준 대비">
+        <header className={PANEL.header}>
+          <h2 className={PANEL.title}>결과</h2>
+          <span className={PANEL.meta}>{same ? "기준 시나리오" : `${base.tag} 대비`}</span>
         </header>
-        <div className="overflow-x-auto rounded-md border border-border bg-card px-2.5 py-2 text-caption">
-          <div className="grid gap-x-2 gap-y-1" style={{ gridTemplateColumns: `auto repeat(${cols.length}, minmax(64px, 1fr))` }}>
+        <div className={PANEL.box}>
+          <div className="grid gap-x-3" style={{ gridTemplateColumns: `auto repeat(${cols.length}, minmax(72px, 1fr))` }}>
             <span />
-            {cols.map(({ s }) => (
-              <button key={s.id} type="button" onClick={() => onSelect(s.id)} aria-pressed={s.id === selected.id}
-                className={cn("cursor-pointer whitespace-nowrap rounded px-1 text-right font-mono font-semibold", s.id === selected.id ? (s.baseline ? "bg-surface-raised text-foreground" : "bg-primary text-primary-foreground") : "text-foreground-muted hover:text-foreground")}>
-                {s.tag}
-              </button>
+            {cols.map((s) => (
+              <span key={s.id} className={cn("whitespace-nowrap py-0.5 text-right font-mono font-semibold", s.id === selected.id && !same ? "text-primary-text" : "text-foreground-muted")}>{s.tag}</span>
             ))}
-            <span className="whitespace-nowrap text-foreground-muted">침수 시작</span>
-            {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum?.startAt ? formatClock(sum.startAt) : "없음", better(sum?.startAt ?? null, base?.startAt ?? null, false), s.id === selected.id)}</span>)}
-            <span className="whitespace-nowrap text-foreground-muted">{base ? (base.metricLabel.startsWith("최대") ? base.metricLabel : `최대 ${base.metricLabel}`) : "최대 수심"}</span>
-            {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.maxDepthM.toFixed(2)} m` : "-", better(sum?.maxDepthM ?? null, base?.maxDepthM ?? null, true), s.id === selected.id)}</span>)}
-            <span className="whitespace-nowrap text-foreground-muted">침수 면적</span>
-            {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.maxAreaHa.toFixed(1)} ha` : "-", better(sum?.maxAreaHa ?? null, base?.maxAreaHa ?? null, true), s.id === selected.id)}</span>)}
-            <span className="whitespace-nowrap text-foreground-muted">영향 시설</span>
-            {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.hitTargets}곳` : "-", better(sum?.hitTargets ?? null, base?.hitTargets ?? null, true), s.id === selected.id)}</span>)}
+            {/* 판의 startAt = 도로 위 수심이 0 을 넘는 첫 시각. "침수 시작"이라 쓰면 그릇 바닥이 차는 시각과 헷갈린다 */}
+            {row("도로 잠김", (s) => s.startAt ?? null, (s) => (s.startAt ? formatClock(s.startAt) : "없음"), false)}
+            {row(bs ? (bs.metricLabel.startsWith("최대") ? bs.metricLabel : `최대 ${bs.metricLabel}`) : "최대 수심", (s) => s.maxDepthM, (s) => `${s.maxDepthM.toFixed(2)} m`, true)}
+            {row("침수 면적", (s) => s.maxAreaHa, (s) => `${s.maxAreaHa.toFixed(1)} ha`, true)}
+            {row("영향 시설", (s) => s.hitTargets, (s) => `${s.hitTargets}곳`, true)}
           </div>
+          {/* 실측 — 같은 상자의 바닥 줄. 기준 열과 견줄 값이다 */}
+          {observed.length > 0 && (
+            <dl className={cn(PANEL.dl, "mt-1 border-t border-border pt-1")}>
+              {observed.map((o) => (
+                <div key={o.label} className="contents">
+                  <dt className="truncate py-0.5 text-foreground-muted">실측 · {o.label}</dt>
+                  <dd className="py-0.5 text-right font-mono tabular-nums text-foreground">{o.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </div>
-        {observed.length > 0 && (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-caption">
-            {observed.map((o) => (
-              <div key={o.label} className="contents">
-                <dt className="truncate text-foreground-muted">실측 · {o.label}</dt>
-                <dd className="text-right font-mono tabular-nums text-foreground">{o.value}</dd>
-              </div>
-            ))}
-          </dl>
+        {!same && (
+          <label className={PANEL.switchRow}>
+            <span className="flex items-center gap-1.5"><Icon icon="mdi:compare-horizontal" className="size-4" aria-hidden />지도에 {base.tag} 겹쳐 보기</span>
+            <Switch checked={compare} onCheckedChange={onCompare} aria-label={`지도에 ${base.tag} 겹쳐 보기`} />
+          </label>
         )}
-        {!selected.baseline && (
-          <button
-            type="button"
-            onClick={() => onCompare(!compare)}
-            aria-pressed={compare}
-            className={cn("flex cursor-pointer items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-caption",
-              compare ? "border-warning bg-warning/10 text-foreground" : "border-border bg-card text-foreground-muted hover:text-foreground")}
-          >
-            <span className="flex items-center gap-1.5"><Icon icon="mdi:compare-horizontal" className="size-4" aria-hidden />{sopOn ? "지도에 규정 적용 전 겹쳐 보기" : "지도에 기준 겹쳐 보기"}</span>
-            <span className="font-mono text-foreground-subtle">{compare ? (sopOn ? "점선 = 적용 전" : "점선 = 기준") : "끔"}</span>
-          </button>
-        )}
-        <p className="break-keep text-caption leading-snug text-foreground-subtle">{sourceNote}</p>
       </section>
 
-      <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="그 시각 상태">
-        <header className="flex items-baseline justify-between gap-2">
-          <h2 className="text-body font-semibold text-foreground">그 시각 · {selected.tag}</h2>
-          <span className="shrink-0 font-mono text-caption text-foreground-subtle">{formatClock(at)}</span>
+      <section className={PANEL.section} aria-label="그 시각 영향">
+        <header className={PANEL.header}>
+          <h2 className={PANEL.title}>그 시각 영향</h2>
+          <span className={PANEL.meta}>영향 {hit} · 예상 {soon}</span>
         </header>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-2 gap-2">
           <Stat label="침수 범위" value={areaHa === null ? "아직 없음" : `${areaHa.toFixed(1)} ha`} />
-          <Stat label="수심" value={depthNow > 0 ? `${depthNow.toFixed(2)} m` : "0 m"} />
+          {/* 도로 위 물 깊이. 잠기기 전엔 "잠김까지 남은 높이"가 판단에 쓰이는 값이다 */}
+          {depthNow > 0 || headroomM === null
+            ? <Stat label="도로 수심" value={depthNow > 0 ? `${depthNow.toFixed(2)} m` : "0 m"} />
+            : <Stat label="도로 잠김까지" value={`${headroomM.toFixed(2)} m`} />}
         </div>
-        {stateRows.length > 0 && (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-border bg-card px-2.5 py-2 text-caption">
-            {stateRows.map((r) => (
-              <div key={r.label} className="contents">
-                <dt className="truncate text-foreground-muted">{r.label}</dt>
-                <dd className={cn("text-right font-mono tabular-nums", r.scaled ? "font-semibold text-warning" : r.computed ? "font-semibold text-primary-text" : "text-foreground")}>{r.value}{r.note && <span className="ml-1 font-sans text-foreground-subtle">{r.note}</span>}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-        <p className="break-keep text-caption leading-snug text-foreground-subtle">
-          <span className="text-primary-text">파란 값</span>은 이 시나리오의 계산값, <span className="text-warning">주황 값</span>은 조건대로 환산한 관측값, 나머지는 관측 기록입니다
-        </p>
-        {/* 조치 이력 — 시간이 지나면 "일어난 일"로 쌓인다. 앞의 것은 예정으로 흐리게. 줄을 짚으면 그 시설이 지도에서 켜진다 */}
-        {actions.length > 0 && (
-          <ul className="flex flex-col text-caption" aria-label="조치 이력">
-            {actions.map((a) => {
-              const done = isPast(a.at, at);
-              const on = a.facilityIds.some((id) => focus.has(id));
-              return (
-                <li
-                  key={a.id}
-                  onMouseEnter={() => a.facilityIds.length && onFocus(a.facilityIds)}
-                  onMouseLeave={() => onFocus(null)}
-                  className={cn("flex items-baseline gap-2 rounded px-1 py-0.5", on && "bg-primary/10", done ? "text-foreground" : "text-foreground-subtle")}
-                >
-                  <Icon icon={ACTION_STYLE[a.kind].icon} className={cn("size-3.5 shrink-0 self-center", done ? ACTION_STYLE[a.kind].text : "text-border-light")} aria-hidden />
-                  <span className="shrink-0 font-mono">{formatClock(a.at)}</span>
-                  <span className="min-w-0 break-keep">{a.kind === "규정" ? `규정 해당 · ${a.label}` : a.label}{done ? "" : " · 예정"}</span>
-                  <span className="ml-auto shrink-0 text-foreground-subtle">{a.kind === "환경" ? "물이 달라진다" : a.kind === "규정" ? "매칭" : "노출만"}</span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="영향 객체">
-        <header className="flex items-baseline justify-between gap-2">
-          <h2 className="text-body font-semibold text-foreground">영향 객체</h2>
-          <span className="shrink-0 text-caption text-foreground-subtle">영향 {impacts.filter((i) => i.status === "영향" || i.status === "범위 안").length} · 예상 {impacts.filter((i) => i.status === "예상").length}</span>
-        </header>
-        {/* 과거 침수 지점 — 지도의 침수흔적도와 같은 것. 잠김은 누적 강우가 한계강우량을 넘는 시각부터 */}
-        {marks && (() => {
-          const flooded = marks.floodedAt ? isPast(marks.floodedAt, at) : false;
-          return (
-            <div className={cn("flex flex-col gap-0.5 rounded-md border px-2.5 py-1.5 text-caption", flooded ? "border-danger bg-danger/10" : "border-border bg-card")}>
-              <span className="flex items-baseline justify-between gap-2">
-                <span className="flex min-w-0 items-baseline gap-1.5">
-                  <Badge variant="outline" className="h-fit shrink-0 text-caption">과거 지점</Badge>
-                  <span className="min-w-0 break-keep text-foreground">시가지 과거 침수 지점 · {marks.areaHa.toFixed(1)} ha</span>
+        <ul className={cn(PANEL.box, PANEL.list)}>
+          {/* 과거 침수 지점 — 지도의 침수흔적도와 같은 것. 잠김은 누적 강우가 한계강우량을 넘는 시각부터 */}
+          {marks && (
+            <li className={cn(PANEL.row, flooded && "text-danger")}>
+              <span className="flex min-w-0 items-start gap-1.5">
+                <FirstLine><Badge variant="outline" className="text-caption">과거 지점</Badge></FirstLine>
+                <span className="min-w-0 break-keep text-foreground">과거 침수 지점 · {marks.areaHa.toFixed(1)} ha</span>
+              </span>
+              <span className={cn("shrink-0 font-mono", flooded ? "text-danger" : marks.floodedAt ? "text-warning" : "text-success")}>
+                {marks.floodedAt ? (flooded ? `잠김 ${formatClock(marks.floodedAt)}~` : `${formatClock(marks.floodedAt)} 예상`) : "한계 미달"}
+              </span>
+            </li>
+          )}
+          {impacts.map((i) => (
+            <li
+              key={`${i.kind}-${i.id}`}
+              onMouseEnter={() => i.kind === "지점" && onFocus([i.id])}
+              onMouseLeave={() => i.kind === "지점" && onFocus(null)}
+              className={cn(PANEL.row, "flex-col gap-0.5", focus.has(i.id) && "bg-primary/10")}
+            >
+              <span className="flex w-full items-start justify-between gap-2">
+                <span className="flex min-w-0 items-start gap-1.5">
+                  <FirstLine><Badge variant="outline" className="text-caption">{i.kind}</Badge></FirstLine>
+                  <span className="min-w-0 break-keep text-foreground">{i.label}</span>
                 </span>
-                <span className={cn("shrink-0 font-mono", flooded ? "text-danger" : marks.floodedAt ? "text-warning" : "text-success")}>
-                  {marks.floodedAt ? (flooded ? `잠김 ${formatClock(marks.floodedAt)}~` : `${formatClock(marks.floodedAt)} 잠김 예상`) : "한계강우량 미달"}
+                <span className={cn("shrink-0 font-mono", i.status === "영향" || i.status === "범위 안" ? "text-danger" : i.status === "예상" ? "text-warning" : "text-success")}>
+                  {i.status === "예상" && i.at ? `${formatClock(i.at)} 예상` : i.status === "영향" && i.exposure ? i.exposure : i.status}
                 </span>
               </span>
-              <span className="break-keep text-caption leading-snug text-foreground-subtle">{marks.note}</span>
-            </div>
-          );
-        })()}
-        {impacts.length === 0 ? (
-          <p className="text-caption text-foreground-subtle">이 판에 적힌 대상이 없습니다.</p>
-        ) : (
-          <ul className="flex flex-col text-caption">
-            {impacts.map((i) => (
-              <li
-                key={`${i.kind}-${i.id}`}
-                onMouseEnter={() => i.kind === "지점" && onFocus([i.id])}
-                onMouseLeave={() => i.kind === "지점" && onFocus(null)}
-                className={cn("flex flex-col gap-0.5 border-b border-border py-1 last:border-0", focus.has(i.id) && "bg-primary/10")}
-              >
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="flex min-w-0 items-baseline gap-1.5">
-                    <Badge variant="outline" className="h-fit shrink-0 text-caption">{i.kind}</Badge>
-                    <span className="min-w-0 break-keep text-foreground">{i.label}</span>
-                  </span>
-                  <span className={cn("shrink-0 font-mono", i.status === "영향" || i.status === "범위 안" ? "text-danger" : i.status === "예상" ? "text-warning" : "text-success")}>
-                    {i.status === "예상" && i.at ? `${formatClock(i.at)} 예상` : i.status === "영향" && i.exposure ? i.exposure : i.status}
-                  </span>
-                </span>
-                {/* 공간 교차가 덧붙인 한마디 — 판의 대상 줄에도 "지금 얼마나 잠겼나"가 선다 */}
-                {i.detail && <span className="pl-1 text-caption text-foreground-subtle">{i.detail}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
+              {/* 공간 교차가 덧붙인 한마디 — "범위 안 약 320 m" */}
+              {i.detail && <span className="text-caption text-foreground-subtle">{i.detail}</span>}
+            </li>
+          ))}
+          {!marks && impacts.length === 0 && <li className={cn(PANEL.row, "text-foreground-subtle")}>이 판에 적힌 대상이 없습니다</li>}
+        </ul>
       </section>
 
-      <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="관련 SOP">
-        <header className="flex items-baseline justify-between gap-2">
-          <h2 className="text-body font-semibold text-foreground">관련 SOP</h2>
+      <section className={PANEL.section} aria-label="해당 규정">
+        <header className={PANEL.header}>
+          <h2 className={PANEL.title}>해당 규정</h2>
           {stage === "none"
-            ? <span className="shrink-0 text-caption text-foreground-subtle">해당 단계 없음</span>
-            : <Tag tone={stage === "evacuate" ? "danger" : stage === "warning" ? "warning" : undefined}>{LEVEL_LABEL[stage]} 단계 해당</Tag>}
+            ? <span className={PANEL.meta}>해당 단계 없음</span>
+            : <Tag tone={stage === "evacuate" ? "danger" : stage === "warning" ? "warning" : undefined}>{LEVEL_LABEL[stage]} 단계</Tag>}
         </header>
-        <ul className="flex flex-col text-caption">
+        <ul className={cn(PANEL.box, PANEL.list)}>
           {sop.map((s) => {
-            const hit = stage !== "none" && LEVEL_RANK[s.from] <= LEVEL_RANK[stage];
+            const hitRule = stage !== "none" && LEVEL_RANK[s.from] <= LEVEL_RANK[stage];
             const linked = s.facilityIds?.length ? s.facilityIds : null;
             const on = Boolean(linked?.some((id) => focus.has(id)));
+            /* 타임라인과 같은 시각 — 조치 기록이 있으면 그 시각(지나면 파랑), 없으면 이 시나리오에서 규정이 해당되기 시작한 시각(주황) */
+            const ev = actions.find((a) => a.id === s.id || a.id === `sop-${s.id}`);
+            const done = ev ? isPast(ev.at, at) : false;
+            const style = ev && ev.kind !== "규정" ? ACTION_STYLE[ev.kind] : ACTION_STYLE.규정;
+            const applyLabel = sopApply[s.id];
             return (
               <li
                 key={s.id}
                 onMouseEnter={() => linked && onFocus(linked)}
                 onMouseLeave={() => linked && onFocus(null)}
-                className={cn("flex flex-col gap-0.5 border-b border-border py-1 last:border-0", hit ? "text-foreground" : "text-foreground-subtle", on && "bg-primary/10", linked && "cursor-default")}
+                className={cn(PANEL.row, "flex-col gap-0.5", hitRule || done ? "text-foreground" : "text-foreground-subtle", on && "bg-primary/10", linked && "cursor-default")}
               >
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="flex min-w-0 items-baseline gap-1.5">
-                    <Icon icon={SOP_ICON} className={cn("size-3.5 shrink-0 self-center", hit ? ACTION_STYLE.규정.text : "text-border-light")} aria-hidden />
+                <span className="flex w-full items-start justify-between gap-2">
+                  <span className="flex min-w-0 items-start gap-1.5">
+                    <FirstLine><Icon icon={ev && ev.kind !== "규정" ? style.icon : SOP_ICON} className={cn("size-3.5", done ? style.text : hitRule ? ACTION_STYLE.규정.text : "text-border-light")} aria-hidden /></FirstLine>
                     <span className="min-w-0 break-keep">{s.label}</span>
-                    {/* 지도에 시설이 있는 규정 — 짚으면 그 시설이 켜진다 */}
-                    {linked && <Icon icon="mdi:map-marker-outline" className="size-3.5 shrink-0 self-center text-foreground-subtle" aria-label="지도에 시설 있음" />}
+                    {linked && <FirstLine><Icon icon="mdi:map-marker-outline" className="size-3.5 text-foreground-subtle" aria-label="지도에 시설 있음" /></FirstLine>}
                   </span>
-                  {/* 타임라인과 같은 시각 — 이 시나리오에서 규정이 해당되기 시작한 시각(조치 기록이 있으면 그 시각) */}
-                  {(() => { const ev = actions.find((a) => a.id === `sop-${s.id}` || a.id === s.id); return ev
-                    ? <span className={cn("shrink-0 font-mono", isPast(ev.at, at) ? (ev.kind === "규정" ? "text-warning" : "text-primary-text") : "text-foreground-subtle")}>{formatClock(ev.at)}{isPast(ev.at, at) ? "~" : " 예상"} · {LEVEL_LABEL[s.from]}부터</span>
-                    : <span className="shrink-0 font-mono text-foreground-subtle">{LEVEL_LABEL[s.from]}부터{s.mode ? ` · ${s.mode === "auto" ? "자동" : "승인"}` : ""}</span>; })()}
+                  {ev
+                    ? <span className={cn("shrink-0 font-mono", done ? style.text : "text-foreground-subtle")}>{formatClock(ev.at)}{done ? "" : " 예정"}</span>
+                    : <span className="shrink-0 font-mono text-foreground-subtle">{LEVEL_LABEL[s.from]}부터</span>}
                 </span>
-                {s.detail && <span className="break-keep pl-4 text-caption leading-snug text-foreground-subtle">{s.detail}</span>}
-                {/* 환경을 바꾸는 규정만 — "이 규정대로 하면" 결과가 다시 계산된다. 전파·통제는 스위치가 없다(물이 안 바뀐다) */}
-                {sopApplicable.includes(s.id) && (
-                  <button
-                    type="button"
-                    onClick={() => onToggleSop(s.id)}
-                    aria-pressed={sopOn === s.id}
-                    className={cn("ml-4 mt-0.5 flex w-fit cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-caption",
-                      sopOn === s.id ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-foreground-muted hover:text-foreground")}
-                  >
-                    <Icon icon={sopOn === s.id ? "mdi:toggle-switch" : "mdi:toggle-switch-off-outline"} className="size-4" aria-hidden />
-                    이 규정대로 하면 · 결과 다시 계산
-                  </button>
+                {s.detail && <span className="break-keep pl-5 text-caption leading-snug text-foreground-subtle">{s.detail}</span>}
+                {/* 환경을 바꾸는 규정만 — 켜면 "규정 시각에 했다면"이 오른쪽 열로 서고 결과가 다시 계산된다. 전파·통제는 스위치가 없다(물이 안 바뀐다) */}
+                {applyLabel && (
+                  <label className={cn(PANEL.switchRow, "mt-1 w-full pl-5 pr-0", sopOn === s.id ? "text-foreground" : "")}>
+                    <span className="break-keep">{applyLabel}</span>
+                    <Switch checked={sopOn === s.id} onCheckedChange={() => onToggleSop(s.id)} aria-label={applyLabel} />
+                  </label>
                 )}
               </li>
             );
           })}
         </ul>
-        <p className="break-keep text-caption leading-snug text-foreground-subtle">
-          이 조건이면 해당되는 기존 SOP입니다. 당시 실행 여부가 아니며, 발령·전파는 승인 뒤에 합니다. 환경을 바꾸는 규정만 다시 계산합니다
-        </p>
       </section>
 
-      <section className="flex shrink-0 p-3">
+      <section className={cn(PANEL.section, "py-3")}>
         <Button variant="outline" size="sm" className="w-full" onClick={onBasis}>
           <Icon icon="mdi:file-search-outline" className="size-4" aria-hidden />
-          예측 근거 · 입력과 모델
+          근거 · 입력과 계산
         </Button>
       </section>
     </div>
@@ -273,8 +224,8 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-card px-2 py-1.5">
-      <span className="truncate text-caption text-foreground-muted">{label}</span>
+    <div className={cn(PANEL.box, "flex min-w-0 flex-col gap-0.5 py-2")}>
+      <span className="truncate text-foreground-muted">{label}</span>
       <span className="truncate font-mono text-body font-semibold tabular-nums text-foreground">{value}</span>
     </div>
   );

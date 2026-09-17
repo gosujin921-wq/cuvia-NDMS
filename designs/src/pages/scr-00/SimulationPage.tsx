@@ -27,8 +27,8 @@ const TYPES: { id: SimType; label: string; icon: string }[] = [
 export function SimulationPage() {
   const [params, setParams] = useSearchParams();
   const type: SimType = params.get("type") === "heat" ? "heat" : "flood";
-  /* 하단 중앙에 시간축이 서므로 질의 버튼은 그 위로 */
-  useFabSlot("clock");
+  /* 질의 버튼은 바닥에 붙인다 — 시간축이 오른쪽에 그 자리(FAB_SIZE + EDGE)를 비워 둔다(2026-09-17 사용자 "하단에 붙여 줘") */
+  useFabSlot("rail");
 
   return (
     <div className="relative h-full w-full overflow-hidden">

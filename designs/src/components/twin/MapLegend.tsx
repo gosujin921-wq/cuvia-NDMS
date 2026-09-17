@@ -15,6 +15,7 @@ import { FLOOD_DEPTH_LEGEND } from "../../lib/safemap";
 import { RAIN_RAMP } from "../../lib/precipitation-layer";
 import { TEMP_RAMP } from "../../lib/temperature-layer";
 import { loadTemperatureField, temperatureRange } from "../../lib/temperature-field";
+import { HOT_AREA_PAINT, SHELTER_DOT } from "../../lib/heat-paint";
 
 const DEPTH_STOPS = [0.1, 0.3, 0.5];
 
@@ -31,15 +32,19 @@ export interface MapLegendProps {
   extent?: { label: string; tone: ExtentTone } | null;
   /** 좌상단 광역 인셋이 그리는 층 — 강우 격자 · 풍향장 · 열돔 */
   inset?: "rain" | "wind" | "globe" | null;
+  /** 폭염 탭 — 체감온도 색면(램프 양끝은 자료 범위) · 고온 지속 지역 면 · 무더위쉼터 점 */
+  feel?: { min: number; max: number } | null;
+  hot?: boolean;
+  shelter?: boolean;
 }
 
 /**
  * 켜진 층은 모두 선다(2026-09-16 사용자 "화면에 나와있는 레이어가 다 범례에 나와야 하지 않나").
  * 다만 장비 핀·대피 시설은 핀마다 이름표가 붙어 스스로 읽히므로 넣지 않는다 — 범례가 조작판의 복제가 되면 지도를 덮는다.
  */
-export function MapLegend({ depth, official, rain, temp, wind, scope, extent, inset }: MapLegendProps) {
+export function MapLegend({ depth, official, rain, temp, wind, scope, extent, inset, feel, hot, shelter }: MapLegendProps) {
   const tempRange = useTemperatureRange(Boolean(temp));
-  if (!depth && !official && !rain && !temp && !wind && !scope && !extent && !inset) return null;
+  if (!depth && !official && !rain && !temp && !wind && !scope && !extent && !inset && !feel && !hot && !shelter) return null;
   return (
     <GlassPanel className="pointer-events-auto flex w-full flex-col gap-1.5 px-2.5 py-2" aria-label="면 범례">
       {/* 이름이 곧 설명이라 문장을 덧붙이지 않는다 — 줄이 접혀 범례가 두 배가 됐다(2026-09-16 사용자 "글줄 정리 좀") */}
@@ -104,6 +109,27 @@ export function MapLegend({ depth, official, rain, temp, wind, scope, extent, in
       {temp && (
         <Row title="기온">
           <Ramp colors={TEMP_RAMP} from={tempRange ? `${tempRange.min.toFixed(0)}℃` : "낮음"} to={tempRange ? `${tempRange.max.toFixed(0)}℃` : "높음"} />
+        </Row>
+      )}
+      {feel && (
+        <Row title="체감온도">
+          <Ramp colors={TEMP_RAMP} from={`${feel.min}℃`} to={`${feel.max}℃`} />
+        </Row>
+      )}
+      {hot && (
+        <Row title="고온 지속">
+          <Swatch paint={HOT_AREA_PAINT()} />
+          <span className="text-caption text-foreground-muted">33℃↑ 3시간 넘게</span>
+        </Row>
+      )}
+      {shelter && (
+        <Row title="무더위쉼터">
+          {([["운영 중", SHELTER_DOT.open], ["종료", SHELTER_DOT.closed], ["야간 개방", SHELTER_DOT.night]] as const).map(([label, d]) => (
+            <span key={label} className="flex items-center gap-1 text-caption text-foreground-muted">
+              <span className="inline-block shrink-0 rounded-full border" style={{ width: d.radius * 2 + 2, height: d.radius * 2 + 2, backgroundColor: d.color(), opacity: d.opacity, borderColor: SHELTER_DOT.stroke() }} aria-hidden />
+              {label}
+            </span>
+          ))}
         </Row>
       )}
       {wind && (

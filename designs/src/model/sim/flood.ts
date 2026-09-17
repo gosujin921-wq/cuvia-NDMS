@@ -22,13 +22,13 @@ import { CW_INCIDENT_ID } from "../../fixtures/changwoncheon/whatif";
 import { GEOMETRIES } from "../../fixtures";
 import { findWhatIfCase, whatIfStateRowsAt } from "../selectors";
 import { deviceKindSpec, devicesOf } from "../../demo/devices";
-import { sopItemsFor } from "../../demo/sop";
+import { SOP_CATALOG as SH_SOP_CATALOG } from "../../fixtures/seohang-flood/sop";
 import { floodSurfaceOf } from "../../lib/flood-surfaces";
 import { formatMarkMetric, markMetricLabel } from "../../lib/forecast-twin";
 import { CW_FACTORS, CW_ROAD_LEVEL, cwAreaOfLevel, cwInterp, cwMarksFloodedAt } from "./cw-interp";
 import { CW_FLUDMARKS_HA } from "../../fixtures/changwoncheon/area-table.generated";
 import { RISK_DISTRICT_DAMAGE_MM_PER_H } from "../../fixtures/risk-districts.generated";
-import { HEAVY_RAIN_ADVISORY_3H, HEAVY_RAIN_WARNING_3H, OBS_AREA_HA, RULE_DATE, RULE_MAX_3H, RULE_MAX_HOURLY, RULE_START, RULE_TOTAL_MM, areaOfLevel, cumulativeAt, depthOfLevel, factorForWarning, levelAtMinutes, rainRateAt, ruleForecast, type RuleChoice } from "./rain-rule";
+import { HEAVY_RAIN_ADVISORY_3H, HEAVY_RAIN_WARNING_3H, OBS_AREA_HA, ROAD_LOW, RULE_DATE, RULE_MAX_3H, RULE_MAX_HOURLY, RULE_START, RULE_TOTAL_MM, areaOfLevel, cumulativeAt, depthOfLevel, factorForWarning, levelAtMinutes, rainRateAt, ruleForecast, type RuleChoice } from "./rain-rule";
 
 export interface SimOption { id: string; label: string; detail?: string; /** 당시 관측값에 곱하는 배율(조건의 정의가 "당시 × 1.2"일 때) */ factor?: number }
 export interface SimCondition {
@@ -113,6 +113,10 @@ export interface FloodSite extends SimSiteBase {
     levelAt(choice: Record<string, string>, atIso: string): number;
     areaOfLevel(level: number): number;
     depthOfLevel(level: number): number;
+    /** 수심의 0점(EL.m) — 도로가 잠기기 시작하는 수위. 잠기기 전엔 "여기까지 얼마 남았나"를 보인다(2026-09-17 사용자 "수심?") */
+    floodLevel: number;
+    /** 그 수위의 이름 — "도로 수위" · "합류부 수위" */
+    levelLabel: string;
     /** 지형 채우기 패치를 찾는 링 id — 규칙은 링이 아니라 수위로 채우므로 하나면 된다 */
     surfaceGeometryId: string;
   };
@@ -136,6 +140,8 @@ export interface FloodSite extends SimSiteBase {
    * 시나리오(조건)와 갈라 둔다: 조건은 "그때 비가 달랐다면", SOP 적용은 "규정대로 했다면"이다
    */
   sopApply?: Record<string, { label: string; apply(choice: Record<string, string>): Record<string, string> }>;
+  /** 스위치가 없는 이유 — 환경을 바꾸는 규정이 있어도 모델이 없으면 여기 적는다 */
+  sopNote?: string;
   wcase: WhatIfCase | null;
 }
 
@@ -198,7 +204,7 @@ const seohangSite = (): FloodSite => {
     anchor: wcase?.scope.displayAnchor ?? [128.567, 35.197],
     scopeGeometryId: wcase?.scope.affectedGeometryId,
     now: RULE_START,
-    dateLabel: `${RULE_DATE.replace(/-/g, ".")} 재현 · 강우 실자료 · 규칙 계산`,
+    dateLabel: `${RULE_DATE.replace(/-/g, ".")} 재현 · ${RULE_START.slice(11, 16)} 기준`,
     conditions,
     defaults,
     boardOf: (c) => { const rc = ruleChoice(c); return ruleForecast(rc, `FC-SH-RULE-${rc.factor}-${rc.pLim}`, rc.label === ""); },
@@ -245,16 +251,28 @@ const seohangSite = (): FloodSite => {
       levelAt: (c, atIso) => { const rc = ruleChoice(c); return levelAtMinutes(minutesOf(atIso), rc.factor, rc.pLim); },
       areaOfLevel,
       depthOfLevel,
+      floodLevel: ROAD_LOW,
+      levelLabel: "도로 수위",
       surfaceGeometryId: "GEO-FLOOD-T10",
     },
-    /* 서항의 SOP 표본은 해일 절차(SOP_ITEMS · 서항지구 대상값)다. 시설 연결: CCTV 감시 → CCTV 장치, 마을방송 → 방송 장치, 해안도로 차단 → 차단 지점 */
+    /* 서항 SOP = 사건 작업공간과 같은 도시침수 카탈로그(fixtures/seohang-flood/sop.ts · 10항목) 중 **물이나 노출을 바꾸는 것만**(2026-09-17 사용자
+       "전파하고 통보한 것까지 트윈에서 봐야 하나 · 창원천은 안 그렇다"). 창원천 규정(방류 · 둔치 통제 · 천변도로 통제)과 같은 기준이다.
+       CCTV 배치·구성 · 담당기관 통보 · 주민 전파 · 영상 보존 · 현장 확인은 사건 작업공간(/scr-02)의 몫이고 여기서는 세우지 않는다.
+       단계는 카탈로그 최소 위험등급을 상황 단계로 읽는다: 없음·주의 → advisory · 경계 → warning · 심각 → evacuate.
+       시설 연결은 장면의 점(펌프장 · 저류시설 · 지하차도 · 차단 지점)이다. 저류시설은 배수 대응(펌프 재가동 · 저류 추가 유입)에 묶여 SOP-05 에 선다 */
     sop: [
       ...sopOfCase(wcase),
-      ...sopItemsFor("evacuate").map((s) => ({
-        id: `sh-${s.id}`, label: s.label, detail: s.target === "—" ? "" : s.target, from: s.minLevel, mode: s.mode,
-        ...(SH_SOP_FACILITIES[s.id] ? { facilityIds: SH_SOP_FACILITIES[s.id] } : {}),
-      })),
+      ...SH_SOP_CATALOG.filter((c) => c.binding.kind === "action" && SH_TWIN_ACTION_KINDS.has(c.binding.actionKind)).map<SimSop>((c) => ({
+        id: c.id, label: c.label,
+        detail: c.binding.kind === "action" ? [c.organization, c.binding.target, c.id === "SOP-05" ? "저류시설 추가 유입 · 배수 대응" : null].filter(Boolean).join(" · ") : "",
+        from: c.minGrade === "심각" ? "evacuate" : c.minGrade === "경계" ? "warning" : "advisory",
+        mode: c.execMode === "자동" ? "auto" : "approval",
+        ...(SH_SOP_FACILITIES[c.id] ? { facilityIds: SH_SOP_FACILITIES[c.id] } : {}),
+      }))
+        /* 해당되는 순서(주의보 → 경보 → 대피)로 — 카탈로그는 id 순이라 단계가 섞여 읽힌다 */
+        .sort((a, b) => SOP_LEVEL_RANK[a.from] - SOP_LEVEL_RANK[b.from]),
     ],
+    sopNote: "펌프 재가동·저류 유입은 제원·가동 기록이 없어 물을 다시 계산하지 않습니다. 자료가 오면 그 줄에 스위치가 섭니다",
     extraFacilities: SH_DEVICE_POINTS,
     /* 도로수위계 = 규칙 침수심 · 강우계 = 실자료 강도 × 배율. 관로 수위·조위는 규칙에 없다 */
     facilityStateOf: (id, c, atIso) => {
@@ -278,10 +296,18 @@ const SH_BC = SH_DEVICES.filter((d) => d.kind === "BC");
 const SH_SENSOR_IDS = [SUBJECTS.rainGauge, SUBJECTS.pipeLevel, SUBJECTS.roadLevel, SUBJECTS.tide] as const;
 const SH_CCTV_IDS = [SUBJECTS.cctvPump, SUBJECTS.cctvPole] as const;
 const SENSOR_ICON: Record<string, string> = { [SUBJECTS.rainGauge]: "mdi:weather-pouring", [SUBJECTS.pipeLevel]: "mdi:pipe", [SUBJECTS.roadLevel]: "mdi:waves-arrow-up", [SUBJECTS.tide]: "mdi:waves" };
+const SOP_LEVEL_RANK: Record<SimSop["from"], number> = { advisory: 0, warning: 1, evacuate: 2 };
+/** 트윈에 서는 조치 종류 — 물을 바꾸거나(시설 점검 = 펌프 재가동) 사람 노출을 바꾸는 것(도로 통제 · 대피 안내). 전파·통보·기록·현장 확인은 아니다 */
+const SH_TWIN_ACTION_KINDS = new Set<string>(["시설 점검", "도로 통제", "대피 안내"]);
+/* 카탈로그 id → 장면 점 id(scene.ts) · 장치 id. 차단 지점(a-block-*)은 도로가 통제된 눈금에만 서므로 규칙 판(통제 없음)에서는 해안도로 통제 줄이 시설 없이 선다 */
 const SH_SOP_FACILITIES: Record<string, string[]> = {
-  cctv: [...SH_CCTV_IDS],
-  broadcast: SH_BC.map((d) => d.id),
-  road: ["a-block-s", "a-block-n"],
+  "SOP-01": [...SH_CCTV_IDS],
+  "SOP-03": SH_BC.map((d) => d.id),
+  "SOP-04": ["a-block-s", "a-block-n"],
+  "SOP-05": ["a-pump", "a-retention"],
+  "SOP-06": ["a-underpass"],
+  "SOP-07": [SUBJECTS.cctvPole],
+  "SOP-09": ["a-underpass"],
 };
 const SH_DEVICE_POINTS: ScenePoint[] = [
   ...SH_CCTV_IDS.map<ScenePoint>((id) => ({ kind: "point", id, at: SUBJECT_LOCATION[id].displayAnchor, icon: "mdi:cctv", label: SUBJECT_LOCATION[id].label, state: "정상", tone: "neutral", small: true })),
@@ -314,8 +340,8 @@ const changwoncheonSite = (): FloodSite | null => {
     anchor: wcase.scope.displayAnchor,
     scopeGeometryId: wcase.scope.affectedGeometryId,
     now,
-    /* 이 사건의 수치는 원장이 아니라 시나리오 편집값이다(fixtures/changwoncheon/whatif.ts 머리말). "실제 사건 · 실측"이라 부르지 않는다 */
-    dateLabel: `${now.slice(0, 10).replace(/-/g, ".")} 사례(편집) · ${now.slice(11, 16)} 기준`,
+    /* 이 사건의 수치는 원장이 아니라 시나리오 편집값이다(fixtures/changwoncheon/whatif.ts 머리말). 화면엔 "편집"을 적지 않는다(2026-09-17 사용자) — 근거 창이 말한다 */
+    dateLabel: `${now.slice(0, 10).replace(/-/g, ".")} 재현 · ${now.slice(11, 16)} 기준`,
     conditions: [
       { id: "rain", label: "강우", kind: "조건", stateLabel: t.conditions[0]?.stateLabel, options: rainSteps.map((s) => ({ id: s.id, label: s.label, detail: s.detail, factor: s.factor })) },
       {
@@ -343,12 +369,17 @@ const changwoncheonSite = (): FloodSite | null => {
     },
     rule: {
       levelAt: (c, atIso) => interp(c).levelAt(atIso),
-      areaOfLevel: cwAreaOfLevel,
+      /* 면적표는 물길을 포함해 구워졌다(0.5 m 에 이미 59.6 ha · 도로 잠김 수위 2.5 m 에 76.5 ha). 침수 범위는 수심과 같은 0점(도로 잠김 수위) 위만 센다 —
+         14:35 에 "침수 범위 68 ha"인데 침수 시작이 15:22 인 어긋남을 바로잡는다(2026-09-17 사용자 "강우량이랑 지도랑 맞는지") */
+      areaOfLevel: (l) => Math.max(0, cwAreaOfLevel(l) - cwAreaOfLevel(CW_ROAD_LEVEL)),
       depthOfLevel: (l) => Math.max(0, l - CW_ROAD_LEVEL),
+      floodLevel: CW_ROAD_LEVEL,
+      levelLabel: "합류부 수위",
       surfaceGeometryId: "GEO-CW-L20",
     },
-    /* S2 상류 저류지 방류 — 규정 발동 시각(14:35)에 했다면. 시나리오가 아니라 SOP 줄의 스위치다 */
-    sopApply: { S2: { label: `${now.slice(11, 16)} 방류(발동 즉시)`, apply: (c) => ({ ...c, discharge: "early" }) } },
+    /* S2 상류 저류지 방류 — 규정 발동 시각(14:35)에 했다면. 시나리오가 아니라 SOP 줄의 스위치다.
+     ⚠ "방류를 아예 안 한 판"은 없다 — 픽스처가 "안 함 = 실제 15:05 방류 그대로"로 정의한다(whatif.ts TRAIN_BASE). 비교는 실제 시각 | 규정 시각이다 */
+    sopApply: { S2: { label: `규정 시각 ${now.slice(11, 16)}에 방류했다면`, apply: (c) => ({ ...c, discharge: "early" }) } },
     marks: {
       areaHa: CW_FLUDMARKS_HA,
       floodedAt: (c) => cwMarksFloodedAt(wcase, factorOf(c), 50, now, horizon),
@@ -510,7 +541,12 @@ export function stateRowsAt(site: FloodSite, f: Forecast | null, choice: Record<
     ? (site.slider && site.slider.condId === cond.id ? site.slider.valueOf(choice) : cond.options.find((o) => o.id === (choice[cond.id] ?? site.defaults[cond.id]))?.factor ?? 1)
     : 1;
   return raw.map((r) => {
-    if (mark && metricLabel && r.label === metricLabel) return { ...r, value: formatMarkMetric(mark), note: undefined, computed: true };
+    if (mark && metricLabel && r.label === metricLabel) {
+      /* 규칙 대상은 눈금 사이도 연속값이다 — 좌측 "합류부 수위"가 마지막 눈금(15:00) 값이고 우측 수심이 15:15 보간값이면 둘이 어긋난다(2026-09-17) */
+      const level = site.rule ? site.rule.levelAt(choice, atIso) : null;
+      const live = level === null ? mark : { ...mark, maxDepthM: site.rule ? site.rule.depthOfLevel(level) : mark.maxDepthM, metric: mark.metric ? { ...mark.metric, value: level, text: undefined } : undefined };
+      return { ...r, value: formatMarkMetric(live), note: undefined, computed: true };
+    }
     if (cond?.stateLabel && factor !== 1 && r.label === cond.stateLabel) {
       const n = Number.parseFloat(r.value);
       if (!Number.isFinite(n)) return r;

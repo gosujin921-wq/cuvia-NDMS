@@ -50,7 +50,7 @@ export function heatSite(field: TemperatureField | null): HeatSite {
     label: "창원 도심 열환경",
     status: "재현",
     now: `${date}T${String(firstHour).padStart(2, "0")}:00:00+09:00`,
-    dateLabel: `${date.replace(/-/g, ".")} 재현 · ${firstHour}시 기준 · 기상청 국지예보`,
+    dateLabel: `${date.replace(/-/g, ".")} 재현 · ${firstHour}시 기준`,
     conditions: [
       {
         id: "temp", label: "기온", kind: "조건",

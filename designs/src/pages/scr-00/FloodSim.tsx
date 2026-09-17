@@ -3,13 +3,13 @@
  *
  *   실제 사건 데이터 → 트윈에서 사건 재현(기준) → 조건 변경(A · B) → 결과 계산 → 기준과 비교 → 관련 SOP 판단
  *
- * 좌: 대상 · 시나리오 · 고른 조건      중앙: 지도(지형 수면) + 종단도(있으면) + 시간축      우: 비교표 · 그 시각 · 영향 객체 · 관련 SOP · 근거
+ * 좌(입력): 대상 · 시나리오 · 슬라이더 · 그 시각 상태      중앙: 지도(지형 수면) + 종단도(있으면) + 시간축      우(결과): 기준 대비 · 그 시각 영향 · 해당 규정 · 근거
  * ★ 상태는 `대상 · 시나리오 · 시각` 셋뿐이고 나머지는 전부 계산이다. 조치를 정하는 자리가 아니라 결과를 읽는 자리라 정지점이 없다.
  * ★ "과거 재현"은 메인이 아니다. 기준을 설명하는 자리이고, 메인은 "그때 조건이 달랐다면"이다.
  * ───────────────────────────────────────────── */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import maplibregl from "maplibre-gl";
 import { GlassPanel } from "@ds";
 import { useMapLibre } from "../../lib/useMapLibre";
@@ -34,7 +34,7 @@ import { mergeScene } from "../../model/scene";
 import {
   depthAt, floodSites, floorMarkAt, horizonOf, impactsAt, ringAreaHa, ringOf, scenariosOf, sopEventsOf, stageAt, stateRowsAt, summarizeForecast, surfaceLevelAt,
 } from "../../model/sim/flood";
-import { ForecastBasisDialog } from "../scr-05/widgets/ForecastBasisDialog";
+import { SimBasisDialog } from "./widgets/SimBasisDialog";
 import { SimScenarios } from "./widgets/SimScenarios";
 import { FacilityMarkers } from "./widgets/FacilityMarkers";
 import type { ScenePoint } from "../../model/scene";
@@ -54,7 +54,6 @@ const spanMin = (a: string, b: string) => Math.max(1, Math.round((new Date(b).ge
 
 export function FloodSim() {
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
   const { agentOpen } = useScenario();
 
   /* ── 상태 셋: 대상 · 시나리오 · 시각 ── */
@@ -70,10 +69,12 @@ export function FloodSim() {
   const sopOn = params.get("sop");
   const sopSpec = sopOn && site.sopApply?.[sopOn] ? site.sopApply[sopOn] : null;
   const selected = useMemo(
-    () => (sopSpec && sopOn ? { id: `${picked.id}+${sopOn}`, tag: `+${sopOn}`, label: `${picked.label} · ${sopSpec.label}`, choice: sopSpec.apply(picked.choice), baseline: false } : picked),
+    () => (sopSpec && sopOn ? { id: `${picked.id}+${sopOn}`, tag: "규정대로", label: `${picked.label} · ${sopSpec.label}`, choice: sopSpec.apply(picked.choice), baseline: false } : picked),
     [picked, sopSpec, sopOn],
   );
-  const columns = useMemo(() => (sopSpec ? [...scenarios, selected] : scenarios), [scenarios, selected, sopSpec]);
+  /* 비교의 왼쪽 열 — SOP 를 켰으면 "그 규정을 안 했을 때"(고른 시나리오), 아니면 기준 시나리오. 표는 이 둘만 세운다 */
+  const baseCol = sopSpec ? picked : scenarios[0];
+  const columns = useMemo(() => (baseCol.id === selected.id ? [baseCol] : [baseCol, selected]), [baseCol, selected]);
   const setQuery = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(window.location.search);
     for (const [k, v] of Object.entries(patch)) { if (v === null) next.delete(k); else next.set(k, v); }
@@ -81,8 +82,7 @@ export function FloodSim() {
   };
 
   const forecast = useMemo(() => site.boardOf(selected.choice), [site, selected]);
-  /* 겹쳐 보기의 기준 — SOP 를 켰으면 "그 규정을 안 했을 때"(고른 시나리오), 아니면 기준 시나리오 */
-  const baseline = useMemo(() => site.boardOf(sopSpec ? picked.choice : scenarios[0].choice), [site, scenarios, picked, sopSpec]);
+  const baseline = useMemo(() => site.boardOf(baseCol.choice), [site, baseCol]);
   const summaries = useMemo(
     () => Object.fromEntries(columns.map((s) => {
       const f = site.boardOf(s.choice);
@@ -133,9 +133,14 @@ export function FloodSim() {
   const depthNow = forecast ? (site.rule && level !== null ? site.rule.depthOfLevel(level) : depthAt(forecast, at)) : 0;
   const ring = ringOf(floorMark?.extentGeometryId);
   const ruleArea = site.rule && level !== null ? site.rule.areaOfLevel(level) : null;
-  const areaHa = site.rule ? (ruleArea !== null && ruleArea > 0.005 ? ruleArea : null) : ring ? ringAreaHa(ring) : null;
+  /* 0.05 ha(약 500 m²) 아래는 "아직 없음" — 그릇 바닥에 물이 비치기 시작한 것을 0.0 ha 로 적지 않는다 */
+  const areaHa = site.rule ? (ruleArea !== null && ruleArea >= 0.05 ? ruleArea : null) : ring ? ringAreaHa(ring) : null;
+  /* 잠기기 전의 두 번째 타일 — "도로 잠김까지 n m". 수심 0 m 는 아무 말도 아니다(2026-09-17 사용자 "수심?") */
+  const headroomM = site.rule && level !== null && depthNow <= 0 ? Math.max(0, site.rule.floodLevel - level) : null;
   const sceneLayers = useMemo(() => mergeScene(forecast?.scene, floorMark?.scene), [forecast, floorMark]);
-  const impacts = useMemo(() => (forecast ? impactsAt(forecast, at, sceneLayers) : []), [forecast, at, sceneLayers]);
+  /* 규칙 대상은 도로가 잠기기 전엔 장면과의 공간 교차를 하지 않는다 — 하천 물길 링 안의 수위계·합류점이 "범위 안"으로 서면
+     "영향 3 · 침수 범위 아직 없음"이 한 머리에 선다(2026-09-17 사용자). 판의 대상(도달 시각)은 그대로 본다 */
+  const impacts = useMemo(() => (forecast ? impactsAt(forecast, at, site.rule && depthNow <= 0 ? [] : sceneLayers) : []), [forecast, at, sceneLayers, site.rule, depthNow]);
   /* 조치 — 이 시나리오에서 일어나는 것. 시간축 눈금 · 마커 배지 · 조치 이력이 같은 목록을 읽는다 */
   const actions = useMemo(() => {
     const acted = site.actionsOf(selected.choice, forecast);
@@ -164,6 +169,8 @@ export function FloodSim() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(mapContainer, { center, zoom: TWIN_ZOOM, pitch: 0, capture: true });
   const [layers, setLayers] = useState({ scope: true, extent: true, rain: false, marks: true });
+  /* ⚠ 데이터 이슈(2026-09-17): 강수 격자는 2024-09-21 한 날짜만 구워 뒀다. 창원천(2024-08-28)에도 그 격자가 그려진다.
+     화면이 우선이라 인셋·레이어는 그대로 세운다(사용자). 창원천 날짜 격자를 구우면(scripts/fetch-precipitation-field.mjs) 여기서 날짜별로 읽게 바꾼다 */
   usePrecipitationLayer(map, ready, layers.rain, new Date(at).getHours());
   const scopeRing = site.scopeGeometryId ? GEOMETRIES[site.scopeGeometryId] : undefined;
   const fitPoints = useMemo<[number, number][]>(() => (scopeRing && scopeRing.length > 0 ? scopeRing : [center]), [scopeRing, center]);
@@ -237,20 +244,23 @@ export function FloodSim() {
         <FacilityMarkers map={map} ready={ready} points={points} actions={actions} at={at} focus={focus} onPick={(id) => focusFacilities(focus.has(id) ? null : [id])} />
       </div>
 
-      {/* 좌측 레일 — 대상 · 시나리오 · 고른 조건, 아래로 광역 인셋과 범례 */}
+      {/* 좌측 레일(입력) — 대상 · 시나리오 · 슬라이더 · 그 시각 상태, 아래로 광역 인셋과 범례 */}
       <div className={`${RAIL_BASE} left-3`} style={{ width: LEFT_RAIL }}>
         <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
           <SimScenarios
             sites={sites} site={site} onSite={(id) => setQuery({ site: id, sc: null, rf: null, rl: null })}
             scenarios={scenarios} selected={picked} onSelect={(id) => setQuery({ sc: id })}
             onSlide={site.slider ? (f) => setQuery({ rf: String(Number(f.toFixed(2))), rl: picked.choice.lim ?? null, sc: "C" }) : undefined}
+            at={at}
+            stateRows={stateRows}
           />
         </GlassPanel>
         {insetKindOf(family) && (
           <ContextInset family={family} anchor={site.anchor} hour={new Date(at).getHours()} meta={formatClock(at)} />
         )}
+        {/* 침수심 줄: 규칙 대상은 연속 수심으로 — 시간 눈금(정시)의 수심이 0 이어도 그 사이에 물이 차기 시작하면 범례가 서야 한다 */}
         <MapLegend
-          depth={floorMark && layers.extent && floorMark.maxDepthM > 0 ? { label: "침수심" } : null}
+          depth={layers.extent && (site.rule ? depthNow > 0 : Boolean(floorMark && floorMark.maxDepthM > 0)) ? { label: "침수심" } : null}
           scope={layers.scope}
           rain={layers.rain}
           extent={baseMark ? { label: "실제 사건", tone: "ground" } : null}
@@ -308,30 +318,24 @@ export function FloodSim() {
         />
       </div>
 
-      {/* 우측 레일 — 비교표 · 그 시각 · 영향 객체 · 관련 SOP · 근거 */}
+      {/* 우측 레일(결과) — 기준 대비 · 그 시각 영향 · 해당 규정 · 근거 */}
       <div className={`${RAIL_BASE} right-3`} style={{ width: RIGHT_RAIL }}>
         <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
           {forecast ? (
             <FloodResult
-              scenarios={columns}
+              base={baseCol}
               selected={selected}
-              onSelect={(id) => setQuery({ sc: id.replace(/\+.*$/, "") })}
-              sopApplicable={Object.keys(site.sopApply ?? {})}
+              sopApply={Object.fromEntries(Object.entries(site.sopApply ?? {}).map(([id, v]) => [id, v.label]))}
               sopOn={sopSpec ? sopOn : null}
               onToggleSop={(id) => setQuery({ sop: sopOn === id ? null : id })}
               summaries={summaries}
               observed={site.observed}
-              sourceNote={site.rule
-                ? (site.id === "seohang"
-                  ? "수위 → 범위·수심은 지형 계산 · 강우 → 수위는 규칙 계산(2024-09-21 강우 실자료 · 침수흔적으로 보정 · 수리 모델 연결 시 교체) · 실측은 침수흔적도"
-                  : "수위 → 범위·수심은 지형 계산 · 강우 → 수위는 편집 판 3벌(당시 · +20% · +50%) 사이 보간 · 실측 보정 없음(수위 시계열이 오면 규칙으로 교체)")
-                : "수위 → 범위·수심은 지형 계산 · 강우 → 수위는 사전 작성 판(모델 연결 시 교체) · 이 사례의 수치는 편집값"}
               at={at}
-              stateRows={stateRows}
               depthNow={depthNow}
+              headroomM={headroomM}
               areaHa={areaHa}
               impacts={impacts}
-              marks={site.marks ? { areaHa: site.marks.areaHa, floodedAt: site.marks.floodedAt(selected.choice), note: site.marks.note } : null}
+              marks={site.marks ? { areaHa: site.marks.areaHa, floodedAt: site.marks.floodedAt(selected.choice) } : null}
               actions={actions}
               sop={sop}
               stage={stage}
@@ -348,11 +352,30 @@ export function FloodSim() {
       </div>
 
       {basisOpen && (
-        <ForecastBasisDialog
-          wcase={site.wcase}
+        <SimBasisDialog
+          title={site.label}
           forecast={forecast}
           onClose={() => setBasisOpen(false)}
-          onOpenLive={() => navigate(`/scr-02/${site.wcase?.legacyDistrictId ?? "seohang"}?panel=twin`)}
+          notes={[
+            { heading: "계산", lines: [
+              "수위 → 범위·수심은 지형 계산",
+              site.rule
+                ? (site.id === "seohang"
+                  ? "강우 → 수위는 규칙 계산. 2024-09-21 강우 실자료를 침수흔적으로 보정한 것이고 수리 모델이 연결되면 교체한다"
+                  : "강우 → 수위는 편집 판 3벌(당시 · +20% · +50%) 사이 보간. 실측 보정은 없고 수위 시계열이 오면 규칙으로 교체한다")
+                : "강우 → 수위는 사전 작성 판. 모델이 연결되면 교체한다. 이 사례의 수치는 편집값이다",
+              "그 시각 상태의 파란 값은 이 시나리오의 계산값, 주황 값은 조건대로 환산한 관측값, 나머지는 관측 기록",
+            ] },
+            { heading: "자료", lines: [
+              ...site.observed.map((o) => `실측 · ${o.label} ${o.value}`),
+              ...(site.marks ? [site.marks.note] : []),
+            ] },
+            { heading: "규정", lines: [
+              "해당 규정은 이 조건이면 해당되는 기존 SOP다. 당시 실행 여부가 아니며 발령·전파는 승인 뒤에 한다",
+              "환경을 바꾸는 규정(방류 · 펌프)만 \"이 규정대로 하면\"으로 다시 계산한다. 전파·통제는 물을 바꾸지 않는다",
+              ...(site.sopNote ? [site.sopNote] : []),
+            ] },
+          ]}
         />
       )}
     </div>

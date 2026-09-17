@@ -5,7 +5,7 @@
  * 필요 없다 — 지도가 사라질 때 함께 사라진다.
  * ───────────────────────────────────────────── */
 
-import { useEffect, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import type maplibregl from "maplibre-gl";
 import { loadPrecipitationField } from "./precipitation-field";
 import {
@@ -13,6 +13,17 @@ import {
   setPrecipitationHour,
   setPrecipitationVisible,
 } from "./precipitation-layer";
+
+/** 구워 둔 강수 격자의 날짜(YYYY-MM-DD). 아직 못 읽었으면 null. 사건 날짜와 다르면 그 비는 이 사건의 비가 아니다(2026-09-17 창원천 2024-08-28 에 09-21 격자가 그려지던 것) */
+export function usePrecipitationDate(): string | null {
+  const [date, setDate] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadPrecipitationField().then((f) => { if (!cancelled) setDate(f.date); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+  return date;
+}
 
 export function usePrecipitationLayer(
   map: RefObject<maplibregl.Map | null>,
