@@ -77,7 +77,7 @@ export function FloodSim() {
     const apply = site.sopApply;
     return {
       id: `${picked.id}+${sopIds.join("+")}`, tag: "규정대로",
-      label: `${picked.label} · ${sopIds.map((id) => `${site.sop.find((s) => s.id === id)?.label ?? id} ${sopOn[id]}`).join(" · ")}`,
+      label: `${picked.label} · ${sopIds.map((id) => `${site.sop.find((s) => s.id === id)?.label ?? id} ${apply[id].times.find((t) => t.at === sopOn[id])?.label ?? sopOn[id]}`).join(" · ")}`,
       choice: sopIds.reduce((c, id) => apply[id].apply(c, sopOn[id]), picked.choice), baseline: false,
     };
   }, [picked, site, sopIds, sopOn]);

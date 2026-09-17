@@ -66,7 +66,17 @@ export const RIM = FLOOD_LEVELS["GEO-BASIN-SH-01"];
 export function levelOf(cumMm: number, pLim = P_LIM): number {
   return Math.min(RIM, L_BASE + K * Math.max(0, cumMm - pLim));
 }
-export const levelAtMinutes = (minutes: number, factor = 1, pLim = P_LIM) => levelOf(cumulativeAt(minutes, factor), pLim);
+/**
+ * 펌프 재가동이 권역 누적 강우를 깎는 양(mm/h 환산). 2호기 = 펌프장 1/3(가용 2/3 → 3/3).
+ * ⚠ 교체 대상 — 펌프 제원·가동 기록이 없어 한 값으로 둔다. 제원이 오면 이 값을 바꾸고 나머지는 그대로다(2026-09-17)
+ */
+export const PUMP_DRAIN_MM_PER_H = 5;
+/** 조치 — 펌프 재가동 시각(시작 후 분) · 통제 시각(시작 후 분). 없으면 그날 그대로 */
+export interface RuleActs { pumpFromMin?: number; controls?: { road?: number; underpass?: number; evac?: number } }
+/** 펌프를 켠 뒤로는 누적에서 배수량을 뺀다 — 물이 그만큼 덜 고인다 */
+export const effectiveCumAt = (minutes: number, factor = 1, pumpFromMin?: number) =>
+  Math.max(0, cumulativeAt(minutes, factor) - (pumpFromMin === undefined ? 0 : (PUMP_DRAIN_MM_PER_H * Math.max(0, minutes - pumpFromMin)) / 60));
+export const levelAtMinutes = (minutes: number, factor = 1, pLim = P_LIM, pumpFromMin?: number) => levelOf(effectiveCumAt(minutes, factor, pumpFromMin), pLim);
 export const depthOfLevel = (level: number) => Math.max(0, level - ROAD_LOW);
 
 /** 수위 → 침수 면적(ha) — 보정 스크립트가 지형에서 구운 표를 직선 보간 */
@@ -80,10 +90,18 @@ export function areaOfLevel(level: number): number {
 }
 
 /** 수위가 문턱에 처음 닿는 시각(ISO). 안 닿으면 null. 분 단위로 훑는다 */
-export function firstReach(threshold: number, factor: number, pLim: number): string | null {
+export function firstReach(threshold: number, factor: number, pLim: number, pumpFromMin?: number): string | null {
   const total = (RAIN_SERIES.length) * 60;
-  for (let m = 0; m <= total; m += 1) if (levelAtMinutes(m, factor, pLim) >= threshold) return new Date(new Date(RULE_START).getTime() + m * 60_000).toISOString();
+  for (let m = 0; m <= total; m += 1) if (levelAtMinutes(m, factor, pLim, pumpFromMin) >= threshold) return new Date(new Date(RULE_START).getTime() + m * 60_000).toISOString();
   return null;
+}
+/** 규정이 해당되기 시작하는 시각(조치 없는 판 기준) — 경계(도로 잠김) · 심각(지하차도 유입 또는 건물 도달 중 이른 것) */
+export function ruleStageTimes(factor: number, pLim: number): { warning: string | null; evacuate: string | null } {
+  const road = firstReach(FLOOD_LEVELS["GEO-FLOOD-T10"], factor, pLim);
+  const under = firstReach(FLOOD_LEVELS["GEO-FLOOD-T50"], factor, pLim);
+  const bld = firstReach(FLOOD_LEVELS["GEO-FLOOD-T80"], factor, pLim);
+  const evac = [under, bld].filter((x): x is string => Boolean(x)).sort()[0] ?? null;
+  return { warning: road, evacuate: evac };
 }
 
 const roadStateOf = (level: number): RoadState =>
@@ -94,31 +112,42 @@ const underpassOf = (level: number): UnderpassState =>
 const stageOf = (level: number): string =>
   level >= FLOOD_LEVELS["GEO-FLOOD-T80"] ? "GEO-FLOOD-T80" : level >= FLOOD_LEVELS["GEO-FLOOD-T50"] ? "GEO-FLOOD-T50" : level >= FLOOD_LEVELS["GEO-FLOOD-T30"] ? "GEO-FLOOD-T30" : level >= FLOOD_LEVELS["GEO-FLOOD-T10"] ? "GEO-FLOOD-T10" : "GEO-FLOOD-NONE";
 
-export interface RuleChoice { factor: number; pLim: number; label: string }
+export interface RuleChoice extends RuleActs { factor: number; pLim: number; label: string }
 
 /**
  * 규칙으로 만든 예측판 — 화면이 사전 작성 판과 같은 모양으로 읽는다(눈금 · 대상 · 장면 · 근거).
  * 눈금은 시간마다 하나. 수위·면적의 연속값은 `levelAtMinutes` · `areaOfLevel` 이 따로 준다.
  */
 export function ruleForecast(c: RuleChoice, id: string, baseline: boolean): Forecast {
+  const ctl = c.controls ?? {};
+  const on = (fromMin: number | undefined, m: number) => fromMin !== undefined && m >= fromMin;
   const marks: ForecastMark[] = RAIN_SERIES.map(([hh], i) => {
-    const level = levelAtMinutes((i + 1) * 60, c.factor, c.pLim);
+    const m = (i + 1) * 60;
+    const level = levelAtMinutes(m, c.factor, c.pLim, c.pumpFromMin);
     const extent = stageOf(level);
     return {
       validAt: hourIso(hh + 1),
       maxDepthM: Number(depthOfLevel(level).toFixed(2)),
       extentGeometryId: extent,
-      impactSummary: `누적 ${Math.round(cumulativeAt((i + 1) * 60, c.factor))} mm · 수위 ${level.toFixed(2)} m · 해안도로 ${roadStateOf(level)}`,
-      scene: floodScene({ road: roadStateOf(level), underpass: underpassOf(level), pump: "2호기 정지 · 가용 2/3", retention: "여유 62 %", extent: extent === "GEO-FLOOD-NONE" ? "GEO-FLOOD-T10" : extent }),
+      impactSummary: `누적 ${Math.round(effectiveCumAt(m, c.factor, c.pumpFromMin))} mm · 수위 ${level.toFixed(2)} m · 해안도로 ${roadStateOf(level)}`,
+      /* 조치가 켜진 뒤의 장면 — 통제된 도로·지하차도는 "통제됨", 재가동한 펌프는 "2호기 재가동 · 3/3" */
+      scene: floodScene({
+        road: on(ctl.road, m) ? "통제됨" : roadStateOf(level),
+        underpass: on(ctl.underpass, m) ? "통제됨" : underpassOf(level),
+        pump: on(c.pumpFromMin, m) ? "2호기 재가동 · 3/3" : "2호기 정지 · 가용 2/3",
+        retention: on(c.pumpFromMin, m) ? "추가 유입 중" : "여유 62 %",
+        extent: extent === "GEO-FLOOD-NONE" ? "GEO-FLOOD-T10" : extent,
+      }),
     };
   });
-  const roadAt = firstReach(FLOOD_LEVELS["GEO-FLOOD-T10"], c.factor, c.pLim);
-  const underAt = firstReach(FLOOD_LEVELS["GEO-FLOOD-T50"], c.factor, c.pLim);
-  const bldAt = firstReach(FLOOD_LEVELS["GEO-FLOOD-T80"], c.factor, c.pLim);
+  const roadAt = firstReach(FLOOD_LEVELS["GEO-FLOOD-T10"], c.factor, c.pLim, c.pumpFromMin);
+  const underAt = firstReach(FLOOD_LEVELS["GEO-FLOOD-T50"], c.factor, c.pLim, c.pumpFromMin);
+  const bldAt = firstReach(FLOOD_LEVELS["GEO-FLOOD-T80"], c.factor, c.pLim, c.pumpFromMin);
+  /* 통제·대피가 켜졌으면 노출은 "통제됨" — 물은 그대로고 사람이 빠진 것이다 */
   const targets: ImpactTarget[] = [
-    { kind: "도로", id: SUBJECTS.coastRoad, label: "해안도로 저지대 구간", ...(roadAt ? { arrivalAt: roadAt, exposure: "노출" as const } : { exposure: "영향 없음" as const }) },
-    { kind: "중요시설", id: SUBJECTS.underpass, label: "신포 지하차도", ...(underAt ? { arrivalAt: underAt, exposure: "부분 중단" as const } : { exposure: "영향 없음" as const }) },
-    { kind: "건물", id: "BLD-SH-LOW", label: "저지대 건물", ...(bldAt ? { arrivalAt: bldAt, exposure: "노출" as const } : { exposure: "영향 없음" as const }) },
+    { kind: "도로", id: SUBJECTS.coastRoad, label: "해안도로 저지대 구간", ...(roadAt ? { arrivalAt: roadAt, exposure: ctl.road !== undefined ? "통제됨" as const : "노출" as const } : { exposure: "영향 없음" as const }) },
+    { kind: "중요시설", id: SUBJECTS.underpass, label: "신포 지하차도", ...(underAt ? { arrivalAt: underAt, exposure: ctl.underpass !== undefined ? "통제됨" as const : "부분 중단" as const } : { exposure: "영향 없음" as const }) },
+    { kind: "건물", id: "BLD-SH-LOW", label: "저지대 건물", ...(bldAt ? { arrivalAt: bldAt, exposure: ctl.evac !== undefined ? "통제됨" as const : "노출" as const } : { exposure: "영향 없음" as const }) },
   ];
   return {
     forecastId: id, incidentId: INCIDENT_ID, alternativeId: baseline ? "baseline" : "situation",
@@ -133,6 +162,7 @@ export function ruleForecast(c: RuleChoice, id: string, baseline: boolean): Fore
       assumptions: [
         `강우 = ${RULE_DATE} 기상청 국지예보모델 재분석 격자(배수권역 최근접 칸) × ${c.factor}`,
         `한계강우량 ${c.pLim} mm (24년 도시침수 완료보고 p.41 표)`,
+        ...(c.pumpFromMin !== undefined ? [`펌프 재가동 뒤 누적 강우에서 ${PUMP_DRAIN_MM_PER_H} mm/h 씩 뺀다 — 배수 용량 환산값, 제원이 오면 교체`] : []),
         `수위 = ${L_BASE} + ${K} × (누적 − 한계) · K 는 첨두 면적을 침수흔적도 ${OBS_AREA_HA} ha 에 맞춘 보정값`,
         "하천·노면 수위 시계열 · 펌프 가동 · 조위는 미반영",
         `수위는 그릇 가장자리 ${RIM} m 에서 멈춘다 · 그 위(권역 밖 범람)는 규칙 밖`,

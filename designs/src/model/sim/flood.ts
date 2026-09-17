@@ -28,7 +28,7 @@ import { formatMarkMetric, markMetricLabel } from "../../lib/forecast-twin";
 import { CW_FACTORS, CW_ROAD_LEVEL, cwAreaOfLevel, cwInterp, cwMarksFloodedAt } from "./cw-interp";
 import { CW_FLUDMARKS_HA } from "../../fixtures/changwoncheon/area-table.generated";
 import { RISK_DISTRICT_DAMAGE_MM_PER_H } from "../../fixtures/risk-districts.generated";
-import { HEAVY_RAIN_ADVISORY_3H, HEAVY_RAIN_WARNING_3H, OBS_AREA_HA, ROAD_LOW, RULE_DATE, RULE_MAX_3H, RULE_MAX_HOURLY, RULE_START, RULE_TOTAL_MM, areaOfLevel, cumulativeAt, depthOfLevel, factorForWarning, levelAtMinutes, rainRateAt, ruleForecast, type RuleChoice } from "./rain-rule";
+import { HEAVY_RAIN_ADVISORY_3H, HEAVY_RAIN_WARNING_3H, OBS_AREA_HA, PUMP_DRAIN_MM_PER_H, ROAD_LOW, RULE_DATE, RULE_MAX_3H, RULE_MAX_HOURLY, RULE_START, RULE_TOTAL_MM, areaOfLevel, cumulativeAt, depthOfLevel, factorForWarning, levelAtMinutes, rainRateAt, ruleForecast, ruleStageTimes, type RuleChoice } from "./rain-rule";
 
 export interface SimOption { id: string; label: string; detail?: string; /** 당시 관측값에 곱하는 배율(조건의 정의가 "당시 × 1.2"일 때) */ factor?: number }
 export interface SimCondition {
@@ -190,6 +190,17 @@ const seohangSite = (): FloodSite => {
     { id: "lim", label: "한계강우량", kind: "조건", options: LIM_OPTIONS },
   ];
   const defaults = { rain: "fc", lim: "50" };
+  const minutesOf = (atIso: string) => (new Date(atIso).getTime() - new Date(RULE_START).getTime()) / 60_000;
+  const isoOfMin = (m: number) => new Date(new Date(RULE_START).getTime() + m * 60_000).toISOString();
+  /* 규정 → 조치 시각. 선택엔 "해당 시각보다 몇 분 앞"("0" · "60" · "120")이 실린다. 해당 시각은 조치 없는 판에서 읽는다(순환을 끊는다) */
+  const SH_RULE_TIMES = [{ at: "0", label: "해당 시각" }, { at: "60", label: "1시간 전" }, { at: "120", label: "2시간 전" }];
+  const SH_RULE_STAGE: Record<string, "warning" | "evacuate"> = { "SOP-04": "warning", "SOP-05": "warning", "SOP-09": "evacuate", "SOP-10": "evacuate" };
+  const actMinuteOf = (id: string, c: Record<string, string>, factor: number, pLim: number): number | undefined => {
+    const back = c[id];
+    if (back === undefined) return undefined;
+    const iso = ruleStageTimes(factor, pLim)[SH_RULE_STAGE[id]];
+    return iso ? Math.max(0, minutesOf(iso) - Number(back)) : undefined;
+  };
   /* 강우 선택지는 앵커 id 이거나 슬라이더가 준 직접 배율("x:1.62")이다 — 계산은 연속이고 앵커는 눈금일 뿐 */
   const ruleChoice = (c: Record<string, string>): RuleChoice => {
     const rain = c.rain ?? defaults.rain;
@@ -198,9 +209,14 @@ const seohangSite = (): FloodSite => {
     const factor = custom ?? r.factor ?? 1;
     const lim = Number(c.lim ?? defaults.lim);
     const rainLabel = custom !== null ? `강우 실제 × ${custom}` : r.factor !== 1 ? `강우 ${r.label}` : null;
-    return { factor, pLim: lim, label: [rainLabel, lim !== 50 ? `한계강우량 ${lim} mm` : null].filter(Boolean).join(" · ") };
+    const controls = { road: actMinuteOf("SOP-04", c, factor, lim), underpass: actMinuteOf("SOP-09", c, factor, lim), evac: actMinuteOf("SOP-10", c, factor, lim) };
+    return {
+      factor, pLim: lim, label: [rainLabel, lim !== 50 ? `한계강우량 ${lim} mm` : null].filter(Boolean).join(" · "),
+      pumpFromMin: actMinuteOf("SOP-05", c, factor, lim),
+      ...(Object.values(controls).some((v) => v !== undefined) ? { controls } : {}),
+    };
   };
-  const minutesOf = (atIso: string) => (new Date(atIso).getTime() - new Date(RULE_START).getTime()) / 60_000;
+  const actKey = (rc: RuleChoice) => [rc.pumpFromMin, rc.controls?.road, rc.controls?.underpass, rc.controls?.evac].map((v) => v ?? "").join("-");
   return {
     id: "seohang",
     label: "서항 배수권역",
@@ -213,7 +229,7 @@ const seohangSite = (): FloodSite => {
     dateLabel: `${RULE_DATE.replace(/-/g, ".")} 재현 · ${RULE_START.slice(11, 16)} 기준`,
     conditions,
     defaults,
-    boardOf: (c) => { const rc = ruleChoice(c); return ruleForecast(rc, `FC-SH-RULE-${rc.factor}-${rc.pLim}`, rc.label === ""); },
+    boardOf: (c) => { const rc = ruleChoice(c); return ruleForecast(rc, `FC-SH-RULE-${rc.factor}-${rc.pLim}-${actKey(rc)}`, rc.label === "" && actKey(rc) === "---"); },
     describeChoice: (c) => ruleChoice(c).label || "실제 그대로",
     slider: {
       condId: "rain",
@@ -237,7 +253,7 @@ const seohangSite = (): FloodSite => {
       const m = minutesOf(atIso);
       const cum = cumulativeAt(m, rc.factor);
       const last3 = cum - cumulativeAt(m - 180, rc.factor);
-      const level = levelAtMinutes(m, rc.factor, rc.pLim);
+      const level = levelAtMinutes(m, rc.factor, rc.pLim, rc.pumpFromMin);
       return [
         { label: "누적 강우", value: `${Math.round(cum)} mm`, note: rc.factor === 1 ? "실자료" : `실제 × ${rc.factor}`, scaled: rc.factor !== 1 },
         { label: "3시간 강우", value: `${Math.round(last3)} mm`, note: last3 >= HEAVY_RAIN_WARNING_3H ? "경보 기준" : last3 >= HEAVY_RAIN_ADVISORY_3H ? "주의보 기준" : undefined },
@@ -254,7 +270,7 @@ const seohangSite = (): FloodSite => {
       note: "과거 침수 지점 = 생활안전지도 침수흔적도(실자료) · 잠김 = 누적 강우(실자료 × 배율) ≥ 한계강우량(p.41)",
     },
     rule: {
-      levelAt: (c, atIso) => { const rc = ruleChoice(c); return levelAtMinutes(minutesOf(atIso), rc.factor, rc.pLim); },
+      levelAt: (c, atIso) => { const rc = ruleChoice(c); return levelAtMinutes(minutesOf(atIso), rc.factor, rc.pLim, rc.pumpFromMin); },
       areaOfLevel,
       depthOfLevel,
       floodLevel: ROAD_LOW,
@@ -278,18 +294,27 @@ const seohangSite = (): FloodSite => {
         /* 해당되는 순서(주의보 → 경보 → 대피)로 — 카탈로그는 id 순이라 단계가 섞여 읽힌다 */
         .sort((a, b) => SOP_LEVEL_RANK[a.from] - SOP_LEVEL_RANK[b.from]),
     ],
-    sopNote: "펌프 재가동·저류 유입은 제원·가동 기록이 없어 물을 다시 계산하지 않습니다. 자료가 오면 그 줄에 스위치가 섭니다",
+    /* 네 규정 전부 켤 수 있다 — 펌프(05)는 물을 바꾸고, 통제·대피(04 · 09 · 10)는 노출만 바꾼다. 시각은 해당 시각 기준 0 · 60 · 120분 앞 */
+    sopApply: Object.fromEntries(Object.keys(SH_RULE_STAGE).map((id) => [id, { label: "규정대로 했다면", times: SH_RULE_TIMES, apply: (c: Record<string, string>, at: string) => ({ ...c, [id]: at }) }])),
+    sopNote: `펌프 재가동은 배수 용량 환산값 ${PUMP_DRAIN_MM_PER_H} mm/h 로 누적 강우를 깎아 계산합니다. 펌프 제원이 오면 그 값으로 바꿉니다`,
     extraFacilities: SH_DEVICE_POINTS,
     /* 도로수위계 = 규칙 침수심 · 강우계 = 실자료 강도 × 배율. 관로 수위·조위는 규칙에 없다 */
     facilityStateOf: (id, c, atIso) => {
       const rc = ruleChoice(c);
       const m = minutesOf(atIso);
-      if (id === SUBJECTS.roadLevel) { const d = depthOfLevel(levelAtMinutes(m, rc.factor, rc.pLim)); return { state: `침수심 ${Math.round(d * 100)} cm · 규칙 계산`, tone: d > 0 ? "warning" : "neutral" }; }
+      if (id === SUBJECTS.roadLevel) { const d = depthOfLevel(levelAtMinutes(m, rc.factor, rc.pLim, rc.pumpFromMin)); return { state: `침수심 ${Math.round(d * 100)} cm · 규칙 계산`, tone: d > 0 ? "warning" : "neutral" }; }
       if (id === SUBJECTS.rainGauge) { const r = rainRateAt(m, rc.factor); return { state: `${r.toFixed(1)} mm/h${rc.factor === 1 ? " · 실자료" : ` · 실자료 × ${rc.factor}`}`, tone: r >= 30 ? "warning" : "neutral" }; }
       return null;
     },
-    /* 조치 축이 없다 — 펌프 제원·가동 로그가 오면 규칙에 넣고 여기 선다 */
-    actionsOf: () => [],
+    /* 켜진 규정이 조치가 된다 — 펌프는 환경(물이 달라진다), 통제·대피는 노출. 시간축·마커·규정 줄이 같은 목록을 읽는다 */
+    actionsOf: (c) => {
+      const rc = ruleChoice(c);
+      const mins: Record<string, number | undefined> = { "SOP-05": rc.pumpFromMin, "SOP-04": rc.controls?.road, "SOP-09": rc.controls?.underpass, "SOP-10": rc.controls?.evac };
+      return Object.entries(mins).flatMap(([id, m]) => {
+        const s = m === undefined ? null : SH_SOP_CATALOG.find((x) => x.id === id);
+        return s && m !== undefined ? [{ id, at: isoOfMin(m), label: s.label, kind: id === "SOP-05" ? "환경" as const : "노출" as const, facilityIds: SH_SOP_FACILITIES[id] ?? [] }] : [];
+      });
+    },
     wcase,
   };
 };
@@ -473,7 +498,8 @@ export function summarizeForecast(f: Forecast): ScenarioSummary {
   const sorted = marksSorted(f);
   const peak = sorted.reduce<ForecastMark | null>((a, m) => (!a || m.maxDepthM > a.maxDepthM ? m : a), null);
   const area = Math.max(0, ...sorted.map((m) => { const r = ringOf(m.extentGeometryId); return r ? ringAreaHa(r) : 0; }));
-  const start = f.arrivalAt ?? null;
+  /* 시작 = 대상 중 가장 이른 도달. 판의 arrivalAt 은 필수라 안 닿는 규칙 판이 자정(RULE_END)을 채워 두는데 그걸 잠김 시각으로 읽으면 "00:00"이 선다 */
+  const start = f.targets.filter((t) => t.arrivalAt).map((t) => t.arrivalAt as string).sort((a, b) => ms(a) - ms(b))[0] ?? null;
   return {
     startAt: start,
     startLabel: start ? f.targets.find((t) => t.arrivalAt === start)?.label ?? null : null,

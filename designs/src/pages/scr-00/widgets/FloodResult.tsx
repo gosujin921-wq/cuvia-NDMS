@@ -214,7 +214,7 @@ export function FloodResult({ base, selected, summaries, observed, at, depthNow,
                         {spec.times.map((t) => (
                           <button key={t.at} type="button" role="radio" aria-checked={chosen === t.at} onClick={() => onSop(s.id, t.at)}
                             className={cn("cursor-pointer rounded-md border px-2 py-0.5 text-caption", chosen === t.at ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-foreground-muted hover:text-foreground")}>
-                            <span className="font-mono">{t.at}</span> · {t.label}
+                            {/^\d\d:\d\d$/.test(t.at) && <><span className="font-mono">{t.at}</span> · </>}{t.label}
                           </button>
                         ))}
                       </div>
