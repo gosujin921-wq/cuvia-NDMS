@@ -51,7 +51,7 @@ export function HeatResult({ scenarios, selected, onSelect, summaries, at, rows,
             {cols.map(({ s }) => (
               <button key={s.id} type="button" onClick={() => onSelect(s.id)} aria-pressed={s.id === selected.id}
                 className={cn("cursor-pointer whitespace-nowrap rounded px-1 text-right font-mono font-semibold", s.id === selected.id ? (s.baseline ? "bg-surface-raised text-foreground" : "bg-primary text-primary-foreground") : "text-foreground-muted hover:text-foreground")}>
-                {s.baseline ? "예보" : s.tag}
+                {s.tag}
               </button>
             ))}
             <span className="text-foreground-muted">최고 체감온도</span>
@@ -71,7 +71,7 @@ export function HeatResult({ scenarios, selected, onSelect, summaries, at, rows,
 
       <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="그 시각 상태">
         <header className="flex items-baseline justify-between gap-2">
-          <h2 className="text-body font-semibold text-foreground">그 시각 · {selected.baseline ? "예보" : selected.tag}</h2>
+          <h2 className="text-body font-semibold text-foreground">그 시각 · {selected.tag}</h2>
           <span className="shrink-0 font-mono text-caption text-foreground-subtle">{formatClock(at)}</span>
         </header>
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-border bg-card px-2.5 py-2 text-caption">

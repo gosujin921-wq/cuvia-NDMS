@@ -22,6 +22,19 @@ export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelec
 }) {
   const slider = site.slider;
   const factor = slider ? slider.valueOf(selected.choice) : null;
+  /* 눈금을 값 순으로 놓고, 앞 눈금과 14% 안이면 아랫줄(row 1)로 */
+  const placed = (() => {
+    if (!slider) return [] as { value: number; label: string; row: 0 | 1 }[];
+    const span = slider.max - slider.min;
+    const sorted = [...slider.anchors].sort((x, y) => x.value - y.value);
+    const out: { value: number; label: string; row: 0 | 1 }[] = [];
+    for (const a of sorted) {
+      const prev = out[out.length - 1];
+      const row: 0 | 1 = prev && ((a.value - prev.value) / span) * 100 < 20 ? (prev.row === 0 ? 1 : 0) : 0;
+      out.push({ ...a, row });
+    }
+    return out;
+  })();
   return (
     <div className="flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto overflow-x-hidden rounded-[inherit]">
       <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="대상">
@@ -84,13 +97,14 @@ export function SimScenarios({ sites, site, onSite, scenarios, selected, onSelec
               <span className="text-foreground-muted">{site.conditions.find((c) => c.id === slider.condId)?.label ?? "조건"} 직접 조정</span>
               <span className={cn("font-mono font-semibold", slider.anchors.some((a) => Math.abs(a.value - factor) < 1e-9 && a.value === slider.anchors[0].value) ? "text-foreground" : "text-warning")}>{slider.format(factor)}</span>
             </div>
-            <div className="relative h-7">
-              {slider.anchors.map((a) => {
+            {/* 눈금 라벨 — 가까운 눈금(20% 안)은 아랫줄로 비켜 놓는다. 겹치면 둘 다 못 읽는다 */}
+            <div className={cn("relative", placed.some((a) => a.row === 1) ? "h-14" : "h-10")}>
+              {placed.map((a) => {
                 const pct = ((a.value - slider.min) / (slider.max - slider.min)) * 100;
                 return (
                   <span key={a.label} className="absolute top-0 flex -translate-x-1/2 flex-col items-center" style={{ left: `${pct}%` }} aria-hidden>
-                    <u className={cn("h-2 w-0.5 rounded-sm", Math.abs(a.value - factor) < 0.026 ? "bg-primary-text" : "bg-border-light")} />
-                    <span className="mt-3 whitespace-nowrap font-mono text-caption text-foreground-subtle">{a.label}</span>
+                    <u className={cn("w-0.5 rounded-sm", a.row === 1 ? "h-8" : "h-2", Math.abs(a.value - factor) < 0.026 ? "bg-primary-text" : "bg-border-light")} />
+                    <span className={cn("whitespace-nowrap font-mono text-caption text-foreground-subtle", a.row === 1 ? "mt-0.5" : "mt-3")}>{a.label}</span>
                   </span>
                 );
               })}

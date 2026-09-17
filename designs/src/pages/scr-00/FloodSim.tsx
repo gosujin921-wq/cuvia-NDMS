@@ -65,7 +65,15 @@ export function FloodSim() {
   const rf = site.slider ? params.get("rf") : null;
   const custom = useMemo(() => (rf && site.slider ? { [site.slider.condId]: site.slider.encode(Number(rf)), ...(params.get("rl") ? { lim: params.get("rl") as string } : {}) } : null), [rf, site, params]);
   const scenarios = useMemo(() => scenariosOf(site, custom), [site, custom]);
-  const selected = scenarios.find((s) => s.id === params.get("sc")) ?? scenarios[0];
+  const picked = scenarios.find((s) => s.id === params.get("sc")) ?? scenarios[0];
+  /* "이 규정대로 하면" — 관련 SOP 줄의 스위치. 켜면 고른 시나리오에 그 SOP 를 규정 시각에 적용한 열이 하나 더 서고 그것을 본다 */
+  const sopOn = params.get("sop");
+  const sopSpec = sopOn && site.sopApply?.[sopOn] ? site.sopApply[sopOn] : null;
+  const selected = useMemo(
+    () => (sopSpec && sopOn ? { id: `${picked.id}+${sopOn}`, tag: `+${sopOn}`, label: `${picked.label} · ${sopSpec.label}`, choice: sopSpec.apply(picked.choice), baseline: false } : picked),
+    [picked, sopSpec, sopOn],
+  );
+  const columns = useMemo(() => (sopSpec ? [...scenarios, selected] : scenarios), [scenarios, selected, sopSpec]);
   const setQuery = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(window.location.search);
     for (const [k, v] of Object.entries(patch)) { if (v === null) next.delete(k); else next.set(k, v); }
@@ -73,9 +81,10 @@ export function FloodSim() {
   };
 
   const forecast = useMemo(() => site.boardOf(selected.choice), [site, selected]);
-  const baseline = useMemo(() => site.boardOf(scenarios[0].choice), [site, scenarios]);
+  /* 겹쳐 보기의 기준 — SOP 를 켰으면 "그 규정을 안 했을 때"(고른 시나리오), 아니면 기준 시나리오 */
+  const baseline = useMemo(() => site.boardOf(sopSpec ? picked.choice : scenarios[0].choice), [site, scenarios, picked, sopSpec]);
   const summaries = useMemo(
-    () => Object.fromEntries(scenarios.map((s) => {
+    () => Object.fromEntries(columns.map((s) => {
       const f = site.boardOf(s.choice);
       if (!f) return [s.id, null];
       const sum = summarizeForecast(f);
@@ -83,7 +92,7 @@ export function FloodSim() {
       if (site.rule) { const rule = site.rule; sum.maxAreaHa = rule.areaOfLevel(Math.max(...f.marks.map((m) => rule.levelAt(s.choice, m.validAt)))); }
       return [s.id, sum];
     })),
-    [site, scenarios],
+    [site, columns],
   );
 
   /* ── 시간축: 현재 → 지평선. 재생은 끝에 닿으면 처음부터 ── */
@@ -217,8 +226,8 @@ export function FloodSim() {
         <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
           <SimScenarios
             sites={sites} site={site} onSite={(id) => setQuery({ site: id, sc: null, rf: null, rl: null })}
-            scenarios={scenarios} selected={selected} onSelect={(id) => setQuery({ sc: id })}
-            onSlide={site.slider ? (f) => setQuery({ rf: String(Number(f.toFixed(2))), rl: selected.choice.lim ?? null, sc: "C" }) : undefined}
+            scenarios={scenarios} selected={picked} onSelect={(id) => setQuery({ sc: id })}
+            onSlide={site.slider ? (f) => setQuery({ rf: String(Number(f.toFixed(2))), rl: picked.choice.lim ?? null, sc: "C" }) : undefined}
           />
         </GlassPanel>
         {insetKindOf(family) && (
@@ -288,9 +297,12 @@ export function FloodSim() {
         <GlassPanel className="pointer-events-auto flex min-h-0 flex-1 flex-col">
           {forecast ? (
             <FloodResult
-              scenarios={scenarios}
+              scenarios={columns}
               selected={selected}
-              onSelect={(id) => setQuery({ sc: id })}
+              onSelect={(id) => setQuery({ sc: id.replace(/\+.*$/, "") })}
+              sopApplicable={Object.keys(site.sopApply ?? {})}
+              sopOn={sopSpec ? sopOn : null}
+              onToggleSop={(id) => setQuery({ sop: sopOn === id ? null : id })}
               summaries={summaries}
               observed={site.observed}
               sourceNote={site.rule

@@ -19,7 +19,7 @@ import type { AlertLevel } from "../../../demo/levels";
 const LEVEL_LABEL: Record<AlertLevel, string> = { advisory: "주의보", warning: "경보", evacuate: "대피" };
 const LEVEL_RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
 
-export function FloodResult({ scenarios, selected, onSelect, summaries, observed, sourceNote, at, stateRows, depthNow, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, compare, onCompare, onBasis }: {
+export function FloodResult({ scenarios, selected, onSelect, summaries, observed, sourceNote, at, stateRows, depthNow, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, sopApplicable, sopOn, onToggleSop, compare, onCompare, onBasis }: {
   scenarios: SimScenario[];
   selected: SimScenario;
   onSelect: (id: string) => void;
@@ -42,6 +42,10 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
   /** 켜진 시설 id — SOP 줄·영향 객체 줄과 지도 마커가 같은 집합을 본다 */
   focus: Set<string>;
   onFocus: (facilityIds: string[] | null) => void;
+  /** "이 규정대로 하면"을 켤 수 있는 SOP id — 환경을 바꾸는 규정(방류 · 펌프)만 */
+  sopApplicable: string[];
+  sopOn: string | null;
+  onToggleSop: (id: string) => void;
   compare: boolean;
   onCompare: (v: boolean) => void;
   onBasis: () => void;
@@ -59,7 +63,7 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
       <section className="flex shrink-0 flex-col gap-2 p-3" aria-label="시나리오 비교">
         <header className="flex items-baseline justify-between gap-2">
           <h2 className="text-body font-semibold text-foreground">시나리오 비교</h2>
-          <span className="shrink-0 text-caption text-foreground-subtle">기준은 실제 사건</span>
+          <span className="shrink-0 text-caption text-foreground-subtle">기준 = 그날 그대로</span>
         </header>
         <div className="overflow-x-auto rounded-md border border-border bg-card px-2.5 py-2 text-caption">
           <div className="grid gap-x-2 gap-y-1" style={{ gridTemplateColumns: `auto repeat(${cols.length}, minmax(64px, 1fr))` }}>
@@ -67,7 +71,7 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
             {cols.map(({ s }) => (
               <button key={s.id} type="button" onClick={() => onSelect(s.id)} aria-pressed={s.id === selected.id}
                 className={cn("cursor-pointer whitespace-nowrap rounded px-1 text-right font-mono font-semibold", s.id === selected.id ? (s.baseline ? "bg-surface-raised text-foreground" : "bg-primary text-primary-foreground") : "text-foreground-muted hover:text-foreground")}>
-                {s.baseline ? "실제" : s.tag}
+                {s.tag}
               </button>
             ))}
             <span className="text-foreground-muted">침수 시작</span>
@@ -98,8 +102,8 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
             className={cn("flex cursor-pointer items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-caption",
               compare ? "border-warning bg-warning/10 text-foreground" : "border-border bg-card text-foreground-muted hover:text-foreground")}
           >
-            <span className="flex items-center gap-1.5"><Icon icon="mdi:compare-horizontal" className="size-4" aria-hidden />지도에 실제 사건 겹쳐 보기</span>
-            <span className="font-mono text-foreground-subtle">{compare ? "점선 = 실제" : "끔"}</span>
+            <span className="flex items-center gap-1.5"><Icon icon="mdi:compare-horizontal" className="size-4" aria-hidden />{sopOn ? "지도에 규정 적용 전 겹쳐 보기" : "지도에 기준 겹쳐 보기"}</span>
+            <span className="font-mono text-foreground-subtle">{compare ? (sopOn ? "점선 = 적용 전" : "점선 = 기준") : "끔"}</span>
           </button>
         )}
         <p className="break-keep text-caption leading-snug text-foreground-subtle">{sourceNote}</p>
@@ -231,12 +235,25 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
                   <span className="shrink-0 font-mono text-foreground-subtle">{LEVEL_LABEL[s.from]}부터{s.mode ? ` · ${s.mode === "auto" ? "자동" : "승인"}` : ""}</span>
                 </span>
                 {s.detail && <span className="break-keep pl-4 text-caption leading-snug text-foreground-subtle">{s.detail}</span>}
+                {/* 환경을 바꾸는 규정만 — "이 규정대로 하면" 결과가 다시 계산된다. 전파·통제는 스위치가 없다(물이 안 바뀐다) */}
+                {sopApplicable.includes(s.id) && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleSop(s.id)}
+                    aria-pressed={sopOn === s.id}
+                    className={cn("ml-4 mt-0.5 flex w-fit cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 text-caption",
+                      sopOn === s.id ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-foreground-muted hover:text-foreground")}
+                  >
+                    <Icon icon={sopOn === s.id ? "mdi:toggle-switch" : "mdi:toggle-switch-off-outline"} className="size-4" aria-hidden />
+                    이 규정대로 하면 · 결과 다시 계산
+                  </button>
+                )}
               </li>
             );
           })}
         </ul>
         <p className="break-keep text-caption leading-snug text-foreground-subtle">
-          이 조건이면 해당되는 기존 SOP입니다. 당시 실행 여부가 아니며, 발령·전파는 승인 뒤에 합니다
+          이 조건이면 해당되는 기존 SOP입니다. 당시 실행 여부가 아니며, 발령·전파는 승인 뒤에 합니다. 환경을 바꾸는 규정만 다시 계산합니다
         </p>
       </section>
 

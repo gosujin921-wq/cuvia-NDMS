@@ -123,6 +123,11 @@ export interface FloodSite extends SimSiteBase {
   extraFacilities: ScenePoint[];
   /** 그 시나리오·판에서 일어나는 조치 */
   actionsOf(choice: Record<string, string>, f: Forecast | null): SimAction[];
+  /**
+   * "이 규정대로 하면" — 환경을 바꾸는 SOP(방류 · 펌프)를 규정 시각에 실행한 조합. 관련 SOP 줄의 스위치가 켠다.
+   * 시나리오(조건)와 갈라 둔다: 조건은 "그때 비가 달랐다면", SOP 적용은 "규정대로 했다면"이다
+   */
+  sopApply?: Record<string, { label: string; apply(choice: Record<string, string>): Record<string, string> }>;
   wcase: WhatIfCase | null;
 }
 
@@ -186,8 +191,6 @@ const seohangSite = (): FloodSite => {
     scopeGeometryId: wcase?.scope.affectedGeometryId,
     now: RULE_START,
     dateLabel: `${RULE_DATE.replace(/-/g, ".")} 재현 · 강우 실자료 · 규칙 계산`,
-    baselineTag: "실제 사건",
-    baselineLabel: "그날 강우 · 한계강우량 50 mm",
     conditions,
     defaults,
     boardOf: (c) => { const rc = ruleChoice(c); return ruleForecast(rc, `FC-SH-RULE-${rc.factor}-${rc.pLim}`, rc.label === ""); },
@@ -201,7 +204,7 @@ const seohangSite = (): FloodSite => {
         { value: factorForWarning(HEAVY_RAIN_ADVISORY_3H), label: "주의보" },
         { value: factorForWarning(HEAVY_RAIN_WARNING_3H), label: "경보" },
         /* 전국 재해위험지구 표본의 피해 당시 시간강우 중앙값(행안부 · 창원 행 없음) — 시간 최대가 그 세기에 닿는 배율 */
-        { value: Number((RISK_DISTRICT_DAMAGE_MM_PER_H / RULE_MAX_HOURLY).toFixed(2)), label: "위험지구 피해" },
+        { value: Number((RISK_DISTRICT_DAMAGE_MM_PER_H / RULE_MAX_HOURLY).toFixed(2)), label: "위험지구" },
       ].filter((a) => a.value >= 0.5 && a.value <= 2),
       valueOf: (c) => ruleChoice(c).factor,
       encode: (v) => `x:${v}`,
@@ -289,8 +292,6 @@ const changwoncheonSite = (): FloodSite | null => {
     now,
     /* 이 사건의 수치는 원장이 아니라 시나리오 편집값이다(fixtures/changwoncheon/whatif.ts 머리말). "실제 사건 · 실측"이라 부르지 않는다 */
     dateLabel: `${now.slice(0, 10).replace(/-/g, ".")} 사례(편집) · ${now.slice(11, 16)} 기준`,
-    baselineTag: "사례 시나리오",
-    baselineLabel: "편집 사례 · 그날 조건 · 그날 조치",
     conditions: [
       { id: "rain", label: "강우", kind: "조건", stateLabel: t.conditions[0]?.stateLabel, options: rainSteps.map((s) => ({ id: s.id, label: s.label, detail: s.detail, factor: s.factor })) },
       {
@@ -304,13 +305,13 @@ const changwoncheonSite = (): FloodSite | null => {
     defaults: { rain: rainSteps[0]?.id ?? "now", discharge: "actual" },
     boardOf: (c) => interp(c).forecast,
     baselineOf: (c) => cwInterp(wcase, factorOf(c), {}).forecast,
-    describeChoice: (c) => [factorOf(c) !== 1 ? `강우 당시 × ${factorOf(c)}` : null, (c.discharge ?? "actual") === "early" ? `${now.slice(11, 16)} 조기 방류` : null].filter(Boolean).join(" · ") || "그날 조건 · 그날 조치",
+    describeChoice: (c) => [factorOf(c) !== 1 ? `강우 당시 × ${factorOf(c)}` : null, (c.discharge ?? "actual") === "early" ? `${now.slice(11, 16)} 조기 방류` : null].filter(Boolean).join(" · ") || "그날 그대로",
     slider: {
       condId: "rain", min: 1, max: 1.5, step: 0.05,
       anchors: [
         ...CW_FACTORS.map((f) => ({ value: f.factor, label: f.label })),
         /* 편집 강우계 최대(35 mm/h)가 전국 위험지구 피해 시간강우 중앙값에 닿는 배율 — 판 범위 안이면 눈금으로 */
-        ...(cwMaxHourly > 0 && RISK_DISTRICT_DAMAGE_MM_PER_H / cwMaxHourly <= 1.5 ? [{ value: Number((RISK_DISTRICT_DAMAGE_MM_PER_H / cwMaxHourly).toFixed(2)), label: "위험지구 피해" }] : []),
+        ...(cwMaxHourly > 0 && RISK_DISTRICT_DAMAGE_MM_PER_H / cwMaxHourly <= 1.5 ? [{ value: Number((RISK_DISTRICT_DAMAGE_MM_PER_H / cwMaxHourly).toFixed(2)), label: "위험지구" }] : []),
       ],
       valueOf: factorOf,
       encode: (v) => `x:${v}`,
@@ -322,6 +323,8 @@ const changwoncheonSite = (): FloodSite | null => {
       depthOfLevel: (l) => Math.max(0, l - CW_ROAD_LEVEL),
       surfaceGeometryId: "GEO-CW-L20",
     },
+    /* S2 상류 저류지 방류 — 규정 발동 시각(14:35)에 했다면. 시나리오가 아니라 SOP 줄의 스위치다 */
+    sopApply: { S2: { label: `${now.slice(11, 16)} 방류(발동 즉시)`, apply: (c) => ({ ...c, discharge: "early" }) } },
     marks: {
       areaHa: CW_FLUDMARKS_HA,
       floodedAt: (c) => cwMarksFloodedAt(wcase, factorOf(c), 50, now, horizon),
@@ -364,15 +367,18 @@ export interface SimScenario {
 }
 
 export function scenariosOf(site: SimSiteBase, custom?: Record<string, string> | null): SimScenario[] {
-  /* A 는 첫 축, B 는 둘째 축 — 침수는 조건 · 조치, 폭염은 조건 · 조건(기온 · 습도)이다. 축의 종류가 아니라 순서가 열을 정한다 */
-  const cond = site.conditions[0];
-  const act = site.conditions[1];
+  /* 시나리오는 **조건 축만**이다(2026-09-17 사용자 "조기 방류는 SOP 기준"). 조치(방류 · 펌프)는 관련 SOP 줄의 "이 규정대로 하면"이 맡는다.
+     A 는 첫 조건 축, B 는 둘째 조건 축(침수 서항: 강우 · 한계강우량, 폭염: 기온 · 습도). 창원천은 조건 축이 강우 하나라 A 만 선다 */
+  const axes = site.conditions.filter((c) => c.kind === "조건");
+  const cond = axes[0];
+  const act = axes[1];
   const altCond = cond?.options.find((o) => o.id !== site.defaults[cond.id]) ?? null;
   const altAct = act?.options.find((o) => o.id !== site.defaults[act.id]) ?? null;
   const out: SimScenario[] = [{
     id: "base",
-    tag: site.baselineTag ?? (site.status === "재현" ? "실제 사건" : "기준 전망"),
-    label: site.baselineLabel ?? (site.status === "재현" ? "그날 조건 · 그날 조치" : "예보대로 · 지금 상태"),
+    /* 기준 줄은 어느 대상이든 한 말이다 — "기준 · 그날 그대로". 편집인지 실자료인지는 대상 머리와 근거 절이 말한다(2026-09-17 사용자) */
+    tag: site.baselineTag ?? "기준",
+    label: site.baselineLabel ?? (site.status === "재현" ? "그날 그대로" : "지금 그대로"),
     choice: { ...site.defaults }, baseline: true,
   }];
   /* 조건 축은 축 이름을 앞에 붙인다("강우 +20%" · "습도 +10 %p"). 조치 축은 선택지가 이미 문장이다("14:35 조기 방류") */

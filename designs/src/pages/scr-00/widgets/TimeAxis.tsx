@@ -43,8 +43,9 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
         >
           <Icon icon={playing ? "mdi:pause" : "mdi:play"} className="size-5" aria-hidden />
         </button>
-        <span className="font-mono text-[20px] font-bold leading-none tracking-tight text-foreground tabular-nums">{formatClock(at)}</span>
-        <span className={cn("shrink-0 rounded border px-1.5 py-0.5 text-caption", m === 0 ? "border-primary-text text-primary-text" : "border-warning text-warning")}>
+        {/* 시계·배지는 고정 폭 — 값마다 폭이 달라지면 트랙이 좌우로 흔들린다(2026-09-17 사용자) */}
+        <span className="w-[66px] shrink-0 font-mono text-[20px] font-bold leading-none tracking-tight text-foreground tabular-nums">{formatClock(at)}</span>
+        <span className={cn("w-[96px] shrink-0 truncate rounded border px-1.5 py-0.5 text-center text-caption", m === 0 ? "border-primary-text text-primary-text" : "border-warning text-warning")}>
           {m === 0 ? "현재" : `+${m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60 ? `${m % 60}분` : ""}`.trim() : `${m}분`}`}
         </span>
 

@@ -69,8 +69,8 @@ export function heatSite(field: TemperatureField | null): HeatSite {
       },
     ],
     defaults: { temp: "fc", rh: "fc" },
-    baselineTag: "예보",
-    baselineLabel: "기상청 국지예보 그대로",
+    baselineTag: "기준",
+    baselineLabel: "예보 그대로",
     describeChoice: (c) => { const o = offsetOf(c); return [o.t ? `기온 예보 +${o.t.toFixed(1)}°C` : null, o.rh ? `습도 +${o.rh} %p` : null].filter(Boolean).join(" · ") || "예보 그대로"; },
     /* 연속 축 — 기온 오프셋. 실자료 격자 위 계산이라 어디서든 값이 난다. 근거 앵커는 예보(0) 하나뿐이고 나머지는 가정이라 눈금을 더 세우지 않는다 */
     slider: {
