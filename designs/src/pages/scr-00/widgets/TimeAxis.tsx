@@ -29,6 +29,13 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
   const m = Math.min(span, Math.max(0, minutes));
   const at = new Date(new Date(origin).getTime() + m * 60_000).toISOString();
   const pct = (iso: string) => Math.min(100, Math.max(0, ((new Date(iso).getTime() - new Date(origin).getTime()) / 60_000 / span) * 100));
+  /* 같은 분의 조치는 한 눈금 — 아이콘은 첫 건의 것 */
+  const grouped = (() => {
+    const inRange = events.filter((e) => { const t = new Date(e.at).getTime(); return t >= new Date(origin).getTime() && t <= new Date(end).getTime(); });
+    const byMin = new Map<number, { at: string; icon: string; labels: string[] }>();
+    for (const e of inRange) { const k = Math.round(new Date(e.at).getTime() / 60_000); const g = byMin.get(k); if (g) g.labels.push(e.label); else byMin.set(k, { at: e.at, icon: e.icon, labels: [e.label] }); }
+    return [...byMin.values()];
+  })();
 
   return (
     /* 한 줄 캡슐이다 — 안내 문장 줄을 두지 않는다(대상·날짜는 좌측 레일이 말한다 · 2026-09-17 사용자). 눈금 라벨 몫으로 아래만 한 칸.
@@ -55,12 +62,13 @@ export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, p
           {/* 지나온 구간 */}
           <i className="absolute left-0 top-[11px] h-1 rounded-full bg-primary" style={{ width: `${(m / span) * 100}%` }} aria-hidden />
           <i className="absolute right-0 top-[11px] h-1 rounded-full bg-border" style={{ left: `${(m / span) * 100}%` }} aria-hidden />
-          {/* 조치 눈금 — 트랙 위. 지난 조치는 채운 원, 앞의 조치는 빈 원. 라벨은 title(호버) */}
-          {events.filter((e) => { const t = new Date(e.at).getTime(); return t >= new Date(origin).getTime() && t <= new Date(end).getTime(); }).map((e) => {
-            const passed = pct(e.at) <= (m / span) * 100 + 0.5;
+          {/* 조치 눈금 — 트랙 위. 지난 것은 채운 원, 앞의 것은 빈 원. 같은 분의 여러 건은 한 눈금에 개수를 단다(겹치면 못 읽는다). 라벨은 title(호버) */}
+          {grouped.map((g) => {
+            const passed = pct(g.at) <= (m / span) * 100 + 0.5;
             return (
-              <span key={`${e.at}-${e.label}`} className={cn("absolute -top-3.5 flex size-4 -translate-x-1/2 items-center justify-center rounded-full border", passed ? "border-primary bg-primary text-primary-foreground" : "border-primary-text bg-surface text-primary-text")} style={{ left: `${pct(e.at)}%` }} title={`${formatClock(e.at)} ${e.label}`} aria-hidden>
-                <Icon icon={e.icon} className="size-2.5" />
+              <span key={g.at} className={cn("absolute -top-3.5 flex h-4 min-w-4 -translate-x-1/2 items-center justify-center gap-0.5 rounded-full border px-0.5 font-mono text-[10px] font-bold", passed ? "border-primary bg-primary text-primary-foreground" : "border-primary-text bg-surface text-primary-text")} style={{ left: `${pct(g.at)}%` }} title={`${formatClock(g.at)} ${g.labels.join(" · ")}`} aria-hidden>
+                <Icon icon={g.icon} className="size-2.5" />
+                {g.labels.length > 1 && <span>{g.labels.length}</span>}
               </span>
             );
           })}

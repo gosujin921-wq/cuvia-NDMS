@@ -144,10 +144,10 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
                   onMouseLeave={() => onFocus(null)}
                   className={cn("flex items-baseline gap-2 rounded px-1 py-0.5", on && "bg-primary/10", done ? "text-foreground" : "text-foreground-subtle")}
                 >
-                  <Icon icon={done ? (a.kind === "환경" ? "mdi:play-circle" : "mdi:hand-back-left") : "mdi:circle-outline"} className={cn("size-3.5 shrink-0 self-center", done ? "text-primary-text" : "text-border-light")} aria-hidden />
+                  <Icon icon={done ? (a.kind === "환경" ? "mdi:play-circle" : a.kind === "규정" ? "mdi:clipboard-check" : "mdi:hand-back-left") : "mdi:circle-outline"} className={cn("size-3.5 shrink-0 self-center", done ? (a.kind === "규정" ? "text-warning" : "text-primary-text") : "text-border-light")} aria-hidden />
                   <span className="shrink-0 font-mono">{formatClock(a.at)}</span>
-                  <span className="min-w-0 break-keep">{a.label}{done ? "" : " · 예정"}</span>
-                  <span className="ml-auto shrink-0 text-foreground-subtle">{a.kind === "환경" ? "물이 달라진다" : "노출만"}</span>
+                  <span className="min-w-0 break-keep">{a.kind === "규정" ? `규정 해당 · ${a.label}` : a.label}{done ? "" : " · 예정"}</span>
+                  <span className="ml-auto shrink-0 text-foreground-subtle">{a.kind === "환경" ? "물이 달라진다" : a.kind === "규정" ? "매칭" : "노출만"}</span>
                 </li>
               );
             })}
@@ -232,7 +232,10 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
                     {/* 지도에 시설이 있는 규정 — 짚으면 그 시설이 켜진다 */}
                     {linked && <Icon icon="mdi:map-marker-outline" className="size-3.5 shrink-0 self-center text-foreground-subtle" aria-label="지도에 시설 있음" />}
                   </span>
-                  <span className="shrink-0 font-mono text-foreground-subtle">{LEVEL_LABEL[s.from]}부터{s.mode ? ` · ${s.mode === "auto" ? "자동" : "승인"}` : ""}</span>
+                  {/* 타임라인과 같은 시각 — 이 시나리오에서 규정이 해당되기 시작한 시각(조치 기록이 있으면 그 시각) */}
+                  {(() => { const ev = actions.find((a) => a.id === `sop-${s.id}` || a.id === s.id); return ev
+                    ? <span className={cn("shrink-0 font-mono", isPast(ev.at, at) ? (ev.kind === "규정" ? "text-warning" : "text-primary-text") : "text-foreground-subtle")}>{formatClock(ev.at)}{isPast(ev.at, at) ? "~" : " 예상"} · {LEVEL_LABEL[s.from]}부터</span>
+                    : <span className="shrink-0 font-mono text-foreground-subtle">{LEVEL_LABEL[s.from]}부터{s.mode ? ` · ${s.mode === "auto" ? "자동" : "승인"}` : ""}</span>; })()}
                 </span>
                 {s.detail && <span className="break-keep pl-4 text-caption leading-snug text-foreground-subtle">{s.detail}</span>}
                 {/* 환경을 바꾸는 규정만 — "이 규정대로 하면" 결과가 다시 계산된다. 전파·통제는 스위치가 없다(물이 안 바뀐다) */}

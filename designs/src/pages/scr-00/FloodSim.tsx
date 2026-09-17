@@ -32,7 +32,7 @@ import { SceneLayers, raiseSceneLayers } from "../../components/twin/SceneLayers
 import { ProfileView } from "../../components/twin/AuxView";
 import { mergeScene } from "../../model/scene";
 import {
-  depthAt, floodSites, floorMarkAt, horizonOf, impactsAt, ringAreaHa, ringOf, scenariosOf, stageAt, stateRowsAt, summarizeForecast, surfaceLevelAt,
+  depthAt, floodSites, floorMarkAt, horizonOf, impactsAt, ringAreaHa, ringOf, scenariosOf, sopEventsOf, stageAt, stateRowsAt, summarizeForecast, surfaceLevelAt,
 } from "../../model/sim/flood";
 import { ForecastBasisDialog } from "../scr-05/widgets/ForecastBasisDialog";
 import { SimScenarios } from "./widgets/SimScenarios";
@@ -137,7 +137,12 @@ export function FloodSim() {
   const sceneLayers = useMemo(() => mergeScene(forecast?.scene, floorMark?.scene), [forecast, floorMark]);
   const impacts = useMemo(() => (forecast ? impactsAt(forecast, at, sceneLayers) : []), [forecast, at, sceneLayers]);
   /* 조치 — 이 시나리오에서 일어나는 것. 시간축 눈금 · 마커 배지 · 조치 이력이 같은 목록을 읽는다 */
-  const actions = useMemo(() => site.actionsOf(selected.choice, forecast).sort((a, b) => a.at.localeCompare(b.at)), [site, selected, forecast]);
+  const actions = useMemo(() => {
+    const acted = site.actionsOf(selected.choice, forecast);
+    /* 조치가 없는 규정은 "해당되기 시작하는 시각"으로 짚는다 — 서항처럼 그날 대응 기록이 없는 재현에도 타임라인에 규정이 선다 */
+    const matched = forecast ? sopEventsOf(forecast, site.sop, origin, end, acted) : [];
+    return [...acted, ...matched].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  }, [site, selected, forecast, origin, end]);
   /* 시설 = 장면의 점 + 대상의 장치. 마커는 DS 로 따로 그리므로 장면층에서는 점을 뺀다 */
   /* 계측 지점은 대상이 아는 값만 채운다(도로수위계 = 규칙 침수심 · 강우계 = 실자료 강도). 모르는 것은 "계측 미연계"로 남는다 */
   const points = useMemo<ScenePoint[]>(() => [
@@ -275,7 +280,7 @@ export function FloodSim() {
           origin={origin}
           end={end}
           ticks={ticks}
-          events={actions.map((a) => ({ at: a.at, label: a.label, icon: a.kind === "환경" ? "mdi:play" : "mdi:hand-back-left" }))}
+          events={actions.map((a) => ({ at: a.at, label: a.kind === "규정" ? `규정 해당 · ${a.label}` : a.label, icon: a.kind === "환경" ? "mdi:play" : a.kind === "규정" ? "mdi:clipboard-check" : "mdi:hand-back-left" }))}
           minutes={minutes}
           onChange={(m) => { setPlaying(false); setMinutes(m); }}
           playing={playing}

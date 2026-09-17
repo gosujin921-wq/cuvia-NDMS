@@ -56,8 +56,9 @@ function Pin({ map, point, done, selected, onPick }: { map: RefObject<maplibregl
   }, [map, host, point.at]);
 
   const tone = point.tone ?? "neutral";
-  const color = done ? "var(--color-primary)" : TONE_COLOR[tone];
-  const sub = done ? `${done.label} ${formatClock(done.at)}~` : point.state;
+  const rule = done?.kind === "규정";
+  const color = done ? (rule ? "var(--color-warning)" : "var(--color-primary)") : TONE_COLOR[tone];
+  const sub = done ? `${rule ? "규정 해당 · " : ""}${done.label} ${formatClock(done.at)}~` : point.state;
   return createPortal(
     <div className={cn("flex flex-col items-center gap-0.5", selected && "z-10")}>
       <MapMarker
@@ -67,12 +68,12 @@ function Pin({ map, point, done, selected, onPick }: { map: RefObject<maplibregl
         size={point.small ? 26 : 32}
         color={color}
         selected={selected}
-        badge={done ? { icon: done.kind === "환경" ? "mdi:play" : "mdi:hand-back-left", tone: "var(--color-primary)", label: done.label } : undefined}
+        badge={done ? { icon: done.kind === "환경" ? "mdi:play" : rule ? "mdi:clipboard-check" : "mdi:hand-back-left", tone: rule ? "var(--color-warning)" : "var(--color-primary)", label: done.label } : undefined}
         picker={{
           title: point.label,
           rows: [
             ...(point.state ? [{ label: "상태", value: point.state }] : []),
-            ...(done ? [{ label: "조치", value: `${done.label} · ${formatClock(done.at)}`, tone: "var(--color-primary)" }] : []),
+            ...(done ? [{ label: rule ? "규정 해당" : "조치", value: `${done.label} · ${formatClock(done.at)}`, tone: rule ? "var(--color-warning)" : "var(--color-primary)" }] : []),
           ],
         }}
         onClick={() => onPick(point.id)}
@@ -81,7 +82,7 @@ function Pin({ map, point, done, selected, onPick }: { map: RefObject<maplibregl
       {(!point.small || selected || done) && (
         <span className={cn("pointer-events-none flex max-w-[200px] flex-col items-center rounded bg-surface/85 px-1.5 py-0.5 text-caption leading-tight backdrop-blur-sm", selected ? "text-foreground ring-1 ring-primary" : "text-foreground")}>
           <span className="truncate">{point.label}</span>
-          {sub && <span className={cn("font-semibold", done ? "text-primary-text" : tone === "neutral" ? "text-foreground-muted" : `text-${tone}`)}>{sub}</span>}
+          {sub && <span className={cn("font-semibold", done ? (rule ? "text-warning" : "text-primary-text") : tone === "neutral" ? "text-foreground-muted" : `text-${tone}`)}>{sub}</span>}
         </span>
       )}
     </div>,

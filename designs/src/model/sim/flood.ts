@@ -58,7 +58,7 @@ export interface SimSop {
  *   환경  물을 바꾸는 조치(방류 · 펌프). 결과(수면 · 종단도)가 달라진다
  *   노출  사람을 빼는 조치(통제 · 대피). 마커·선만 바뀌고 물은 그대로다
  */
-export interface SimAction { id: string; at: string; label: string; kind: "환경" | "노출"; facilityIds: string[] }
+export interface SimAction { id: string; at: string; label: string; kind: "환경" | "노출" | "규정"; facilityIds: string[] }
 /** 시각 비교는 늘 밀리초로 — "+09:00" 표기와 "Z" 표기가 섞이면 문자열 비교가 틀린다(2026-09-17 조치가 전부 "예정"으로 섰다) */
 export const isPast = (eventIso: string, atIso: string) => new Date(eventIso).getTime() <= new Date(atIso).getTime();
 
@@ -623,6 +623,25 @@ export function impactsAt(f: Forecast, atIso: string, layers: SceneLayer[]): Imp
   /* 영향 중인 것이 먼저, 예상이 그다음, 없음은 아래 */
   const rank: Record<ImpactStatus, number> = { 영향: 0, "범위 안": 1, 예상: 2, "영향 없음": 3 };
   return out.sort((a, b) => rank[a.status] - rank[b.status] || (a.at ?? "").localeCompare(b.at ?? ""));
+}
+
+/**
+ * 규정이 해당되기 시작하는 시각 — 시뮬레이션이 그 규정의 단계(`from`)에 처음 닿는 분(2026-09-17 사용자 "서항에도 SOP 짚어줘").
+ * 실행이 아니라 **매칭**이다: "이 시각부터 이 규정이 해당된다". 조치 기록이 있는 규정(같은 id 의 action)은 뺀다 — 조치가 이미 말한다.
+ */
+export function sopEventsOf(f: Forecast, sop: SimSop[], originIso: string, endIso: string, actions: SimAction[]): SimAction[] {
+  const rank = { none: 0, advisory: 1, warning: 2, evacuate: 3 } as const;
+  const acted = new Set(actions.map((a) => a.id));
+  const out: SimAction[] = [];
+  const start = ms(originIso), end = ms(endIso);
+  for (const s of sop) {
+    if (acted.has(s.id)) continue;
+    for (let t = start; t <= end; t += 60_000) {
+      const iso = new Date(t).toISOString();
+      if (rank[stageAt(f, iso)] >= rank[s.from]) { out.push({ id: `sop-${s.id}`, at: iso, label: s.label, kind: "규정", facilityIds: s.facilityIds ?? [] }); break; }
+    }
+  }
+  return out;
 }
 
 /**
