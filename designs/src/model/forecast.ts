@@ -74,7 +74,7 @@ export interface ImpactTarget {
   label: string;
   arrivalAt?: string;
   /** 영향 없음 = 예측 범위 안에서 물이 닿지 않는다. 통제됨 = 사람이 막아 노출을 없앴다 */
-  exposure: "영향 없음" | "노출" | "부분 중단" | "중단" | "통제됨";
+  exposure: "영향 없음" | "노출" | "부분 중단" | "중단" | "통제됨" | "대피 권고";
 }
 
 /**

@@ -147,7 +147,7 @@ export function ruleForecast(c: RuleChoice, id: string, baseline: boolean): Fore
   const targets: ImpactTarget[] = [
     { kind: "도로", id: SUBJECTS.coastRoad, label: "해안도로 저지대 구간", ...(roadAt ? { arrivalAt: roadAt, exposure: ctl.road !== undefined ? "통제됨" as const : "노출" as const } : { exposure: "영향 없음" as const }) },
     { kind: "중요시설", id: SUBJECTS.underpass, label: "신포 지하차도", ...(underAt ? { arrivalAt: underAt, exposure: ctl.underpass !== undefined ? "통제됨" as const : "부분 중단" as const } : { exposure: "영향 없음" as const }) },
-    { kind: "건물", id: "BLD-SH-LOW", label: "저지대 건물", ...(bldAt ? { arrivalAt: bldAt, exposure: ctl.evac !== undefined ? "통제됨" as const : "노출" as const } : { exposure: "영향 없음" as const }) },
+    { kind: "건물", id: "BLD-SH-LOW", label: "저지대 건물", ...(bldAt ? { arrivalAt: bldAt, exposure: ctl.evac !== undefined ? "대피 권고" as const : "노출" as const } : { exposure: "영향 없음" as const }) },
   ];
   return {
     forecastId: id, incidentId: INCIDENT_ID, alternativeId: baseline ? "baseline" : "situation",

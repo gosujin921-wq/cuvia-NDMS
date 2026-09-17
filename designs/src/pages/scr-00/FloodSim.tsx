@@ -69,15 +69,15 @@ export function FloodSim() {
   /* 규정 스위치 — `sop=S2@14:35,S3@14:55`. 켜진 규정을 고른 시나리오에 그 시각으로 적용한 열이 하나 더 서고 그것을 본다. 여럿을 동시에 켤 수 있다 */
   const sopParam = params.get("sop") ?? "";
   const sopOn = useMemo<Record<string, string>>(() => Object.fromEntries(
-    sopParam.split(",").map((x) => x.split("@")).filter(([id, at]) => id && at && site.sopApply?.[id]?.times.some((t) => t.at === at)).map(([id, at]) => [id, at]),
-  ), [sopParam, site]);
+    sopParam.split(",").map((x) => x.split("@")).filter(([id, at]) => id && at && site.sopApply?.[id]?.times(picked.choice).some((t) => t.at === at)).map(([id, at]) => [id, at]),
+  ), [sopParam, site, picked]);
   const sopIds = Object.keys(sopOn);
   const selected = useMemo<SimScenario>(() => {
     if (!sopIds.length || !site.sopApply) return picked;
     const apply = site.sopApply;
     return {
       id: `${picked.id}+${sopIds.join("+")}`, tag: "규정대로",
-      label: `${picked.label} · ${sopIds.map((id) => `${site.sop.find((s) => s.id === id)?.label ?? id} ${apply[id].times.find((t) => t.at === sopOn[id])?.label ?? sopOn[id]}`).join(" · ")}`,
+      label: `${picked.label} · ${sopIds.map((id) => `${site.sop.find((s) => s.id === id)?.label ?? id} ${apply[id].times(picked.choice).find((t) => t.at === sopOn[id])?.label ?? sopOn[id]}`).join(" · ")}`,
       choice: sopIds.reduce((c, id) => apply[id].apply(c, sopOn[id]), picked.choice), baseline: false,
     };
   }, [picked, site, sopIds, sopOn]);
@@ -108,6 +108,20 @@ export function FloodSim() {
     })),
     [site, columns],
   );
+
+  /* 노출 규정의 결과 = 도달 전 여유 시간 하나(README §2.3). 규정이 막는 대상의 도달 시각에서 조치 시각을 뺀다. 두 열 다 조치가 없으면 행을 안 세운다 */
+  const leadRows = useMemo(() => {
+    const lead = (sc: SimScenario, sopId: string, targetId: string): { text: string; min: number | null } => {
+      const f = site.boardOf(sc.choice);
+      const t = f?.targets.find((x) => x.id === targetId);
+      const a = f ? site.actionsOf(sc.choice, f).find((x) => x.id === sopId) : undefined;
+      if (!f || !t || !t.arrivalAt) return { text: "도달 없음", min: null };
+      if (!a) return { text: "조치 없음", min: null };
+      return { text: `${Math.round((new Date(t.arrivalAt).getTime() - new Date(a.at).getTime()) / 60_000)}분`, min: Math.round((new Date(t.arrivalAt).getTime() - new Date(a.at).getTime()) / 60_000) };
+    };
+    return Object.entries(site.sopTargetOf ?? {}).map(([sopId, tg]) => ({ label: `${tg.short} 여유`, base: lead(baseCol, sopId, tg.id), sel: lead(selected, sopId, tg.id) }))
+      .filter((r) => r.base.min !== null || r.sel.min !== null);
+  }, [site, baseCol, selected]);
 
   /* ── 시간축: 현재 → 지평선. 재생은 끝에 닿으면 처음부터 ── */
   const origin = site.now;
@@ -339,10 +353,11 @@ export function FloodSim() {
             <FloodResult
               base={baseCol}
               selected={selected}
-              sopApply={Object.fromEntries(Object.entries(site.sopApply ?? {}).map(([id, v]) => [id, { label: v.label, times: v.times }]))}
+              sopApply={Object.fromEntries(Object.entries(site.sopApply ?? {}).map(([id, v]) => [id, { label: v.label, times: v.times(picked.choice), actualAt: v.actualAt }]))}
               sopOn={sopOn}
               onSop={setSop}
               summaries={summaries}
+              leadRows={leadRows}
               observed={site.observed}
               at={at}
               depthNow={depthNow}

@@ -41,6 +41,7 @@ export interface CompareRow {
 const EXPOSURE_TONE: Record<ImpactTarget["exposure"], CompareTone> = {
   "영향 없음": "muted",
   통제됨: "safe",
+  "대피 권고": "safe",
   노출: "warn",
   "부분 중단": "danger",
   중단: "danger",

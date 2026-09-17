@@ -21,6 +21,7 @@ const KIND_ORDER: ImpactTarget["kind"][] = ["도로", "중요시설", "건물", 
 const EXPOSURE_TONE: Record<ImpactTarget["exposure"], string> = {
   "영향 없음": "text-foreground-subtle",
   통제됨: "text-success",
+  "대피 권고": "text-success",
   노출: "text-warning",
   "부분 중단": "text-danger",
   중단: "text-danger",

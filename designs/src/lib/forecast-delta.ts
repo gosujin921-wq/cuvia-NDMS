@@ -16,7 +16,7 @@ import { minutesBetween } from "./forecast-twin";
 const span = (m: number): string => (m >= 60 ? `${Math.floor(m / 60)}시간${m % 60 ? ` ${m % 60}분` : ""}` : `${m}분`);
 
 /** 노출 무게 — 낮을수록 안전하다. 영향 없음과 통제됨은 둘 다 "노출 아님"이라 같은 칸이다 */
-const RANK: Record<ImpactTarget["exposure"], number> = { "영향 없음": 0, 통제됨: 0, 노출: 1, "부분 중단": 2, 중단: 3 };
+const RANK: Record<ImpactTarget["exposure"], number> = { "영향 없음": 0, 통제됨: 0, "대피 권고": 0, 노출: 1, "부분 중단": 2, 중단: 3 };
 /** 대상 이름 — 라벨 끝에 수가 남아 있으면 뗀다(지난 판본 호환) */
 const nameOf = (t: ImpactTarget) => t.label.replace(/\s*\d+\S*$/, "");
 

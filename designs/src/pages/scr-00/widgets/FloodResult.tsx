@@ -23,11 +23,13 @@ import { PANEL } from "./panel-style";
 const LEVEL_LABEL: Record<AlertLevel, string> = { advisory: "주의보", warning: "경보", evacuate: "대피" };
 const LEVEL_RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
 
-export function FloodResult({ base, selected, summaries, observed, at, depthNow, headroomM, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, sopApply, sopOn, onSop, compare, onCompare, onBasis }: {
+export function FloodResult({ base, selected, summaries, leadRows, observed, at, depthNow, headroomM, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, sopApply, sopOn, onSop, compare, onCompare, onBasis }: {
   /** 비교의 왼쪽 열 — 기준 시나리오. 규정 스위치를 켰으면 "그 규정을 실제 시각에 했을 때" */
   base: SimScenario;
   selected: SimScenario;
   summaries: Record<string, ScenarioSummary | null>;
+  /** 노출 규정의 결과 — 대상 도달까지 남는 시간. 기준 | 고른 시나리오. 조치가 어느 열에도 없으면 비어 있다 */
+  leadRows: { label: string; base: { text: string; min: number | null }; sel: { text: string; min: number | null } }[];
   /** 실제 사건의 실측 — 사건 원장. 없으면 비운다 */
   observed: { label: string; value: string }[];
   at: string;
@@ -46,7 +48,7 @@ export function FloodResult({ base, selected, summaries, observed, at, depthNow,
   focus: Set<string>;
   onFocus: (facilityIds: string[] | null) => void;
   /** 스위치를 붙일 규정 id → 문구와 고를 수 있는 조치 시각(판이 있는 것만). 켜면 첫 시각, 칩으로 바꾼다 */
-  sopApply: Record<string, { label: string; times: { at: string; label: string }[] }>;
+  sopApply: Record<string, { label: string; times: { at: string; label: string }[]; actualAt?: string }>;
   /** 켜진 규정 id → 고른 시각(HH:MM) */
   sopOn: Record<string, string>;
   onSop: (id: string, at: string | null) => void;
@@ -95,6 +97,14 @@ export function FloodResult({ base, selected, summaries, observed, at, depthNow,
             {row(bs ? (bs.metricLabel.startsWith("최대") ? bs.metricLabel : `최대 ${bs.metricLabel}`) : "최대 수심", (s) => s.maxDepthM, (s) => `${s.maxDepthM.toFixed(2)} m`, true)}
             {row("침수 면적", (s) => s.maxAreaHa, (s) => `${s.maxAreaHa.toFixed(1)} ha`, true)}
             {row("영향 시설", (s) => s.hitTargets, (s) => `${s.hitTargets}곳`, true)}
+            {/* 노출 규정(통제 · 대피)의 결과 행 — 물은 그대로고 "도달 전 여유"가 결과다. 길수록 좋다 */}
+            {leadRows.map((r) => (
+              <span key={r.label} className="contents">
+                <span className="whitespace-nowrap py-0.5 text-foreground-muted">{r.label}</span>
+                {cell(r.base.text, null, false)}
+                {!same && cell(r.sel.text, r.sel.min !== null && r.base.min !== null ? (r.sel.min === r.base.min ? null : r.sel.min > r.base.min) : r.sel.min !== null ? true : null, true)}
+              </span>
+            ))}
           </div>
           {/* 실측 — 같은 상자의 바닥 줄. 기준 열과 견줄 값이다 */}
           {observed.length > 0 && (
@@ -154,8 +164,8 @@ export function FloodResult({ base, selected, summaries, observed, at, depthNow,
                   <span className="min-w-0 break-keep text-foreground">{i.label}</span>
                 </span>
                 <span className={cn("shrink-0 font-mono", i.status === "영향" || i.status === "범위 안" ? "text-danger" : i.status === "예상" ? "text-warning" : "text-success")}>
-                  {/* 통제·대피가 앞선 대상은 도달 전에도 "통제됨"이다 — 규정을 켠 효과가 도달 전에 보여야 한다 */}
-                  {i.status === "예상" && i.at ? (i.exposure === "통제됨" ? `통제됨 · ${formatClock(i.at)} 도달` : `${formatClock(i.at)} 예상`) : i.status === "영향" && i.exposure ? i.exposure : i.status}
+                  {/* 통제·대피가 앞선 대상은 도달 전에도 그 상태다 — 규정을 켠 효과가 도달 전에 보여야 한다 */}
+                  {i.status === "예상" && i.at ? (i.exposure === "통제됨" || i.exposure === "대피 권고" ? `${i.exposure} · ${formatClock(i.at)} 도달` : `${formatClock(i.at)} 예상`) : i.status === "영향" && i.exposure ? i.exposure : i.status}
                 </span>
               </span>
               {/* 공간 교차가 덧붙인 한마디 — "범위 안 약 320 m" */}
@@ -209,12 +219,19 @@ export function FloodResult({ base, selected, summaries, observed, at, depthNow,
                       <span className="break-keep">{spec.label}</span>
                       <Switch checked={chosen !== null} onCheckedChange={(v) => onSop(s.id, v ? spec.times[0]?.at ?? null : null)} aria-label={`${s.label} · ${spec.label}`} />
                     </label>
-                    {chosen && spec.times.length > 1 && (
+                    {/* 시각 칩 — 그날 실제 시각이 있으면 "15:05 · 실제"가 맨 앞에 선다. 그것을 고르면 스위치가 꺼진다(기준 = 실제) */}
+                    {chosen && (
                       <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="조치 시각">
+                        {spec.actualAt && (
+                          <button type="button" role="radio" aria-checked={false} onClick={() => onSop(s.id, null)}
+                            className="cursor-pointer rounded-md border border-border bg-card px-2 py-0.5 text-caption text-foreground-muted hover:text-foreground">
+                            <span className="font-mono">{spec.actualAt}</span> · 실제
+                          </button>
+                        )}
                         {spec.times.map((t) => (
                           <button key={t.at} type="button" role="radio" aria-checked={chosen === t.at} onClick={() => onSop(s.id, t.at)}
                             className={cn("cursor-pointer rounded-md border px-2 py-0.5 text-caption", chosen === t.at ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card text-foreground-muted hover:text-foreground")}>
-                            {/^\d\d:\d\d$/.test(t.at) && <><span className="font-mono">{t.at}</span> · </>}{t.label}
+                            {t.label}
                           </button>
                         ))}
                       </div>

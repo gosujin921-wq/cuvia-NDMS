@@ -71,10 +71,17 @@ function cwScene(levels: [number, number, number, number], stage: string, contro
   const coastRuns: SceneLayer[] = wet.coast.map((run, i) => ({ kind: "line", id: `cw-coast-wet-${i}`, role: "도로", coords: run, state: coastState === "통제됨" ? "planned" : "on", tone: ROAD_TONE[coastState], label: i === 0 ? `하구 천변도로 · ${coastState}` : undefined }));
   const trunkRuns: SceneLayer[] = wet.trunk.map((run, i) => ({ kind: "line", id: `cw-trunk-wet-${i}`, role: "도로", coords: run, state: "on", tone: "warning", label: i === 0 ? "합류부 간선도로 · 부분 침수" : undefined }));
   const longest = [...wet.coast].sort((x, y) => y.length - x.length)[0];
+  /* 통제되면 차단 지점 둘과 우회로가 선다 — 우회로는 잠긴 구간을 내륙(북)으로 돌아 두 차단 지점을 잇는 선(2026-09-17 사용자 "형상 만들어 넣어라").
+     ⚠ 교체 대상: 도로망 최단경로가 아니라 차단 지점에서 약 280 m 북쪽으로 돌린 채록선이다. 도로망 우회 경로가 오면 좌표만 바꾼다 */
+  const detourOf = (w: LngLat, e: LngLat): LngLat[] => {
+    const up = 0.0025, ease = 0.0006;
+    return [w, [w[0], w[1] + up * 0.5], [w[0] + ease, w[1] + up], [e[0] - ease, e[1] + up], [e[0], e[1] + up * 0.5], e];
+  };
   const blocks: SceneLayer[] = controlled && longest
     ? [
         { kind: "point", id: "cw-block-w", at: longest[0], icon: "mdi:traffic-cone", label: "차단 (서)", state: "통제 중", tone: "primary", small: true },
         { kind: "point", id: "cw-block-e", at: longest[longest.length - 1], icon: "mdi:traffic-cone", label: "차단 (동)", state: "통제 중", tone: "primary", small: true },
+        { kind: "line", id: "cw-detour", role: "우회", coords: detourOf(longest[0], longest[longest.length - 1]), state: "on", label: "우회 · 내륙 방면" },
       ]
     : [];
   return [...reaches, ...stations, ...coastRuns, ...trunkRuns, ...blocks];
