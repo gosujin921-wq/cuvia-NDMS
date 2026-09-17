@@ -13,10 +13,10 @@
  * ───────────────────────────────────────────── */
 
 import type { Forecast, ForecastMark } from "../forecast";
-import type { LngLat, SceneLayer } from "../scene";
+import type { LngLat, SceneLayer, ScenePoint } from "../scene";
 import type { TwinFamily } from "../incident";
 import type { WhatIfCase } from "../whatif";
-import { FORECAST_BASE, FORECAST_DRAIN, RAIN120_COMBOS, WHATIF_RAIN120 } from "../../fixtures/seohang-flood/forecasts";
+import { FORECAST_BASE, RAIN120_COMBOS, WHATIF_DRAIN_NOW, WHATIF_RAIN120 } from "../../fixtures/seohang-flood/forecasts";
 import { INCIDENT_ID as SH_INCIDENT_ID } from "../../fixtures/seohang-flood/incident";
 import { CW_INCIDENT_ID } from "../../fixtures/changwoncheon/whatif";
 import { GEOMETRIES } from "../../fixtures";
@@ -45,7 +45,20 @@ export interface StateRow { label: string; value: string; note?: string }
  * 현상 대응(방류 · 펌프)은 물이 예측되는 순간부터(advisory), 노출 대응(통제 · 대피)은 도로 도달부터(warning).
  * ★ 문구는 기관 SOP 가 오면 교체한다. 여기서 새 항목을 짓지 않는다.
  */
-export interface SimSop { id: string; label: string; detail: string; from: "advisory" | "warning" | "evacuate"; mode?: "auto" | "approval" }
+export interface SimSop {
+  id: string; label: string; detail: string; from: "advisory" | "warning" | "evacuate"; mode?: "auto" | "approval";
+  /** 이 규정이 움직이는 지도 위 시설(장면 점 id · 장치 id). 줄 ↔ 마커가 서로 가리킨다. 자리가 원본에 없는 시설은 안 잇는다 */
+  facilityIds?: string[];
+}
+
+/**
+ * 조치 — 시간이 그 시각을 지나면 지도·시간축·조치 이력이 함께 "일어났다"고 말한다(2026-09-17 사용자 "색만 바뀌어 뭘 말하는지 모르겠다").
+ *   환경  물을 바꾸는 조치(방류 · 펌프). 결과(수면 · 종단도)가 달라진다
+ *   노출  사람을 빼는 조치(통제 · 대피). 마커·선만 바뀌고 물은 그대로다
+ */
+export interface SimAction { id: string; at: string; label: string; kind: "환경" | "노출"; facilityIds: string[] }
+/** 시각 비교는 늘 밀리초로 — "+09:00" 표기와 "Z" 표기가 섞이면 문자열 비교가 틀린다(2026-09-17 조치가 전부 "예정"으로 섰다) */
+export const isPast = (eventIso: string, atIso: string) => new Date(eventIso).getTime() <= new Date(atIso).getTime();
 
 /** 대상의 공통 뼈대 — 침수·폭염이 같은 좌측 레일(대상 · 시나리오 · 고른 조건)을 쓴다 */
 export interface SimSiteBase {
@@ -75,14 +88,27 @@ export interface FloodSite extends SimSiteBase {
   currentRows(now: Date): StateRow[];
   /** 이 대상에 매칭되는 기존 SOP */
   sop: SimSop[];
+  /** 장면 점 밖의 시설 — SOP 가 가리키는 장치(CCTV · 마을방송). 장면 점과 같은 모양으로 선다 */
+  extraFacilities: ScenePoint[];
+  /** 그 시나리오·판에서 일어나는 조치 */
+  actionsOf(choice: Record<string, string>, f: Forecast | null): SimAction[];
   wcase: WhatIfCase | null;
 }
 
 /** 사건이 든 규정 → 관련 SOP 줄. 대응 종류(현상 · 노출)로 해당 단계를 읽는다 */
-export const sopOfCase = (wcase: WhatIfCase | null): SimSop[] =>
+export const sopOfCase = (wcase: WhatIfCase | null, facilityIdsOf: Record<string, string[]> = {}): SimSop[] =>
   (wcase?.sop ?? []).map((s) => {
     const kind = wcase?.responses.find((r) => r.responseId === s.responseId)?.kind;
-    return { id: s.id, label: s.label, detail: s.trigger, from: kind === "현상" ? "advisory" : "warning", mode: "approval" };
+    return { id: s.id, label: s.label, detail: s.trigger, from: kind === "현상" ? "advisory" : "warning", mode: "approval", ...(facilityIdsOf[s.id] ? { facilityIds: facilityIdsOf[s.id] } : {}) };
+  });
+
+/** 사건이 든 규정 → 조치 목록. 내가 정한 시각(`acts`)이 있으면 그것, 없으면 그날 실제 시각 */
+const actionsOfCase = (wcase: WhatIfCase | null, acts: Record<string, string>, facilityIdsOf: Record<string, string[]>): SimAction[] =>
+  (wcase?.sop ?? []).flatMap((s) => {
+    const at = acts[s.id] ?? s.actedAt;
+    if (!at) return [];
+    const kind = wcase?.responses.find((r) => r.responseId === s.responseId)?.kind;
+    return [{ id: s.id, at, label: s.label, kind: kind === "현상" ? "환경" : "노출", facilityIds: facilityIdsOf[s.id] ?? [] }];
   });
 
 const ms = (iso: string) => new Date(iso).getTime();
@@ -91,8 +117,9 @@ const ms = (iso: string) => new Date(iso).getTime();
 const seohangSite = (demoNow: Date): FloodSite => {
   const wcase = findWhatIfCase(SH_INCIDENT_ID) ?? null;
   const rainDrain = RAIN120_COMBOS.find((c) => c.responseId === "drainage" && c.presetId === "now")?.forecast ?? null;
+  /* 재가동 판은 **조치 시각이 있는 것**(`WHATIF_DRAIN_NOW` · 17:40 즉시)을 쓴다 — 시각이 없으면 조치가 "일어난 일"로 못 선다 */
   const board = (rain: string, pump: string): Forecast | null =>
-    rain === "p20" ? (pump === "on" ? rainDrain : WHATIF_RAIN120) : pump === "on" ? FORECAST_DRAIN : FORECAST_BASE;
+    rain === "p20" ? (pump === "on" ? rainDrain : WHATIF_RAIN120) : pump === "on" ? WHATIF_DRAIN_NOW : FORECAST_BASE;
   return {
     id: "seohang",
     label: "서항 배수권역",
@@ -139,14 +166,38 @@ const seohangSite = (demoNow: Date): FloodSite => {
       for (const c of FORECAST_BASE.conditions ?? []) if (/강우|예보/.test(c.label)) rows.push({ label: c.label, value: c.value });
       return rows;
     },
-    /* 서항의 SOP 표본은 해일 절차(SOP_ITEMS · 서항지구 대상값)다. 사건이 든 규정이 있으면 그것을 앞에 둔다 */
+    /* 서항의 SOP 표본은 해일 절차(SOP_ITEMS · 서항지구 대상값)다. 사건이 든 규정이 있으면 그것을 앞에 둔다.
+       시설 연결: CCTV 감시 → CCTV 장치, 마을방송 → 방송 장치, 해안도로 차단 → 차단 지점(통제되면 장면에 선다) */
     sop: [
       ...sopOfCase(wcase),
-      ...sopItemsFor("evacuate").map((s) => ({ id: `sh-${s.id}`, label: s.label, detail: s.target === "—" ? "" : s.target, from: s.minLevel, mode: s.mode })),
+      ...sopItemsFor("evacuate").map((s) => ({
+        id: `sh-${s.id}`, label: s.label, detail: s.target === "—" ? "" : s.target, from: s.minLevel, mode: s.mode,
+        ...(SH_SOP_FACILITIES[s.id] ? { facilityIds: SH_SOP_FACILITIES[s.id] } : {}),
+      })),
     ],
+    extraFacilities: SH_DEVICE_POINTS,
+    /* 서항의 조치는 판이 든다(`actionAt`) — 펌프 재가동은 펌프장·저류시설, 통제는 차단 지점 */
+    actionsOf: (_c, f) => {
+      if (!f?.actionAt) return [];
+      const drain = f.alternativeId === "drainage";
+      return [{ id: f.alternativeId, at: f.actionAt.at, label: drain ? "펌프 2호기 재가동" : "해안도로 통제", kind: drain ? "환경" : "노출", facilityIds: drain ? ["a-pump", "a-retention"] : ["a-block-s", "a-block-n"] }];
+    },
     wcase,
   };
 };
+
+/** 서항 SOP 표본 → 시설. 장치 id 는 `devicesOf("seohang")` 의 것이다 */
+const SH_DEVICES = devicesOf("seohang");
+const SH_CCTV = SH_DEVICES.filter((d) => d.kind === "CV").slice(0, 2);
+const SH_BC = SH_DEVICES.filter((d) => d.kind === "BC");
+const SH_SOP_FACILITIES: Record<string, string[]> = {
+  cctv: SH_CCTV.map((d) => d.id),
+  broadcast: SH_BC.map((d) => d.id),
+  road: ["a-block-s", "a-block-n"],
+};
+const SH_DEVICE_POINTS: ScenePoint[] = [...SH_CCTV, ...SH_BC].map((d) => ({
+  kind: "point", id: d.id, at: d.center, icon: deviceKindSpec(d.kind).icon, label: d.name, state: d.status, tone: d.status === "정상" ? "neutral" : "warning", small: true,
+}));
 
 /* ── 창원천 — 2024-08-28 재현. 판은 훈련 조합(강우 당시 · +20% · +50% × 방류 실제 15:05 · 14:35 조기) ── */
 const changwoncheonSite = (): FloodSite | null => {
@@ -181,10 +232,18 @@ const changwoncheonSite = (): FloodSite | null => {
     baselineOf: (c) => trainingResultOf(wcase, c.rain ?? "now", {}).mine,
     currentRows: (at) => whatIfStateRowsAt(wcase, at.toISOString()).rows.map((r) => ({ label: r.label, value: r.value })),
     /* 창원천은 사건이 든 규정(S1 둔치 통제 · S2 상류 저류지 방류 · S3 천변도로 통제)만. 봉암 표본을 끌어오지 않는다(지명이 틀린다) */
-    sop: sopOfCase(wcase),
+    sop: sopOfCase(wcase, CW_SOP_FACILITIES),
+    extraFacilities: [],
+    actionsOf: (c) => actionsOfCase(wcase, actsOf(c.discharge ?? "actual"), CW_SOP_FACILITIES),
     wcase,
   };
 };
+
+/**
+ * 창원천 규정 → 시설. 상류 저류지는 원본에 좌표가 없어 자리를 세우지 않는다 — 방류 표식은 상류 수위계에 건다(방류가 보이는 곳).
+ * 둔치 산책로는 객체가 없어 잇지 않는다. 천변도로 통제는 차단 지점(통제되면 장면에 선다)
+ */
+const CW_SOP_FACILITIES: Record<string, string[]> = { S2: ["cw-st-a"], S3: ["cw-block-w", "cw-block-e"] };
 
 /**
  * 대상 목록 — **과거 실제 사건이 먼저다.** 실측 결과가 있어 기준(Baseline)을 설명할 수 있다(2026-09-17 방향:

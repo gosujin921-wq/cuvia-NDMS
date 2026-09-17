@@ -13,13 +13,13 @@
 import { Icon } from "@iconify/react";
 import { Badge, Button, Tag, cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
-import type { ImpactObject, ScenarioSummary, SimScenario, SimSop, StateRow } from "../../../model/sim/flood";
+import { isPast, type ImpactObject, type ScenarioSummary, type SimAction, type SimScenario, type SimSop, type StateRow } from "../../../model/sim/flood";
 import type { AlertLevel } from "../../../demo/levels";
 
 const LEVEL_LABEL: Record<AlertLevel, string> = { advisory: "주의보", warning: "경보", evacuate: "대피" };
 const LEVEL_RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
 
-export function FloodResult({ scenarios, selected, onSelect, summaries, observed, at, stateRows, depthNow, areaHa, impacts, sop, stage, compare, onCompare, onBasis }: {
+export function FloodResult({ scenarios, selected, onSelect, summaries, observed, at, stateRows, depthNow, areaHa, impacts, actions, sop, stage, focus, onFocus, compare, onCompare, onBasis }: {
   scenarios: SimScenario[];
   selected: SimScenario;
   onSelect: (id: string) => void;
@@ -31,8 +31,13 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
   depthNow: number;
   areaHa: number | null;
   impacts: ImpactObject[];
+  /** 이 시나리오의 조치(시각순). 지난 것과 앞의 것을 갈라 보인다 */
+  actions: SimAction[];
   sop: SimSop[];
   stage: "none" | AlertLevel;
+  /** 켜진 시설 id — SOP 줄·영향 객체 줄과 지도 마커가 같은 집합을 본다 */
+  focus: Set<string>;
+  onFocus: (facilityIds: string[] | null) => void;
   compare: boolean;
   onCompare: (v: boolean) => void;
   onBasis: () => void;
@@ -120,6 +125,28 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
         <p className="break-keep text-caption leading-snug text-foreground-subtle">
           <span className="text-primary-text">파란 값</span>은 이 시나리오의 계산값, <span className="text-warning">주황 값</span>은 조건대로 환산한 관측값, 나머지는 관측 기록입니다
         </p>
+        {/* 조치 이력 — 시간이 지나면 "일어난 일"로 쌓인다. 앞의 것은 예정으로 흐리게. 줄을 짚으면 그 시설이 지도에서 켜진다 */}
+        {actions.length > 0 && (
+          <ul className="flex flex-col text-caption" aria-label="조치 이력">
+            {actions.map((a) => {
+              const done = isPast(a.at, at);
+              const on = a.facilityIds.some((id) => focus.has(id));
+              return (
+                <li
+                  key={a.id}
+                  onMouseEnter={() => a.facilityIds.length && onFocus(a.facilityIds)}
+                  onMouseLeave={() => onFocus(null)}
+                  className={cn("flex items-baseline gap-2 rounded px-1 py-0.5", on && "bg-primary/10", done ? "text-foreground" : "text-foreground-subtle")}
+                >
+                  <Icon icon={done ? (a.kind === "환경" ? "mdi:play-circle" : "mdi:hand-back-left") : "mdi:circle-outline"} className={cn("size-3.5 shrink-0 self-center", done ? "text-primary-text" : "text-border-light")} aria-hidden />
+                  <span className="shrink-0 font-mono">{formatClock(a.at)}</span>
+                  <span className="min-w-0 break-keep">{a.label}{done ? "" : " · 예정"}</span>
+                  <span className="ml-auto shrink-0 text-foreground-subtle">{a.kind === "환경" ? "물이 달라진다" : "노출만"}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
 
       <section className="flex shrink-0 flex-col gap-1.5 p-3" aria-label="영향 객체">
@@ -132,7 +159,12 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
         ) : (
           <ul className="flex flex-col text-caption">
             {impacts.map((i) => (
-              <li key={`${i.kind}-${i.id}`} className="flex flex-col gap-0.5 border-b border-border py-1 last:border-0">
+              <li
+                key={`${i.kind}-${i.id}`}
+                onMouseEnter={() => i.kind === "지점" && onFocus([i.id])}
+                onMouseLeave={() => i.kind === "지점" && onFocus(null)}
+                className={cn("flex flex-col gap-0.5 border-b border-border py-1 last:border-0", focus.has(i.id) && "bg-primary/10")}
+              >
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="flex min-w-0 items-baseline gap-1.5">
                     <Badge variant="outline" className="h-fit shrink-0 text-caption">{i.kind}</Badge>
@@ -160,12 +192,21 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
         <ul className="flex flex-col text-caption">
           {sop.map((s) => {
             const hit = stage !== "none" && LEVEL_RANK[s.from] <= LEVEL_RANK[stage];
+            const linked = s.facilityIds?.length ? s.facilityIds : null;
+            const on = Boolean(linked?.some((id) => focus.has(id)));
             return (
-              <li key={s.id} className={cn("flex flex-col gap-0.5 border-b border-border py-1 last:border-0", hit ? "text-foreground" : "text-foreground-subtle")}>
+              <li
+                key={s.id}
+                onMouseEnter={() => linked && onFocus(linked)}
+                onMouseLeave={() => linked && onFocus(null)}
+                className={cn("flex flex-col gap-0.5 border-b border-border py-1 last:border-0", hit ? "text-foreground" : "text-foreground-subtle", on && "bg-primary/10", linked && "cursor-default")}
+              >
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="flex min-w-0 items-baseline gap-1.5">
                     <Icon icon={hit ? "mdi:checkbox-blank-circle" : "mdi:checkbox-blank-circle-outline"} className={cn("size-2.5 shrink-0 self-center", hit ? "text-primary-text" : "text-border-light")} aria-hidden />
                     <span className="min-w-0 break-keep">{s.label}</span>
+                    {/* 지도에 시설이 있는 규정 — 짚으면 그 시설이 켜진다 */}
+                    {linked && <Icon icon="mdi:map-marker-outline" className="size-3.5 shrink-0 self-center text-foreground-subtle" aria-label="지도에 시설 있음" />}
                   </span>
                   <span className="shrink-0 font-mono text-foreground-subtle">{LEVEL_LABEL[s.from]}부터{s.mode ? ` · ${s.mode === "auto" ? "자동" : "승인"}` : ""}</span>
                 </span>

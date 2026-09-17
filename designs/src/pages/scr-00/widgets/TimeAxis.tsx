@@ -11,12 +11,14 @@ import { Icon } from "@iconify/react";
 import { cn } from "@ds";
 import { formatClock } from "../../../lib/datetime";
 
-export function TimeAxis({ origin, end, ticks, minutes, onChange, playing, onTogglePlay }: {
+export function TimeAxis({ origin, end, ticks, events = [], minutes, onChange, playing, onTogglePlay }: {
   /** 현재(시작) · 지평선 끝 */
   origin: string;
   end: string;
   /** 판의 눈금 시각 — 표시만 */
   ticks: string[];
+  /** 조치 눈금 — 트랙 위에 아이콘으로 서고, 지나면 채워진다 */
+  events?: { at: string; label: string; icon: string }[];
   /** 현재로부터 몇 분 뒤를 보고 있나 */
   minutes: number;
   onChange: (minutes: number) => void;
@@ -31,7 +33,7 @@ export function TimeAxis({ origin, end, ticks, minutes, onChange, playing, onTog
   return (
     /* 한 줄 캡슐이다 — 안내 문장 줄을 두지 않는다(대상·날짜는 좌측 레일이 말한다 · 2026-09-17 사용자). 눈금 라벨 몫으로 아래만 한 칸.
        모양은 캡슐 카드 + 원형 재생 버튼(2026-09-17 사용자) */
-    <div className="pointer-events-auto rounded-full border border-border bg-surface/95 pb-5 pl-2 pr-4 pt-2 backdrop-blur" aria-label="시간축">
+    <div className={cn("pointer-events-auto rounded-full border border-border bg-surface/95 pb-5 pl-2 pr-4 backdrop-blur", events.length ? "pt-4" : "pt-2")} aria-label="시간축">
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -50,6 +52,15 @@ export function TimeAxis({ origin, end, ticks, minutes, onChange, playing, onTog
           {/* 지나온 구간 */}
           <i className="absolute left-0 top-[11px] h-1 rounded-full bg-primary" style={{ width: `${(m / span) * 100}%` }} aria-hidden />
           <i className="absolute right-0 top-[11px] h-1 rounded-full bg-border" style={{ left: `${(m / span) * 100}%` }} aria-hidden />
+          {/* 조치 눈금 — 트랙 위. 지난 조치는 채운 원, 앞의 조치는 빈 원. 라벨은 title(호버) */}
+          {events.filter((e) => { const t = new Date(e.at).getTime(); return t >= new Date(origin).getTime() && t <= new Date(end).getTime(); }).map((e) => {
+            const passed = pct(e.at) <= (m / span) * 100 + 0.5;
+            return (
+              <span key={`${e.at}-${e.label}`} className={cn("absolute -top-3.5 flex size-4 -translate-x-1/2 items-center justify-center rounded-full border", passed ? "border-primary bg-primary text-primary-foreground" : "border-primary-text bg-surface text-primary-text")} style={{ left: `${pct(e.at)}%` }} title={`${formatClock(e.at)} ${e.label}`} aria-hidden>
+                <Icon icon={e.icon} className="size-2.5" />
+              </span>
+            );
+          })}
           {/* 눈금이 많으면(폭염 · 시간별 10개) 라벨은 띄엄띄엄 — 다 적으면 겹친다. 눈금 자체는 다 세운다 */}
           {ticks.map((t, i) => (
             <span key={t} className="absolute top-[7px] flex -translate-x-1/2 flex-col items-center" style={{ left: `${pct(t)}%` }} aria-hidden>

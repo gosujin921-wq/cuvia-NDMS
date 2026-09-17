@@ -35,6 +35,8 @@ import {
 } from "../../model/sim/flood";
 import { ForecastBasisDialog } from "../scr-05/widgets/ForecastBasisDialog";
 import { SimScenarios } from "./widgets/SimScenarios";
+import { FacilityMarkers } from "./widgets/FacilityMarkers";
+import type { ScenePoint } from "../../model/scene";
 import { FloodResult } from "./widgets/FloodResult";
 import { TimeAxis } from "./widgets/TimeAxis";
 
@@ -105,6 +107,14 @@ export function FloodSim() {
   const areaHa = ring ? ringAreaHa(ring) : null;
   const sceneLayers = useMemo(() => mergeScene(forecast?.scene, floorMark?.scene), [forecast, floorMark]);
   const impacts = useMemo(() => (forecast ? impactsAt(forecast, at, sceneLayers) : []), [forecast, at, sceneLayers]);
+  /* 조치 — 이 시나리오에서 일어나는 것. 시간축 눈금 · 마커 배지 · 조치 이력이 같은 목록을 읽는다 */
+  const actions = useMemo(() => site.actionsOf(selected.choice, forecast).sort((a, b) => a.at.localeCompare(b.at)), [site, selected, forecast]);
+  /* 시설 = 장면의 점 + 대상의 장치. 마커는 DS 로 따로 그리므로 장면층에서는 점을 뺀다 */
+  const points = useMemo<ScenePoint[]>(() => [...sceneLayers.filter((l): l is ScenePoint => l.kind === "point"), ...site.extraFacilities], [sceneLayers, site]);
+  const lineLayers = useMemo(() => sceneLayers.filter((l) => l.kind !== "point"), [sceneLayers]);
+  /* 서로 가리킴 — SOP 줄을 짚으면 시설이, 마커를 누르면 SOP 줄이 켜진다 */
+  const [focus, setFocus] = useState<Set<string>>(() => new Set());
+  const focusFacilities = useCallback((ids: string[] | null) => setFocus(new Set(ids ?? [])), []);
   const stage = forecast ? stageAt(forecast, at) : "none";
   const sop = site.sop;
   const stateRows = useMemo(() => stateRowsAt(site, forecast, selected.choice, at), [site, forecast, selected, at]);
@@ -182,7 +192,8 @@ export function FloodSim() {
     <div className="relative h-full w-full overflow-hidden">
       <div className="absolute inset-0 z-0 overflow-hidden bg-surface" style={{ isolation: "isolate" }} aria-label="침수 시뮬레이션 3D 씬">
         <div ref={mapContainer} className="h-full w-full" />
-        <SceneLayers map={map} ready={ready} layers={sceneLayers} />
+        <SceneLayers map={map} ready={ready} layers={lineLayers} />
+        <FacilityMarkers map={map} ready={ready} points={points} actions={actions} at={at} focus={focus} onPick={(id) => focusFacilities(focus.has(id) ? null : [id])} />
       </div>
 
       {/* 좌측 레일 — 대상 · 시나리오 · 고른 조건, 아래로 광역 인셋과 범례 */}
@@ -224,6 +235,7 @@ export function FloodSim() {
           origin={origin}
           end={end}
           ticks={ticks}
+          events={actions.map((a) => ({ at: a.at, label: a.label, icon: a.kind === "환경" ? "mdi:play" : "mdi:hand-back-left" }))}
           minutes={minutes}
           onChange={(m) => { setPlaying(false); setMinutes(m); }}
           playing={playing}
@@ -265,8 +277,11 @@ export function FloodSim() {
               depthNow={depthNow}
               areaHa={areaHa}
               impacts={impacts}
+              actions={actions}
               sop={sop}
               stage={stage}
+              focus={focus}
+              onFocus={focusFacilities}
               compare={compare}
               onCompare={setCompare}
               onBasis={() => setBasisOpen(true)}
