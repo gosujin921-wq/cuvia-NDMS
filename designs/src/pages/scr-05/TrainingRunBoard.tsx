@@ -40,19 +40,37 @@ export function TrainingRunBoard({ onNew }: { onNew: () => void }) {
             const peak = r.rows.find((x) => x.label.includes("최고"))?.mine ?? "?";
             return { ...r, cross, peak, held: cross === "없음" };
           })
-          /* 당시 → +20% → +50% 순. 조건 이름에 든 수를 기준으로 */
-          .sort((a, b) => (Number.parseInt(a.conditionLabel.replace(/\D/g, "") || "0", 10)) - (Number.parseInt(b.conditionLabel.replace(/\D/g, "") || "0", 10)));
-        const firstFail = rows.find((r) => !r.held);
-        const lastHeld = [...rows].reverse().find((r) => r.held);
+          /* 당시 → +20% → +50% 순, 같은 조건 안에서는 조치가 이른 회차부터. 조건 이름에 든 수를 기준으로 */
+          .sort((a, b) => {
+            const ca = Number.parseInt(a.conditionLabel.replace(/\D/g, "") || "0", 10), cb = Number.parseInt(b.conditionLabel.replace(/\D/g, "") || "0", 10);
+            if (ca !== cb) return ca - cb;
+            return (myActionsOf(a)[0]?.mineAt ?? "~").localeCompare(myActionsOf(b)[0]?.mineAt ?? "~");
+          });
+        /* 조건 축은 **조건마다 하나라도 막았나**로 센다 — 같은 조건에서 조치를 달리한 두 회차를 조건 둘로 세면
+           "당시까지는 막았고 당시부터 넘었다"가 된다(2026-09-17 검수). 회차 사이의 차이는 아래 조치 축이 맡는다 */
+        const conds = [...new Map(rows.map((r) => [r.conditionLabel, r])).keys()]
+          .map((label) => ({ conditionLabel: label, held: rows.some((r) => r.conditionLabel === label && r.held) }));
+        const firstFail = conds.find((c) => !c.held);
+        const lastHeld = [...conds].reverse().find((c) => c.held);
+        /* 조치 축 — 같은 조건에서 조치를 달리한 회차가 있으면 "언제가 갈랐나"가 여기서 읽힌다(2026-09-17) */
+        const byCond = new Map<string, typeof rows>();
+        for (const r of rows) byCond.set(r.conditionLabel, [...(byCond.get(r.conditionLabel) ?? []), r]);
+        const actNote = [...byCond.entries()]
+          .filter(([, rs]) => rs.length > 1 && new Set(rs.map((r) => myActionsText(r) || "없음")).size > 1)
+          .map(([cond, rs]) => `${cond}에서 ${rs.map((r) => `${myActionsText(r) || "조치 없음"} → ${r.held ? "막음" : `초과 ${r.cross}`}`).join(" · ")}`)
+          .join(" / ");
         return {
           incidentId,
           title: runs[0].incidentTitle,
           runs: rows,
-          note: firstFail && lastHeld
-            ? `${lastHeld.conditionLabel}까지는 막았고 ${firstFail.conditionLabel}부터 넘었습니다. 그 사이가 우리 규정의 한계입니다`
-            : firstFail
-              ? "고른 조건 모두에서 기준을 넘었습니다. 조치를 더 앞당기거나 임계를 고쳐야 합니다"
-              : "고른 조건 모두에서 막았습니다. 더 나쁜 조건으로 한 번 더 해 보세요",
+          note: [
+            firstFail && lastHeld
+              ? `${lastHeld.conditionLabel}까지는 막았고 ${firstFail.conditionLabel}부터 넘었습니다. 그 사이가 우리 규정의 한계입니다`
+              : firstFail
+                ? "고른 조건 모두에서 기준을 넘었습니다. 조치를 더 앞당기거나 임계를 고쳐야 합니다"
+                : "고른 조건 모두에서 막았습니다. 더 나쁜 조건으로 한 번 더 해 보세요",
+            actNote ? `조치 시각으로는 ${actNote}` : "",
+          ].filter(Boolean).join(" · "),
         };
       });
   }, [trainingRuns]);

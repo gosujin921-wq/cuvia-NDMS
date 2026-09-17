@@ -20,6 +20,7 @@ import { GEOMETRIES } from "../../../fixtures";
 import { cssColor, upsertPolygonLayer, type Ring } from "../../../lib/map-polygon";
 import { useMapLibre } from "../../../lib/useMapLibre";
 import { formatClock } from "../../../lib/datetime";
+import { useScenario } from "../../../state/ScenarioProvider";
 import maplibregl from "maplibre-gl";
 
 /** 링의 면적(ha) — 지도가 그린 그 형상을 잰다. 경도는 위도에 따라 줄어드니 보정한다 */
@@ -258,17 +259,49 @@ function ActualResponse({ item }: { item: PredictionCase }) {
 
 /* ── ④ 다음에 무엇을 고칠까 ── */
 function Improvements({ item }: { item: PredictionCase }) {
+  return <ImprovementList incidentId={item.sourceIncidentId} verified={item.improvements} />;
+}
+
+/**
+ * 학습 · 개선 항목 — 개선 항목은 **한 목록**이다(README §2.3). 예측 검증이 남긴 것(`검증`)과 모의훈련이 남긴 것(`훈련`)이
+ * 같은 사건 아래 함께 선다. 훈련 것이 지난 훈련에만 남아 있으면 SOP·기준을 고치는 사람이 못 본다(2026-09-17).
+ * ★ 케이스에 매달지 않는다. 지난 사건은 대부분 예측 케이스가 없는데(창원천·구항·산불·펌프장·폭염은 사전 작성 예측판이다)
+ *   그때도 훈련이 남긴 항목은 사건 기록 창 ⑤에 서야 한다. 그래서 사건 ID 로 받고, 케이스는 검증 항목만 얹는다.
+ */
+export function ImprovementList({ incidentId, verified, hideWhenEmpty }: {
+  incidentId: string;
+  verified: PredictionCase["improvements"];
+  /** 케이스 없는 사건 — 남긴 것이 없으면 절 자체를 세우지 않는다(빈 상자가 "기록이 없습니다" 옆에 또 선다) */
+  hideWhenEmpty?: boolean;
+}) {
+  const { improvements } = useScenario();
+  const trained = improvements.filter((x) => x.incidentId === incidentId && x.source === "훈련");
+  const rows = [
+    ...verified.map((imp) => ({ key: `v-${imp.text}`, area: imp.area, text: imp.text, source: "검증" as const, context: null as string | null })),
+    ...trained.map((imp) => ({ key: imp.id, area: imp.axis, text: imp.text, source: "훈련" as const, context: imp.context })),
+  ];
+  if (hideWhenEmpty && rows.length === 0) return null;
   return (
     <section className="flex flex-col gap-1 rounded-lg border border-border bg-surface p-3" aria-label="학습 · 개선 항목">
-      <h3 className="text-caption font-semibold text-foreground">학습 · 개선 항목</h3>
-      <ul className="flex flex-col gap-1.5">
-        {item.improvements.map((imp) => (
-          <li key={imp.text} className="flex gap-2 text-caption">
-            <Badge variant="outline" className="h-fit shrink-0 text-caption">{imp.area}</Badge>
-            <span className="min-w-0 flex-1 break-keep leading-tight text-foreground">{imp.text}</span>
-          </li>
-        ))}
-      </ul>
+      <header className="flex items-baseline justify-between gap-2">
+        <h3 className="text-caption font-semibold text-foreground">학습 · 개선 항목</h3>
+        <span className="shrink-0 text-caption text-foreground-subtle">검증 {verified.length} · 훈련 {trained.length}</span>
+      </header>
+      {rows.length === 0 ? (
+        <p className="text-caption text-foreground-subtle">남긴 개선 항목이 없습니다.</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {rows.map((imp) => (
+            <li key={imp.key} className="flex gap-2 text-caption">
+              <Badge variant="outline" className="h-fit shrink-0 text-caption">{imp.area}</Badge>
+              <span className="min-w-0 flex-1 break-keep leading-tight text-foreground">
+                {imp.text}
+                {imp.source === "훈련" && <span className="ml-1 text-foreground-subtle">· 훈련{imp.context ? ` · ${imp.context}` : ""}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

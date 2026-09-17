@@ -37,7 +37,7 @@ import { incidentDossierAt, incidentTimelineAt, timelineSummaryOf, type Incident
 import type { AlertGrade } from "../../model/alert";
 import type { ActionStatus } from "../../model/response";
 import { predictionCasesAt } from "../../model/selectors";
-import { PredictionCasePanel } from "./widgets/PredictionCasePanel";
+import { ImprovementList, PredictionCasePanel } from "./widgets/PredictionCasePanel";
 
 type SectionId = "summary" | "basis" | "judge" | "response" | "case" | "timeline";
 const SECTIONS: { id: SectionId; label: string; question: string }[] = [
@@ -178,7 +178,11 @@ export function IncidentRecordModal({ record, all, now, focusCase, onClose, onOp
               {cases.map((item) => <PredictionCasePanel key={item.caseId} item={item} />)}
             </div>
           ) : (
-            <CaseEmpty record={record} onOpenIncident={onOpenIncident} />
+            /* 케이스가 없어도 훈련이 남긴 개선 항목은 여기 선다 — 예측 검증과 한 목록(README §2.3) */
+            <div className="flex flex-col gap-3">
+              <CaseEmpty record={record} onOpenIncident={onOpenIncident} />
+              <ImprovementList incidentId={record.incidentId} verified={[]} hideWhenEmpty />
+            </div>
           )}
         </Section>
 

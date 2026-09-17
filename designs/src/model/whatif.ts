@@ -219,6 +219,8 @@ export interface TrainingRun {
     mineLagMin: number | null;
     /** 발동에서 실제 조치까지(분). 원장에 없으면 null */
     realLagMin: number | null;
+    /** 그때 왜 그렇게 정했나 — 훈련자가 실행할 때 적은 한 줄(선택). 돌아보기가 "왜"를 묻는 자리다 */
+    reason?: string;
   }[];
   /** 내 조치가 만든 판 · 같은 조건에서 실제와 같게 했을 때의 판 */
   resultForecastId: string;

@@ -66,16 +66,18 @@ export function trainingReportOf(run: TrainingRun): Report {
       id: "actions", title: "내 조치",
       note: acted.length > 0 ? `${acted.length}건 실행` : "실행한 조치 없음",
       rows: [],
-      table: {
-        head: ["규정", "발동", "내 조치", "발동에서 조치까지"],
-        rows: run.sopRows.map((s) => [
-          `${s.id} ${s.label}`,
-          formatClock(s.firedAt),
-          s.mineAt ? formatClock(s.mineAt) : "안 함",
-          lagText(s),
-        ]),
-        widths: [undefined, "60px", "68px", "150px"],
-      },
+      /* 판단 이유는 하나라도 적혔을 때만 칸을 세운다 — 빈 칸 열은 표를 넓히기만 한다 */
+      table: run.sopRows.some((s) => s.reason)
+        ? {
+            head: ["규정", "발동", "내 조치", "발동에서 조치까지", "판단 이유"],
+            rows: run.sopRows.map((s) => [`${s.id} ${s.label}`, formatClock(s.firedAt), s.mineAt ? formatClock(s.mineAt) : "안 함", lagText(s), s.reason ?? ""]),
+            widths: [undefined, "56px", "60px", "130px", "170px"],
+          }
+        : {
+            head: ["규정", "발동", "내 조치", "발동에서 조치까지"],
+            rows: run.sopRows.map((s) => [`${s.id} ${s.label}`, formatClock(s.firedAt), s.mineAt ? formatClock(s.mineAt) : "안 함", lagText(s)]),
+            widths: [undefined, "60px", "68px", "150px"],
+          },
       footnote: acted.length === 0
         ? "아무 조치도 실행하지 않아 실제와 같은 훈련이 되었다. 안 한 조치는 실제와 같은 시각에 한 것으로 본다"
         : "목표 시간의 근거가 없어 양호·지연으로 판정하지 않는다. 안 한 조치는 실제와 같은 시각에 한 것으로 본다",

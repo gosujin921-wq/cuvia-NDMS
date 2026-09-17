@@ -521,7 +521,9 @@ export const CHANGWONCHEON_WHATIF: WhatIfCase = {
     incidentId: CW_INCIDENT_ID,
     stops: [
       { at: t("14:35"), phase: "판단", note: "범람 예측 발생 · 합류부 기준 수위 2.5 m 초과 예측" },
-      { at: t("14:55"), phase: "판단", note: "방류가 효과를 낼 수 있는 마지막 시각" },
+      /* "방류가 효과를 낼 수 있는 마지막 시각"이라 적었었다 — 당시 조건에서만 반쯤 맞는 말이라 걷었다.
+         문턱은 판에서 읽는다(selectors.trainingDeadlineOf) */
+      { at: t("14:55"), phase: "판단", note: "방류를 정할 마지막 자리 · 이후엔 조치 창이 닫힌다" },
       { at: t("15:30"), phase: "결과", note: "조치 창이 닫히고 물이 온다" },
       { at: t("16:00"), phase: "결과", note: "합류부 최고 수위" },
     ],

@@ -119,9 +119,11 @@ export function debriefRowsOf(mine: Forecast | null, base: Forecast | null): Deb
  *   그래서 **비교표에서 실제로 달라진 행을 읽어** 문장을 만든다.
  * ★ `condLabel` 은 완성된 조건 이름이다("강우 +20%" · "열대야 +2°C"). 여기서 유형 이름을 붙이지 않는다.
  */
-export function debriefHeadline(mine: Forecast | null, base: Forecast | null, condLabel: string, noAct: boolean): string {
+export function debriefHeadline(mine: Forecast | null, base: Forecast | null, condLabel: string, noAct: boolean, limit?: string | null): string {
   if (!base) return "";
-  if (noAct) return "실제와 같은 시각에 조치했으므로 결과가 달라지지 않았습니다.";
+  /* 이 조건에서 핵심 조치를 어느 정지점에 해도 못 막았다면 그 사실이 결론의 끝이다 — 훈련이 찾아야 할 "규정의 한계" */
+  const tail = limit ? ` ${limit}` : "";
+  if (noAct) return `실제와 같은 시각에 조치했으므로 결과가 달라지지 않았습니다.${tail}`;
 
   const rows = debriefRowsOf(mine, base);
   const changed = rows.filter((r) => r.base !== r.mine);
@@ -134,11 +136,11 @@ export function debriefHeadline(mine: Forecast | null, base: Forecast | null, co
 
   /* 넘는다는 개념이 있는 유형에서만 "막았다"를 말한다 */
   if (cross && cross.mine === "없음" && cross.base !== "없음") return `${what}. 기준을 넘지 않았습니다. ${same}`;
-  if (cross) return `${what}. 나아졌지만 여전히 기준을 넘었습니다. 이 조건에서는 그 조치만으로 막지 못합니다.`;
+  if (cross) return `${what}. 나아졌지만 여전히 기준을 넘었습니다.${tail || " 이 조건에서는 그 조치만으로 막지 못합니다."}`;
   return `${what}. ${same}`;
 }
 
-export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvements, onAddImprovement, onRemoveImprovement, saved }: {
+export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvements, onAddImprovement, onRemoveImprovement, saved, limit, reasons }: {
   wcase: WhatIfCase;
   condLabel: string;
   acts: Record<string, string>;
@@ -150,6 +152,10 @@ export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvemen
   onRemoveImprovement: (id: string) => void;
   /** 저장했으면 그 번호 */
   saved: string | null;
+  /** "이 조건에서는 어느 시각에 해도 못 막았다" — 판에서 읽은 규정의 한계. 없으면 비운다 */
+  limit?: string | null;
+  /** 실행할 때 적은 "왜 지금인가" — 있으면 그 줄 아래 붙는다 */
+  reasons?: Record<string, string>;
 }) {
   if (!base) {
     return (
@@ -164,6 +170,7 @@ export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvemen
 
   /* 화면과 저장 기록이 **같은 표**를 읽는다. 두 벌로 적으면 보고서와 화면이 갈린다 */
   const rows = debriefRowsOf(mine, base);
+  const headline = debriefHeadline(mine, base, condLabel, noAct, limit);
   /* 개선 항목에 자동으로 붙는 맥락 — 사람이 다시 적지 않는다 */
   const context = [wcase.title, condLabel,
     Object.keys(acts).length > 0
@@ -203,7 +210,7 @@ export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvemen
         {/* 결론 — "나아졌다"와 "막았다"를 구분한다.
             저장 기록도 같은 문장을 담으므로 `debriefHeadline` 한 벌만 쓴다(두 벌이면 한쪽만 고쳐진다) */}
         <p className={cn("break-keep text-caption leading-snug", held ? "text-success" : "text-warning")}>
-          {debriefHeadline(mine, base, condLabel, noAct)}
+          {headline}
         </p>
       </section>
 
@@ -218,13 +225,19 @@ export function TrainingDebrief({ wcase, condLabel, acts, mine, base, improvemen
             const mineLag = at ? minutesBetween(s.firedAt, at) : null;
             const realLag = s.actedAt ? minutesBetween(s.firedAt, s.actedAt) : null;
             return (
-              <li key={s.id} className="flex items-baseline justify-between gap-2 border-b border-border py-1 last:border-0">
-                <span className="min-w-0 break-keep text-foreground">{s.id} {s.label}</span>
-                <span className="shrink-0 text-right font-mono text-foreground-subtle">
-                  {mineLag !== null
-                    ? <><span className="font-semibold text-foreground">{formatLagMinutes(mineLag)}</span> · 실제 {realLag === null ? "원장 없음" : formatLagMinutes(realLag)}</>
-                    : <>안 함 · 실제와 같게({realLag === null ? "원장 없음" : formatLagMinutes(realLag)})</>}
+              <li key={s.id} className="flex flex-col gap-0.5 border-b border-border py-1 last:border-0">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 break-keep text-foreground">{s.id} {s.label}</span>
+                  <span className="shrink-0 text-right font-mono text-foreground-subtle">
+                    {mineLag !== null
+                      ? <><span className="font-semibold text-foreground">{formatLagMinutes(mineLag)}</span> · 실제 {realLag === null ? "원장 없음" : formatLagMinutes(realLag)}</>
+                      : <>안 함 · 실제와 같게({realLag === null ? "원장 없음" : formatLagMinutes(realLag)})</>}
+                  </span>
                 </span>
+                {/* 그때 적은 이유 — 결과와 나란히 보여야 "판단이 맞았나"를 스스로 잰다 */}
+                {at && reasons?.[s.id]?.trim() && (
+                  <span className="break-keep text-caption leading-snug text-foreground-subtle">이유 · {reasons[s.id].trim()}</span>
+                )}
               </li>
             );
           })}

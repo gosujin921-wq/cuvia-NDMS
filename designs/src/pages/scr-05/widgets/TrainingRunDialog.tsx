@@ -100,13 +100,16 @@ export function TrainingRunDialog({ run, onClose, onReport }: {
         </header>
         <ul className="flex flex-col text-caption">
           {run.sopRows.map((s) => (
-            <li key={s.id} className="flex items-baseline justify-between gap-2 border-b border-border py-1 last:border-0">
-              <span className="min-w-0 break-keep text-foreground">{s.id} {s.label}</span>
-              <span className="shrink-0 text-right font-mono text-foreground-subtle">
-                {s.mineAt
-                  ? <><span className="font-semibold text-foreground">{formatClock(s.mineAt)}</span> · {formatLagMinutes(s.mineLagMin ?? 0)}{s.realLagMin !== null && ` · 실제 ${formatLagMinutes(s.realLagMin)}`}</>
-                  : <>안 함 · 실제와 같게{s.realLagMin !== null && `(${formatLagMinutes(s.realLagMin)})`}</>}
+            <li key={s.id} className="flex flex-col gap-0.5 border-b border-border py-1 last:border-0">
+              <span className="flex items-baseline justify-between gap-2">
+                <span className="min-w-0 break-keep text-foreground">{s.id} {s.label}</span>
+                <span className="shrink-0 text-right font-mono text-foreground-subtle">
+                  {s.mineAt
+                    ? <><span className="font-semibold text-foreground">{formatClock(s.mineAt)}</span> · {formatLagMinutes(s.mineLagMin ?? 0)}{s.realLagMin !== null && ` · 실제 ${formatLagMinutes(s.realLagMin)}`}</>
+                    : <>안 함 · 실제와 같게{s.realLagMin !== null && `(${formatLagMinutes(s.realLagMin)})`}</>}
+                </span>
               </span>
+              {s.reason && <span className="break-keep text-caption leading-snug text-foreground-subtle">이유 · {s.reason}</span>}
             </li>
           ))}
         </ul>

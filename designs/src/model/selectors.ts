@@ -1116,6 +1116,31 @@ export function livePrimaryForecast(c: WhatIfCase, now: Date): Forecast | null {
   return pick ?? null;
 }
 
+/**
+ * 그 조건에서 **이 조치로 기준 초과를 막을 수 있는 마지막 판단 정지점** (03 §26.4 · 2026-09-17).
+ *
+ * 정지점 노트를 글자로 박아 두면 조건이 바뀔 때 거짓이 된다 — 창원천 14:55 "방류가 효과를 낼 수 있는
+ * 마지막 시각"은 당시 조건에서만 반쯤 맞고(+20% 에선 건물이 노출되고 +50% 에선 어느 시각에도 못 막는다).
+ * 그래서 노트가 아니라 **판**에서 읽는다: 그 조치 하나만 각 판단 정지점에 실행한 판을 차례로 보고,
+ * 도달(기준 초과)이 사라지는 가장 늦은 정지점을 문턱으로 삼는다.
+ *   none   기준 초과라는 개념이 없거나(도달 없는 유형) 조치 없이도 안 넘는다 → 문턱을 말하지 않는다
+ *   until  그 시각까지 정하면 막는다
+ *   never  이 조건에서는 어느 정지점에 해도 못 막는다 — 훈련이 찾아야 할 "규정의 한계"
+ */
+export function trainingDeadlineOf(c: WhatIfCase, conditionStepId: string, sopId: string): { kind: "none" | "until" | "never"; at?: string } {
+  const t = c.training;
+  if (!t) return { kind: "none" };
+  const crossOf = (f: Forecast | null) => (f && f.targets.some((x) => x.arrivalAt) ? f.arrivalAt : null);
+  const base = trainingResultOf(c, conditionStepId, {}).base;
+  if (!crossOf(base)) return { kind: "none" };
+  let last: string | undefined;
+  for (const st of t.stops.filter((s) => s.phase === "판단")) {
+    const mine = trainingResultOf(c, conditionStepId, { [sopId]: st.at }).mine;
+    if (mine && crossOf(mine) === null) last = st.at;
+  }
+  return last ? { kind: "until", at: last } : { kind: "never" };
+}
+
 /** 그 정지점에서 고를 수 있는 조치 — 아직 안 했고, 그 시각 선택지가 있는 규정 */
 export function trainingSopsAt(c: WhatIfCase, at: string, acts: Record<string, string>): { sop: WhatIfSopItem; response: WhatIfResponse | null; preset: WhatIfPreset | null; can: boolean }[] {
   const ids = c.training?.firedSopIds ?? [];

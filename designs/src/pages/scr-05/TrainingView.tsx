@@ -32,7 +32,7 @@ import { formatMarkMetric, markMetricLabel, markOf, minutesBetween } from "../..
 import { formatClock } from "../../lib/datetime";
 import { CITY_CENTER } from "../../lib/map-config";
 import { GEOMETRIES, SCOPE_ZOOM } from "../../fixtures";
-import { findWhatIfCase, trainingResultOf, trainingSopsAt, whatIfStateRowsAt } from "../../model/selectors";
+import { findWhatIfCase, trainingDeadlineOf, trainingResultOf, trainingSopsAt, whatIfStateRowsAt } from "../../model/selectors";
 import { TWIN_FAMILY_HAZARD_NAME } from "../../model/twin-family";
 import type { Forecast } from "../../model/forecast";
 import { useScenario } from "../../state/ScenarioProvider";
@@ -93,6 +93,8 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
   const started = params.get("run") === "1";
   const [stopIndex, setStopIndex] = useState(0);
   const [acts, setActs] = useState<Record<string, string>>({});
+  /** 실행할 때 적은 "왜 지금인가" — 조치와 같이 살고 같이 지워진다 */
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   const [replayAt, setReplayAt] = useState<number | null>(null);
   const phase: "prepare" | "drill" | "debrief" = !started ? "prepare" : replayAt !== null ? "debrief" : "drill";
 
@@ -148,6 +150,32 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
   /* 준비 화면에서는 눈금을 잡지 않는다 — 조건을 바꿀 때 지도가 결과를 미리 말하면 훈련이 아니다.
      조건이 무엇을 바꾸는지는 슬라이더 아래 한 줄("최대 35 → 53 mm/h")이 말한다 */
   const shownMark = shown && mapStop && started ? markOf(shown, mapStop.at) : null;
+
+  /**
+   * 핵심 조치(현상 대응)의 문턱 — **판에서 읽는다**(`trainingDeadlineOf`). 조건이 바뀌면 문장이 바뀐다.
+   *   판단 카드   "상류 저류지 방류로 기준 초과를 막으려면 14:35 까지" · 지났으면 "…시각(14:35)은 지났습니다"
+   *   돌아보기    never 면 "이 조건에서는 …를 어느 시각에 해도 기준을 넘었습니다. 규정의 한계입니다"
+   * 마감을 미리 말하는 것은 결과를 미리 보여 주는 것과 다르다 — 재난관제의 전망도 그것을 알려 준다.
+   */
+  const coreSop = useMemo(() => {
+    const core = wcase?.responses.find((r) => r.kind === "현상");
+    return core ? (wcase?.sop ?? []).find((s) => s.responseId === core.responseId) ?? null : null;
+  }, [wcase]);
+  const deadline = useMemo(() => (wcase && coreSop ? trainingDeadlineOf(wcase, condStepId, coreSop.id) : { kind: "none" as const }), [wcase, coreSop, condStepId]);
+  const deadlineNote = useMemo(() => {
+    if (!coreSop || !stop || deadline.kind === "none") return null;
+    if (deadline.kind === "never") return `이 조건에서는 ${coreSop.label}만으로 기준 초과를 막지 못합니다`;
+    const at = deadline.at as string;
+    return at < stop.at
+      ? `${coreSop.label}로 기준 초과를 막을 시각(${formatClock(at)})은 지났습니다`
+      : `${coreSop.label}로 기준 초과를 막으려면 ${formatClock(at)}까지 정해야 합니다`;
+  }, [coreSop, stop, deadline]);
+  /* 결론 꼬리 — 넘었을 때만 붙는다(debriefHeadline 이 그렇게 쓴다). until 이면 "그때까지 정했어야"가 정확한 말이다 */
+  const limitNote = !coreSop || deadline.kind === "none"
+    ? null
+    : deadline.kind === "never"
+      ? `이 조건에서는 ${coreSop.label}를 어느 시각에 해도 기준을 넘었습니다. 규정의 한계입니다.`
+      : `${coreSop.label}는 ${formatClock(deadline.at as string)}까지 정했어야 기준 초과를 막았습니다.`;
 
   /* 이 정지점에서 고를 수 있는 조치 */
   const actionRows = useMemo(
@@ -425,8 +453,8 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
     for (const [k, v] of Object.entries(patch)) { if (v === null) next.delete(k); else next.set(k, v); }
     setParams(next, { replace: true });
   };
-  const start = () => { setStopIndex(0); setActs({}); setReplayAt(null); setSavedId(null); startedAt.current = new Date().toISOString(); setQuery({ run: "1" }); };
-  const restart = () => { setStopIndex(0); setActs({}); setReplayAt(null); setSavedId(null); setQuery({ run: null }); };
+  const start = () => { setStopIndex(0); setActs({}); setReasons({}); setReplayAt(null); setSavedId(null); startedAt.current = new Date().toISOString(); setQuery({ run: "1" }); };
+  const restart = () => { setStopIndex(0); setActs({}); setReasons({}); setReplayAt(null); setSavedId(null); setQuery({ run: null }); };
   /** 훈련 한 회를 저장한다 — 판 id 와 보고서용 표시값을 둘 다 담는다(03 §26.9) */
   const [savedId, setSavedId] = useState<string | null>(null);
   const startedAt = useRef(new Date().toISOString());
@@ -444,11 +472,12 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
         mineAt: acts[s.id] ?? null,
         mineLagMin: acts[s.id] ? minutesBetween(s.firedAt, acts[s.id]) : null,
         realLagMin: s.actedAt ? minutesBetween(s.firedAt, s.actedAt) : null,
+        ...(acts[s.id] && reasons[s.id]?.trim() ? { reason: reasons[s.id].trim() } : {}),
       })),
       resultForecastId: (mine ?? base).forecastId,
       baselineForecastId: base.forecastId,
       rows: debriefRowsOf(mine, base),
-      headline: debriefHeadline(mine, base, condLabel, Object.keys(acts).length === 0),
+      headline: debriefHeadline(mine, base, condLabel, Object.keys(acts).length === 0, limitNote),
       stateRows: (state?.rows ?? []).map((r) => ({ label: r.label, value: r.value })),
       improvements: improvements.filter((x) => x.incidentId === wcase.incidentId).map(({ axis, text }) => ({ axis, text })),
       /* 저장 시점 지도 한 장 — 강평에서 누르므로 마지막 정지점의 화면이 담긴다 */
@@ -622,8 +651,11 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
                       note={stop.note}
                       acts={acts}
                       frozen={flowing}
+                      deadline={deadlineNote}
+                      reasons={reasons}
+                      onReason={(id, text) => setReasons((p) => ({ ...p, [id]: text }))}
                       onAct={(id) => setActs((p) => ({ ...p, [id]: stop.at }))}
-                      onUndo={(id) => setActs((p) => { const n = { ...p }; delete n[id]; return n; })}
+                      onUndo={(id) => { setActs((p) => { const n = { ...p }; delete n[id]; return n; }); setReasons((p) => { const n = { ...p }; delete n[id]; return n; }); }}
                     />
                   </div>
                 )}
@@ -661,8 +693,13 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
                       </ul>
                     )}
                     {condStep?.situationId && (
+                      /* 유형을 박지 않는다 — "강우 · 강우계 · 합류부" 로 두면 구항(조위)·산불(바람)에서 거짓 문장이 된다.
+                         환산 계수가 있는 조건(창원천 강우)만 관측값을 환산하고, 나머지는 관측값이 당시 기록 그대로다(03 §26.6) */
                       <p className="break-keep text-caption leading-snug text-foreground-subtle">
-                        <Tag tone="warning">강우 {condStep.label}</Tag> 강우계는 조건대로 환산한 값이고, 합류부 수위는 그 조건·조치로 계산한 값입니다
+                        <Tag tone="warning">{condLabel}</Tag>{" "}
+                        {condStep.factor
+                          ? `${t?.conditions[0]?.stateLabel ?? "관측값"}는 조건대로 환산한 값이고, 결과는 그 조건·조치로 계산한 값입니다`
+                          : "관측값은 당시 기록 그대로이고, 결과만 그 조건·조치로 계산한 값입니다"}
                       </p>
                     )}
                   </section>
@@ -732,6 +769,8 @@ export function TrainingView({ incidentId, onBackToList }: { incidentId: string;
                   })}
                   onRemoveImprovement={removeImprovement}
                   saved={savedId}
+                  limit={limitNote}
+                  reasons={reasons}
                 />
               </>
             )}

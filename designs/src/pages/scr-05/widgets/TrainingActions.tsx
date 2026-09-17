@@ -34,7 +34,7 @@ const changesOf = (r: WhatIfResponse | null): string =>
       ? "이 판단이 수위와 도달 시각을 바꿉니다"
       : "도달까지 얼마나 여유를 두는지가 달라집니다");
 
-export function TrainingActions({ rows, at, note, acts, onAct, onUndo, frozen }: {
+export function TrainingActions({ rows, at, note, acts, onAct, onUndo, frozen, deadline, reasons, onReason }: {
   rows: ActionRow[];
   at: string;
   note: string;
@@ -43,6 +43,11 @@ export function TrainingActions({ rows, at, note, acts, onAct, onUndo, frozen }:
   onUndo: (sopId: string) => void;
   /** 시간이 흐르는 중 — 이미 지나간 시각으로 조치가 들어가면 안 된다 */
   frozen?: boolean;
+  /** 이 조건에서 핵심 조치의 문턱 — 판에서 읽은 것(`trainingDeadlineOf`). 없으면 줄을 그리지 않는다 */
+  deadline?: string | null;
+  /** 실행한 조치마다 "왜 지금인가" 한 줄(선택). 돌아보기에서 자기 판단을 되짚는 재료다 */
+  reasons?: Record<string, string>;
+  onReason?: (sopId: string, text: string) => void;
 }) {
   const [opened, setOpened] = useState<Record<string, boolean>>({});
   /* 안 한 것 중 첫 번째 — 늘 펴져 있다 */
@@ -66,6 +71,8 @@ export function TrainingActions({ rows, at, note, acts, onAct, onUndo, frozen }:
         <span className="shrink-0 text-caption text-foreground-subtle">{formatClock(at)} · {rows.length}건 발동</span>
       </header>
       <p className="break-keep text-caption text-foreground-subtle">{note}</p>
+      {/* 문턱은 글자가 아니라 판에서 온다 — 조건이 바뀌면 이 줄도 바뀐다. 결과가 아니라 마감이다(재난관제도 알려 주는 정보) */}
+      {deadline && <p className="break-keep text-caption font-medium text-warning">{deadline}</p>}
 
       {rows.map((r) => {
         const done = acts[r.sop.id] === at;
@@ -83,6 +90,18 @@ export function TrainingActions({ rows, at, note, acts, onAct, onUndo, frozen }:
               {/* "언제 보이나"는 유형마다 달라 한 문장으로 말할 수 없다 — 창원천 통제는 15:00 눈금에 바로 서지만
                   폭염 쉼터 연장은 21:00 에 열리고 산불 방화선은 18:00 에 착수한다(2026-09-17 검수). 무엇을 바꾸나만 적는다 */}
               <span className="break-keep text-caption leading-snug text-foreground-subtle">{changesOf(r.response)}</span>
+              {/* 왜 지금인가 — 적지 않아도 된다. 타사 SOP 훈련이 이력에 근거를 남기듯, 돌아보기에서 "왜"를 볼 수 있어야 배운다 */}
+              {onReason && (
+                <input
+                  type="text"
+                  value={reasons?.[r.sop.id] ?? ""}
+                  onChange={(e) => onReason(r.sop.id, e.target.value)}
+                  disabled={frozen}
+                  placeholder="왜 지금인가 · 한 줄 (선택)"
+                  aria-label={`${r.sop.label} 판단 이유`}
+                  className="w-full rounded-md border border-border bg-surface px-2 py-1 text-caption text-foreground placeholder:text-foreground-subtle"
+                />
+              )}
               <Button size="sm" variant="secondary" disabled={frozen} onClick={() => onUndo(r.sop.id)}>되돌리기</Button>
             </div>
           );

@@ -85,12 +85,33 @@ const NODE_WORD: Record<"pump" | "cell" | "homes", Record<NodeState, string>> = 
 };
 const NODE_TONE: Record<NodeState, MarkImpact["tone"]> = { 정상: "muted", 경고: "warning", 중단: "danger", 복구: "safe" };
 /** 그 시각의 핵심 영향 — 펌프장 · 통신 · 저지대 세대 노드 상태(계통도와 같은 값) */
-const impactsOf = (st: State): MarkImpact[] => (["pump", "cell", "homes"] as const).map((id) => {
-  const s = st[id] ?? "정상";
-  return { label: NODES.find((n) => n.id === id)!.label, value: NODE_WORD[id][s], tone: NODE_TONE[s] };
-});
-const marksOf = (z: Four<[number, string]>, g: Four<string>, n: Four<string>, states: Four<State>): ForecastMark[] =>
-  AT.map((validAt, i) => ({ validAt, maxDepthM: 0, metric: zones(z[i][0], z[i][1]), extentGeometryId: g[i], impactSummary: n[i], scene: sceneOf(states[i]), impacts: impactsOf(states[i]) }));
+/**
+ * 그 시각의 핵심 영향 — 노드 상태 셋과 **그 시각까지 쌓인 중단 시간**.
+ * ★ 상태 글자만으로는 투입 시각이 결과를 못 가른다 — 17:20 에 붙인 것과 17:40 에 붙인 것이 어느 눈금에서든
+ *   같은 글자다(다른 유형에 시간 값을 세운 것과 같은 이유 · 2026-09-17). 시간 차라 곱해서 만든 수가 아니다.
+ *   `clock` 이 없으면 노드 상태만 낸다(옛 호출부 호환).
+ */
+const impactsOf = (st: State, at?: string, clock?: { backupAt: string; restoredAt: string }): MarkImpact[] => {
+  const nodes: MarkImpact[] = (["pump", "cell", "homes"] as const).map((id) => {
+    const s = st[id] ?? "정상";
+    return { label: NODES.find((n) => n.id === id)!.label, value: NODE_WORD[id][s], tone: NODE_TONE[s] };
+  });
+  if (!at || !clock) return nodes;
+  const ms = (iso: string) => new Date(iso).getTime();
+  const upTo = (start: string, end: string) => Math.max(0, Math.round((Math.min(ms(end), ms(at)) - ms(start)) / 60_000));
+  const pump = upTo(FAULT, plus(clock.backupAt, 5));
+  const cell = upTo(CELL_DOWN, plus(clock.backupAt, 10));
+  const out = upTo(HOMES_OUT, clock.restoredAt);
+  const tone = (m: number, bad: number): MarkImpact["tone"] => (m >= bad ? "danger" : m > 0 ? "warning" : "muted");
+  return [
+    ...nodes,
+    { label: "펌프 정지 시간", value: pump > 0 ? `${pump}분` : "없음", tone: tone(pump, 20) },
+    { label: "통신 불통 시간", value: cell > 0 ? `${cell}분` : "없음", tone: tone(cell, 10) },
+    { label: "세대 정전 시간", value: out > 0 ? `${out}분` : "없음", tone: tone(out, 60) },
+  ];
+};
+const marksOf = (z: Four<[number, string]>, g: Four<string>, n: Four<string>, states: Four<State>, clock?: { backupAt: string; restoredAt: string }): ForecastMark[] =>
+  AT.map((validAt, i) => ({ validAt, maxDepthM: 0, metric: zones(z[i][0], z[i][1]), extentGeometryId: g[i], impactSummary: n[i], scene: sceneOf(states[i]), impacts: impactsOf(states[i], validAt, clock) }));
 
 /* ── 규칙 — 정전 파급의 시간은 투입·연결 시각에서 바로 나온다(모델이 필요 없다). 원단위는 시나리오 편집값 ──
  *   펌프 정지 = (비상발전기 투입 + 기동 5분) − 장애 17:15
@@ -139,7 +160,7 @@ const ACTUAL_G: Four<string> = ["GEO-G-OUT-1", "GEO-G-OUT-2", "GEO-G-OUT-3", "GE
 const ACTUAL_N: Four<string> = ["변전 계통 장애 · 펌프 2/3 정지 · 배수 능력 저하", "기지국 비상전원 소진 · 마을방송 불가", "비상발전 가동 · 저지대 320세대 정전 · 엘리베이터 갇힘 신고", "복구반 도착 · 세대 순차 복전"];
 export const SP_ACTUAL: Forecast = {
   ...common, forecastId: "FC-SP-ACTUAL", alternativeId: "baseline", changedConditions: [],
-  marks: marksOf(ACTUAL_Z, ACTUAL_G, ACTUAL_N, ACTUAL_STATES),
+  marks: marksOf(ACTUAL_Z, ACTUAL_G, ACTUAL_N, ACTUAL_STATES, { backupAt: ACTUAL_BACKUP, restoredAt: RESTORED }),
   arrivalAt: t("17:15"),
   targets: targets(ACTUAL_BACKUP, ACTUAL_PATROL),
   basis: basis(["운전·전원 기록으로 다시 그린 파급", "실제 대응: 비상전원 17:40 · 순회 18:10 · 복구반 18:30", SP_RULE], "재현 (시설 운전·전원 기록)", "낮음"),
@@ -169,7 +190,7 @@ const backupBoard = (b: BackupSpec): Forecast => ({
   ...common, forecastId: `FC-SP-${b.key}`, alternativeId: "backup-power",
   changedConditions: [`펌프장 비상발전기 · 기지국 이동발전 · ${b.at.slice(11, 16)} 투입 (실제보다 ${b.early})`],
   hypothesis: `비상전원을 실제보다 ${b.early}(${b.at.slice(11, 16)}) 투입한 경우`,
-  marks: marksOf(b.z, b.g, b.n, b.states),
+  marks: marksOf(b.z, b.g, b.n, b.states, { backupAt: b.at, restoredAt: RESTORED }),
   arrivalAt: t("17:15"),
   targets: targets(b.at, ACTUAL_PATROL),
   basis: basis(["변전 계통 장애 지속", `비상전원 ${b.at.slice(11, 16)} 가정`, SP_RULE]),
@@ -180,46 +201,68 @@ const backupBoard = (b: BackupSpec): Forecast => ({
 export const SP_BACKUP_10 = backupBoard(BACKUPS[0]);
 export const SP_BACKUP_20 = backupBoard(BACKUPS[1]);
 
-/* ── 상황 조건 · 복구 지연 — 한전 복구반이 1시간 늦어 복전이 20:10 이었다면. 대응은 실제(비상전원 17:40 · 순회 18:10) 그대로 ──
+/* ── 상황 조건 · 복구 지연 — 한전 복구반이 늦어 복전이 밀렸다면. 대응은 실제(비상전원 17:40 · 순회 18:10) 그대로 ──
    18:30 전까지는 실제와 같다. 판단 시점 둘(장애 17:15 · 기지국 소진 17:30)이 모두 그 앞이라 같은 판이다.
-   19:00 에 세대 정전이 이어지고 변전 계통이 아직 중단이다 — 세대 정전 시간이 같은 규칙(복전 − 18:00)으로 는다 */
+   19:00 눈금에서 갈린다 — 1시간 늦으면 복구반이 아직 안 와 변전 중단 · 세대 정전이고, 30분 늦으면 막 도착해 복구 중이되 세대는 아직 정전이다.
+   세대 정전 시간은 같은 규칙(복전 − 18:00)으로 는다.
+   ★ 지연을 목록(`DELAYS`)으로 둔다 — 훈련 조건이 당시 · 30분 · 1시간 세 단계라야 "어디까지 버티나"가 읽힌다(03 §26.6 · 2026-09-17).
+     두 판은 같은 규칙에 도착·복전 시각만 다르다. 30분 판을 따로 손으로 적으면 규칙이 두 벌이 된다 */
 const DECISIONS = [t("17:15"), t("17:30")] as const;
-const DELAY_RESTORED = t("20:10");
-/** 복구반이 늦으면 19:00 에 변전 계통은 아직 중단이고 세대는 정전이다 — 비상전원으로 버티던 펌프·통신은 그대로 */
-const delayed = (st: State): State => ({ ...st, sub: "중단", homes: "중단", pump: st.pump === "정상" ? "복구" : st.pump, pa: st.pa === "정상" ? "정상" : "복구" });
-const DELAY_STATES: Four<State> = [ACTUAL_STATES[0], ACTUAL_STATES[1], ACTUAL_STATES[2], delayed(ACTUAL_STATES[3])];
-export const SP_DELAY: Forecast = {
-  ...common, forecastId: "FC-SP-DELAY", alternativeId: "situation",
-  changedConditions: ["한전 복구반 19:30 도착 · 복전 20:10 (실제 18:30 · 19:10)"],
-  hypothesis: "한전 복구반이 실제보다 1시간 늦게 도착한 경우",
-  marks: marksOf([ACTUAL_Z[0], ACTUAL_Z[1], ACTUAL_Z[2], [2, "세대 정전 · 20:10 복전 예상"]], ["GEO-G-OUT-1", "GEO-G-OUT-2", "GEO-G-OUT-3", "GEO-G-OUT-2"],
-    [ACTUAL_N[0], ACTUAL_N[1], ACTUAL_N[2], "복구반 지연 · 저지대 세대 정전 지속 · 20:10 복전 예상"], DELAY_STATES),
-  arrivalAt: t("17:15"),
-  targets: targets(ACTUAL_BACKUP, ACTUAL_PATROL, DELAY_RESTORED),
-  basis: basis(["한전 복구반 도착 18:30 → 19:30 · 복전 19:10 → 20:10", "실제 대응 그대로: 비상전원 17:40 · 순회 18:10", SP_RULE], "규칙 계산 (같은 기록에 복전 시각만 변경)"),
-  system: systemOf(DELAY_STATES),
-  conditions: conditions(ACTUAL_BACKUP, ACTUAL_PATROL, "19:30 도착 · 20:10 복전 (1시간 지연)"),
+interface DelaySpec { key: string; id: string; arriveAt: string; restoredAt: string; label: string }
+const DELAYS: DelaySpec[] = [
+  { key: "30", id: "restore-delay30", arriveAt: t("19:00"), restoredAt: t("19:40"), label: "30분 지연" },
+  { key: "60", id: "restore-delay", arriveAt: t("19:30"), restoredAt: t("20:10"), label: "1시간 지연" },
+];
+const hm = (iso: string) => iso.slice(11, 16);
+const arrivedBy19 = (dl: DelaySpec) => new Date(dl.arriveAt).getTime() <= new Date(AT[3]).getTime();
+/** 19:00 의 계통 — 복구반이 안 왔으면 변전 중단, 막 도착했으면 복구 중. 세대는 둘 다 아직 정전이고 비상전원으로 버티던 펌프·통신은 그대로 */
+const delayed = (st: State, arrived: boolean): State => ({ ...st, sub: arrived ? "복구" : "중단", homes: "중단", pump: st.pump === "정상" ? "복구" : st.pump, pa: st.pa === "정상" ? "정상" : "복구" });
+const delayLine = (dl: DelaySpec) => `한전 복구반 도착 18:30 → ${hm(dl.arriveAt)} · 복전 19:10 → ${hm(dl.restoredAt)}`;
+const delayCond = (dl: DelaySpec) => `${hm(dl.arriveAt)} 도착 · ${hm(dl.restoredAt)} 복전 (${dl.label})`;
+const delayN = (dl: DelaySpec) => `${arrivedBy19(dl) ? "복구반 도착 · 복구 중" : "복구반 지연"} · 저지대 세대 정전 지속 · ${hm(dl.restoredAt)} 복전 예상`;
+const delayId = (dl: DelaySpec) => (dl.key === "60" ? "FC-SP-DELAY" : `FC-SP-DELAY-${dl.key}`);
+const delayBoard = (dl: DelaySpec): Forecast => {
+  const states: Four<State> = [ACTUAL_STATES[0], ACTUAL_STATES[1], ACTUAL_STATES[2], delayed(ACTUAL_STATES[3], arrivedBy19(dl))];
+  return {
+    ...common, forecastId: delayId(dl), alternativeId: "situation",
+    changedConditions: [`한전 복구반 ${hm(dl.arriveAt)} 도착 · 복전 ${hm(dl.restoredAt)} (실제 18:30 · 19:10)`],
+    hypothesis: `한전 복구반이 실제보다 ${dl.label.replace(" 지연", "")} 늦게 도착한 경우`,
+    marks: marksOf([ACTUAL_Z[0], ACTUAL_Z[1], ACTUAL_Z[2], [2, `세대 정전 · ${hm(dl.restoredAt)} 복전 예상`]], ["GEO-G-OUT-1", "GEO-G-OUT-2", "GEO-G-OUT-3", "GEO-G-OUT-2"],
+      [ACTUAL_N[0], ACTUAL_N[1], ACTUAL_N[2], delayN(dl)], states, { backupAt: ACTUAL_BACKUP, restoredAt: dl.restoredAt }),
+    arrivalAt: t("17:15"),
+    targets: targets(ACTUAL_BACKUP, ACTUAL_PATROL, dl.restoredAt),
+    basis: basis([delayLine(dl), "실제 대응 그대로: 비상전원 17:40 · 순회 18:10", SP_RULE], "규칙 계산 (같은 기록에 복전 시각만 변경)"),
+    system: systemOf(states),
+    conditions: conditions(ACTUAL_BACKUP, ACTUAL_PATROL, delayCond(dl)),
+  };
 };
 
 /* ── 상황과 대응을 함께 — 복구가 늦는 날 비상전원을 일찍 넣으면 ──
-   비상전원 판의 17:15~18:00 파급에 복구 지연의 19:00(변전 중단 · 세대 정전 지속)을 얹는다. 세대 정전 시간은 같은 규칙(복전 − 18:00)이다 */
-const COMBO_FORECASTS: Forecast[] = BACKUPS.map((b) => {
-  const states: Four<State> = [b.states[0], b.states[1], b.states[2], delayed(b.states[3])];
+   비상전원 판의 17:15~18:00 파급에 복구 지연의 19:00(변전 중단 또는 복구 중 · 세대 정전 지속)을 얹는다. 세대 정전 시간은 같은 규칙(복전 − 18:00)이다 */
+const delayCombo = (dl: DelaySpec, sit: Forecast, b: BackupSpec): Forecast => {
+  const states: Four<State> = [b.states[0], b.states[1], b.states[2], delayed(b.states[3], arrivedBy19(dl))];
   return {
-    ...common, forecastId: `FC-SP-DELAY-${b.key}`, alternativeId: "backup-power",
-    changedConditions: [...SP_DELAY.changedConditions, `비상전원 ${b.at.slice(11, 16)} 투입 (실제보다 ${b.early})`],
-    hypothesis: `한전 복구가 1시간 늦은 날 비상전원을 ${b.early}(${b.at.slice(11, 16)}) 투입했다면`,
-    marks: marksOf([b.z[0], b.z[1], b.z[2], [b.z[3][0] + 1, "세대 정전 · 20:10 복전 예상"]], [b.g[0], b.g[1], b.g[2], "GEO-G-OUT-2R"],
-      [b.n[0], b.n[1], b.n[2], "복구반 지연 · 저지대 세대 정전 지속 · 20:10 복전 예상"], states),
+    ...common, forecastId: `${delayId(dl)}-${b.key}`, alternativeId: "backup-power",
+    changedConditions: [...sit.changedConditions, `비상전원 ${hm(b.at)} 투입 (실제보다 ${b.early})`],
+    hypothesis: `한전 복구가 ${dl.label.replace(" 지연", "")} 늦은 날 비상전원을 ${b.early}(${hm(b.at)}) 투입했다면`,
+    marks: marksOf([b.z[0], b.z[1], b.z[2], [b.z[3][0] + 1, `세대 정전 · ${hm(dl.restoredAt)} 복전 예상`]], [b.g[0], b.g[1], b.g[2], "GEO-G-OUT-2R"],
+      [b.n[0], b.n[1], b.n[2], delayN(dl)], states, { backupAt: b.at, restoredAt: dl.restoredAt }),
     arrivalAt: t("17:15"),
-    targets: targets(b.at, ACTUAL_PATROL, DELAY_RESTORED),
-    basis: basis(["한전 복구반 도착 18:30 → 19:30 · 복전 19:10 → 20:10", `비상전원 ${b.at.slice(11, 16)} 가정`, SP_RULE], "규칙 계산 (같은 기록에 복전 · 투입 시각 변경)"),
+    targets: targets(b.at, ACTUAL_PATROL, dl.restoredAt),
+    basis: basis([delayLine(dl), `비상전원 ${hm(b.at)} 가정`, SP_RULE], "규칙 계산 (같은 기록에 복전 · 투입 시각 변경)"),
     system: systemOf(states),
-    conditions: conditions(b.at, ACTUAL_PATROL, "19:30 도착 · 20:10 복전 (1시간 지연)"),
+    conditions: conditions(b.at, ACTUAL_PATROL, delayCond(dl)),
     actionAt: { label: "비상전원 투입", at: b.at },
   };
+};
+const DELAY_SETS = DELAYS.map((dl) => {
+  const sit = delayBoard(dl);
+  return { dl, sit, combos: BACKUPS.map((b) => delayCombo(dl, sit, b)) };
 });
-const COMBOS: WhatIfCombo[] = BACKUPS.map((b, i) => ({ situationForecastId: SP_DELAY.forecastId, responseId: "backup-power", presetId: b.presetId, forecastId: COMBO_FORECASTS[i].forecastId }));
+export const SP_DELAY: Forecast = DELAY_SETS.find((s) => s.dl.key === "60")!.sit;
+const COMBO_FORECASTS: Forecast[] = DELAY_SETS.flatMap((s) => s.combos);
+const COMBOS: WhatIfCombo[] = DELAY_SETS.flatMap((s) =>
+  BACKUPS.map((b, i) => ({ situationForecastId: s.sit.forecastId, responseId: "backup-power" as const, presetId: b.presetId, forecastId: s.combos[i].forecastId })));
 
 /* ═══ 훈련 조합 (03 §26.10 · 2026-09-17) ═══════════════════════════════════
  *
@@ -236,20 +279,21 @@ const SP_TRAINING_COMBOS: { conditionStepId: string; acts: Record<string, string
   { conditionStepId: "now", acts: {}, forecastId: SP_ACTUAL.forecastId },
   { conditionStepId: "now", acts: { G1: AT[0] }, forecastId: SP_BACKUP_20.forecastId },
   { conditionStepId: "now", acts: { G1: AT[1] }, forecastId: SP_BACKUP_10.forecastId },
-  { conditionStepId: "restore-delay", acts: {}, forecastId: SP_DELAY.forecastId },
-  { conditionStepId: "restore-delay", acts: { G1: AT[0] }, forecastId: COMBO_FORECASTS[1].forecastId },
-  { conditionStepId: "restore-delay", acts: { G1: AT[1] }, forecastId: COMBO_FORECASTS[0].forecastId },
+  /* 지연 단계마다 — BACKUPS[0](10분 일찍 · 17:30)은 두 번째 판단 정지점, BACKUPS[1](20분 일찍 · 17:20)은 첫 정지점에 붙는다 */
+  ...DELAY_SETS.flatMap((s) => [
+    { conditionStepId: s.dl.id, acts: {} as Record<string, string>, forecastId: s.sit.forecastId },
+    { conditionStepId: s.dl.id, acts: { G1: AT[0] }, forecastId: s.combos[1].forecastId },
+    { conditionStepId: s.dl.id, acts: { G1: AT[1] }, forecastId: s.combos[0].forecastId },
+  ]),
 ];
 
-export const PUMP_OUTAGE_FORECASTS: Forecast[] = [SP_ACTUAL, SP_BACKUP_10, SP_BACKUP_20, SP_DELAY, ...COMBO_FORECASTS];
+export const PUMP_OUTAGE_FORECASTS: Forecast[] = [SP_ACTUAL, SP_BACKUP_10, SP_BACKUP_20, ...DELAY_SETS.map((s) => s.sit), ...COMBO_FORECASTS];
 
-const SITUATIONS: WhatIfSituation[] = [
-  {
-    situationId: "restore-delay", label: "복구 지연", detail: "한전 복구반 1시간 지연 · 복전 19:10 → 20:10",
-    byBasis: DECISIONS.map((at) => ({ at, forecastId: SP_DELAY.forecastId })),
-    method: `규칙 · 같은 기록에 복전 시각만 변경 · ${SP_RULE}`,
-  },
-];
+const SITUATIONS: WhatIfSituation[] = DELAY_SETS.map((s) => ({
+  situationId: s.dl.id, label: `복구 ${s.dl.label}`, detail: `한전 복구반 ${s.dl.label} · 복전 19:10 → ${hm(s.dl.restoredAt)}`,
+  byBasis: DECISIONS.map((at) => ({ at, forecastId: s.sit.forecastId })),
+  method: `규칙 · 같은 기록에 복전 시각만 변경 · ${SP_RULE}`,
+}));
 
 const RESPONSES: WhatIfResponse[] = [
   {
@@ -310,7 +354,7 @@ export const PUMP_OUTAGE_WHATIF: WhatIfCase = {
         id: "restore", label: "복구", stateLabel: "복구반",
         steps: [
           { id: "now", label: "당시", detail: "18:30 도착 · 19:10 복전", situationId: null },
-          { id: "restore-delay", label: "1시간 지연", detail: "19:30 도착 · 20:10 복전", situationId: "restore-delay" },
+          ...DELAYS.map((dl) => ({ id: dl.id, label: dl.label, detail: `${hm(dl.arriveAt)} 도착 · ${hm(dl.restoredAt)} 복전`, situationId: dl.id })),
         ],
       },
     ],
