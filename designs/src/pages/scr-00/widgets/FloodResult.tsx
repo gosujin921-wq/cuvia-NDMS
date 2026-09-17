@@ -19,7 +19,7 @@ import type { AlertLevel } from "../../../demo/levels";
 const LEVEL_LABEL: Record<AlertLevel, string> = { advisory: "주의보", warning: "경보", evacuate: "대피" };
 const LEVEL_RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
 
-export function FloodResult({ scenarios, selected, onSelect, summaries, observed, sourceNote, at, stateRows, depthNow, areaHa, impacts, actions, sop, stage, focus, onFocus, compare, onCompare, onBasis }: {
+export function FloodResult({ scenarios, selected, onSelect, summaries, observed, sourceNote, at, stateRows, depthNow, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, compare, onCompare, onBasis }: {
   scenarios: SimScenario[];
   selected: SimScenario;
   onSelect: (id: string) => void;
@@ -33,6 +33,8 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
   depthNow: number;
   areaHa: number | null;
   impacts: ImpactObject[];
+  /** 시가지 과거 침수 지점(침수흔적도) — 실자료. 잠김 시각은 누적 강우 ≥ 한계강우량 */
+  marks: { areaHa: number; floodedAt: string | null; note: string } | null;
   /** 이 시나리오의 조치(시각순). 지난 것과 앞의 것을 갈라 보인다 */
   actions: SimAction[];
   sop: SimSop[];
@@ -154,6 +156,24 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
           <h2 className="text-body font-semibold text-foreground">영향 객체</h2>
           <span className="shrink-0 text-caption text-foreground-subtle">영향 {impacts.filter((i) => i.status === "영향" || i.status === "범위 안").length} · 예상 {impacts.filter((i) => i.status === "예상").length}</span>
         </header>
+        {/* 과거 침수 지점 — 지도의 침수흔적도와 같은 것. 잠김은 누적 강우가 한계강우량을 넘는 시각부터 */}
+        {marks && (() => {
+          const flooded = marks.floodedAt ? isPast(marks.floodedAt, at) : false;
+          return (
+            <div className={cn("flex flex-col gap-0.5 rounded-md border px-2.5 py-1.5 text-caption", flooded ? "border-danger bg-danger/10" : "border-border bg-card")}>
+              <span className="flex items-baseline justify-between gap-2">
+                <span className="flex min-w-0 items-baseline gap-1.5">
+                  <Badge variant="outline" className="h-fit shrink-0 text-caption">과거 지점</Badge>
+                  <span className="min-w-0 break-keep text-foreground">시가지 과거 침수 지점 · {marks.areaHa.toFixed(1)} ha</span>
+                </span>
+                <span className={cn("shrink-0 font-mono", flooded ? "text-danger" : marks.floodedAt ? "text-warning" : "text-success")}>
+                  {marks.floodedAt ? (flooded ? `잠김 ${formatClock(marks.floodedAt)}~` : `${formatClock(marks.floodedAt)} 잠김 예상`) : "한계강우량 미달"}
+                </span>
+              </span>
+              <span className="break-keep text-caption leading-snug text-foreground-subtle">{marks.note}</span>
+            </div>
+          );
+        })()}
         {impacts.length === 0 ? (
           <p className="text-caption text-foreground-subtle">이 판에 적힌 대상이 없습니다.</p>
         ) : (

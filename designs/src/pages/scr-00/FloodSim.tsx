@@ -25,6 +25,7 @@ import { GEOMETRIES, SCOPE_ZOOM } from "../../fixtures";
 import { useScenario } from "../../state/ScenarioProvider";
 import { MapUtilStrip } from "../../components/MapUtilStrip";
 import { usePrecipitationLayer } from "../../lib/usePrecipitationLayer";
+import { ensureSafemapLayers, setSafemapVisible } from "../../lib/safemap";
 import { MapLegend } from "../../components/twin/MapLegend";
 import { ContextInset, insetKindOf } from "../../components/twin/ContextInset";
 import { SceneLayers, raiseSceneLayers } from "../../components/twin/SceneLayers";
@@ -137,7 +138,7 @@ export function FloodSim() {
   const center = site.anchor;
   const mapContainer = useRef<HTMLDivElement>(null);
   const { map, ready } = useMapLibre(mapContainer, { center, zoom: TWIN_ZOOM, pitch: 0, capture: true });
-  const [layers, setLayers] = useState({ scope: true, extent: true, rain: false });
+  const [layers, setLayers] = useState({ scope: true, extent: true, rain: false, marks: true });
   usePrecipitationLayer(map, ready, layers.rain, new Date(at).getHours());
   const scopeRing = site.scopeGeometryId ? GEOMETRIES[site.scopeGeometryId] : undefined;
   const fitPoints = useMemo<[number, number][]>(() => (scopeRing && scopeRing.length > 0 ? scopeRing : [center]), [scopeRing, center]);
@@ -159,8 +160,11 @@ export function FloodSim() {
     setBuildings3D(m, true);
     setTerrain(m, true);
     setHillshadeVisible(m, true);
+    /* 침수흔적도(생활안전지도 · 실자료) — 과거에 잠겼던 곳. 시뮬레이션과 나란히 보여야 "그때 조건이 달랐다면"이 땅에 붙는다 */
+    ensureSafemapLayers(m);
     focusScope(800);
   }, [map, ready, focusScope]);
+  useEffect(() => { const m = map.current; if (ready && m) setSafemapVisible(m, "flood-marks", layers.marks); }, [map, ready, layers.marks]);
 
   /* 지형을 채운 침수면 — 수위(해발)를 넣으면 범위·수심이 지형에서 나온다 */
   const surfaceGeometryId = site.rule ? site.rule.surfaceGeometryId : floorMark?.extentGeometryId ?? null;
@@ -271,9 +275,10 @@ export function FloodSim() {
               { id: "scope", label: "대상 범위", color: cssColor("--color-danger", "#ef4444"), icon: "mdi:vector-polygon", shape: "area" as const, visible: layers.scope },
               { id: "extent", label: "침수 범위", color: cssColor("--color-primary-text", "#60a5fa"), icon: "mdi:waves", shape: "area" as const, visible: layers.extent },
               { id: "rain", label: "강우", color: cssColor("--color-rain", "#7c5cff"), icon: "mdi:weather-pouring", shape: "raster" as const, visible: layers.rain },
+              { id: "marks", label: "침수흔적도 · 과거", color: "#bf7fff", icon: "mdi:water-alert", shape: "raster" as const, visible: layers.marks },
             ],
             onToggle: (id) => setLayers((p) => ({ ...p, [id as keyof typeof p]: !p[id as keyof typeof p] })),
-            onSetAll: (visible) => setLayers({ scope: visible, extent: visible, rain: visible }),
+            onSetAll: (visible) => setLayers({ scope: visible, extent: visible, rain: visible, marks: visible }),
           }]}
         />
       </div>
@@ -289,13 +294,16 @@ export function FloodSim() {
               summaries={summaries}
               observed={site.observed}
               sourceNote={site.rule
-                ? "수위 → 범위·수심은 지형 계산 · 강우 → 수위는 규칙 계산(2024-09-21 강우 실자료 · 침수흔적으로 보정 · 수리 모델 연결 시 교체) · 실측은 침수흔적도"
+                ? (site.id === "seohang"
+                  ? "수위 → 범위·수심은 지형 계산 · 강우 → 수위는 규칙 계산(2024-09-21 강우 실자료 · 침수흔적으로 보정 · 수리 모델 연결 시 교체) · 실측은 침수흔적도"
+                  : "수위 → 범위·수심은 지형 계산 · 강우 → 수위는 편집 판 3벌(당시 · +20% · +50%) 사이 보간 · 실측 보정 없음(수위 시계열이 오면 규칙으로 교체)")
                 : "수위 → 범위·수심은 지형 계산 · 강우 → 수위는 사전 작성 판(모델 연결 시 교체) · 이 사례의 수치는 편집값"}
               at={at}
               stateRows={stateRows}
               depthNow={depthNow}
               areaHa={areaHa}
               impacts={impacts}
+              marks={site.marks ? { areaHa: site.marks.areaHa, floodedAt: site.marks.floodedAt(selected.choice), note: site.marks.note } : null}
               actions={actions}
               sop={sop}
               stage={stage}

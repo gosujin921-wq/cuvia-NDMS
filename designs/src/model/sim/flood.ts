@@ -19,11 +19,13 @@ import type { WhatIfCase } from "../whatif";
 import { INCIDENT_ID as SH_INCIDENT_ID } from "../../fixtures/seohang-flood/incident";
 import { CW_INCIDENT_ID } from "../../fixtures/changwoncheon/whatif";
 import { GEOMETRIES } from "../../fixtures";
-import { findWhatIfCase, trainingResultOf, whatIfStateRowsAt } from "../selectors";
+import { findWhatIfCase, whatIfStateRowsAt } from "../selectors";
 import { deviceKindSpec, devicesOf } from "../../demo/devices";
 import { sopItemsFor } from "../../demo/sop";
 import { floodSurfaceOf } from "../../lib/flood-surfaces";
 import { formatMarkMetric, markMetricLabel } from "../../lib/forecast-twin";
+import { CW_FACTORS, CW_ROAD_LEVEL, cwAreaOfLevel, cwInterp, cwMarksFloodedAt } from "./cw-interp";
+import { CW_FLUDMARKS_HA } from "../../fixtures/changwoncheon/area-table.generated";
 import { HEAVY_RAIN_ADVISORY_3H, HEAVY_RAIN_WARNING_3H, OBS_AREA_HA, RULE_DATE, RULE_MAX_3H, RULE_START, RULE_TOTAL_MM, areaOfLevel, cumulativeAt, depthOfLevel, factorForWarning, levelAtMinutes, ruleForecast, type RuleChoice } from "./rain-rule";
 
 export interface SimOption { id: string; label: string; detail?: string; /** 당시 관측값에 곱하는 배율(조건의 정의가 "당시 × 1.2"일 때) */ factor?: number }
@@ -112,6 +114,8 @@ export interface FloodSite extends SimSiteBase {
     /** 지형 채우기 패치를 찾는 링 id — 규칙은 링이 아니라 수위로 채우므로 하나면 된다 */
     surfaceGeometryId: string;
   };
+  /** 시가지 과거 침수 지점(생활안전지도 침수흔적도) — 실자료. 잠김 판정은 누적 강우 ≥ 한계강우량(p.41) */
+  marks?: { areaHa: number; floodedAt(choice: Record<string, string>): string | null; note: string };
   /** 이 대상에 매칭되는 기존 SOP */
   sop: SimSop[];
   /** 장면 점 밖의 시설 — SOP 가 가리키는 장치(CCTV · 마을방송). 장면 점과 같은 모양으로 선다 */
@@ -216,6 +220,11 @@ const seohangSite = (): FloodSite => {
       ];
     },
     observed: [{ label: "침수흔적도 · 권역 안 면적", value: `${OBS_AREA_HA} ha` }],
+    marks: {
+      areaHa: OBS_AREA_HA,
+      floodedAt: (c) => { const rc = ruleChoice(c); for (let m = 0; m <= 12 * 60; m += 1) if (cumulativeAt(m, rc.factor) >= rc.pLim) return new Date(new Date(RULE_START).getTime() + m * 60_000).toISOString(); return null; },
+      note: "과거 침수 지점 = 생활안전지도 침수흔적도(실자료) · 잠김 = 누적 강우(실자료 × 배율) ≥ 한계강우량(p.41)",
+    },
     rule: {
       levelAt: (c, atIso) => { const rc = ruleChoice(c); return levelAtMinutes(minutesOf(atIso), rc.factor, rc.pLim); },
       areaOfLevel,
@@ -258,6 +267,13 @@ const changwoncheonSite = (): FloodSite | null => {
   const now = t.stops[0]?.at ?? wcase.occurredAt;
   const rainSteps = t.conditions[0]?.steps ?? [];
   const actsOf = (discharge: string): Record<string, string> => (discharge === "early" ? { S2: now } : {});
+  const horizon = t.stops[t.stops.length - 1]?.at ?? now;
+  /* 강우 선택은 판 단계 id 이거나 슬라이더의 직접 배율("x:1.35"). 판 사이는 보간(cw-interp) */
+  const factorOf = (c: Record<string, string>): number => {
+    const r = c.rain ?? rainSteps[0]?.id ?? "now";
+    return r.startsWith("x:") ? Number(r.slice(2)) : CW_FACTORS.find((f) => f.stepId === r)?.factor ?? 1;
+  };
+  const interp = (c: Record<string, string>) => cwInterp(wcase, factorOf(c), actsOf(c.discharge ?? "actual"));
   return {
     id: "changwoncheon",
     label: wcase.title,
@@ -282,8 +298,27 @@ const changwoncheonSite = (): FloodSite | null => {
       },
     ],
     defaults: { rain: rainSteps[0]?.id ?? "now", discharge: "actual" },
-    boardOf: (c) => trainingResultOf(wcase, c.rain ?? "now", actsOf(c.discharge ?? "actual")).mine,
-    baselineOf: (c) => trainingResultOf(wcase, c.rain ?? "now", {}).mine,
+    boardOf: (c) => interp(c).forecast,
+    baselineOf: (c) => cwInterp(wcase, factorOf(c), {}).forecast,
+    describeChoice: (c) => [factorOf(c) !== 1 ? `강우 당시 × ${factorOf(c)}` : null, (c.discharge ?? "actual") === "early" ? `${now.slice(11, 16)} 조기 방류` : null].filter(Boolean).join(" · ") || "그날 조건 · 그날 조치",
+    slider: {
+      condId: "rain", min: 1, max: 1.5, step: 0.05,
+      anchors: CW_FACTORS.map((f) => ({ value: f.factor, label: f.label })),
+      valueOf: factorOf,
+      encode: (v) => `x:${v}`,
+      format: (v) => `당시 × ${v.toFixed(2)}`,
+    },
+    rule: {
+      levelAt: (c, atIso) => interp(c).levelAt(atIso),
+      areaOfLevel: cwAreaOfLevel,
+      depthOfLevel: (l) => Math.max(0, l - CW_ROAD_LEVEL),
+      surfaceGeometryId: "GEO-CW-L20",
+    },
+    marks: {
+      areaHa: CW_FLUDMARKS_HA,
+      floodedAt: (c) => cwMarksFloodedAt(wcase, factorOf(c), 50, now, horizon),
+      note: "과거 침수 지점 = 생활안전지도 침수흔적도(실자료 · 시가지 내수침수) · 잠김 = 누적 강우(상류 강우계 편집값 × 배율) ≥ 한계강우량 50 mm(p.41)",
+    },
     currentRows: (at) => whatIfStateRowsAt(wcase, at.toISOString()).rows.map((r) => ({ label: r.label, value: r.value })),
     observed: [],
     /* 창원천은 사건이 든 규정(S1 둔치 통제 · S2 상류 저류지 방류 · S3 천변도로 통제)만. 봉암 표본을 끌어오지 않는다(지명이 틀린다) */
@@ -433,7 +468,9 @@ export function stateRowsAt(site: FloodSite, f: Forecast | null, choice: Record<
   const mark = f ? floorMarkAt(f, atIso) : null;
   const metricLabel = mark ? markMetricLabel(mark) : null;
   const cond = site.conditions.find((c) => c.stateLabel);
-  const factor = cond ? cond.options.find((o) => o.id === (choice[cond.id] ?? site.defaults[cond.id]))?.factor ?? 1 : 1;
+  const factor = cond
+    ? (site.slider && site.slider.condId === cond.id ? site.slider.valueOf(choice) : cond.options.find((o) => o.id === (choice[cond.id] ?? site.defaults[cond.id]))?.factor ?? 1)
+    : 1;
   return raw.map((r) => {
     if (mark && metricLabel && r.label === metricLabel) return { ...r, value: formatMarkMetric(mark), note: undefined, computed: true };
     if (cond?.stateLabel && factor !== 1 && r.label === cond.stateLabel) {
