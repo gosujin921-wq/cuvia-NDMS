@@ -56,7 +56,8 @@ export function FloodSim() {
 
   /* ── 상태 셋: 대상 · 시나리오 · 시각 ── */
   const sites = useMemo(() => floodSites(demoNow), [demoNow]);
-  const site = sites.find((s) => s.id === params.get("site")) ?? sites[0];
+  /* `site` 로도, 사건 ID(`incident`)로도 연다 — 재난관제 전망 탭이 사건으로 넘긴다 */
+  const site = sites.find((s) => s.id === params.get("site") || (params.get("incident") !== null && s.incidentId === params.get("incident"))) ?? sites[0];
   const scenarios = useMemo(() => scenariosOf(site), [site]);
   const selected = scenarios.find((s) => s.id === params.get("sc")) ?? scenarios[0];
   const setQuery = (patch: Record<string, string | null>) => {
@@ -103,8 +104,7 @@ export function FloodSim() {
   const ring = ringOf(floorMark?.extentGeometryId);
   const areaHa = ring ? ringAreaHa(ring) : null;
   const sceneLayers = useMemo(() => mergeScene(forecast?.scene, floorMark?.scene), [forecast, floorMark]);
-  const scenePoints = useMemo(() => sceneLayers.filter((l) => l.kind === "point").map((p) => (p.kind === "point" ? { id: p.id, label: p.label, at: p.at } : null)).filter((p): p is { id: string; label: string; at: [number, number] } => p !== null), [sceneLayers]);
-  const impacts = useMemo(() => (forecast ? impactsAt(forecast, at, scenePoints) : []), [forecast, at, scenePoints]);
+  const impacts = useMemo(() => (forecast ? impactsAt(forecast, at, sceneLayers) : []), [forecast, at, sceneLayers]);
   const stage = forecast ? stageAt(forecast, at) : "none";
   const sop = site.sop;
   const stateRows = useMemo(() => stateRowsAt(site, forecast, selected.choice, at), [site, forecast, selected, at]);

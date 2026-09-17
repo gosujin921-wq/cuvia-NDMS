@@ -274,10 +274,12 @@ export function EarlyWarningPage() {
     next.set("forecastId", id);
     setParams(next);
   };
-  /* 대응을 바꾸면? — 디지털트윈이 답한다(03 §25 · 2026-09-16). 전망 탭은 기준만 보이고 대안 비교는 트윈으로 넘긴다.
-     시연 시계는 "대안 비교" 칸으로 옮긴다. 이 사건의 대응 분석이 준비되지 않았으면 버튼을 닫는다(데이터가 답한다) */
+  /* 조건을 바꾸면? — 디지털트윈 시뮬레이션(/scr-00)이 답한다(2026-09-17). 전망 탭은 기준만 보이고 시나리오 비교는 그리로 넘긴다.
+     같은 사건·같은 예측판을 기준 전망으로 연다(트윈이 두 벌이 되지 않는다). 예전에는 /scr-05 로 갔는데 그 화면은
+     진행 중 사건을 다시 여기로 돌려보내 고리가 생겼다. 시연 시계는 "대안 비교" 칸으로 옮긴다.
+     이 사건의 시뮬레이션 대상이 없으면 버튼을 닫는다(데이터가 답한다) */
   const compareInTwin = findWhatIfCase(incidentId)
-    ? () => { advanceTick("d5"); navigate(`/scr-05?incident=${encodeURIComponent(incidentId)}`); }
+    ? () => { advanceTick("d5"); navigate(`/scr-00?incident=${encodeURIComponent(incidentId)}`); }
     : null;
   const pickValidAt = (at: string) => {
     const next = new URLSearchParams(params);

@@ -13,7 +13,7 @@
  * ───────────────────────────────────────────── */
 
 import type { Forecast, ForecastMark } from "../forecast";
-import type { LngLat } from "../scene";
+import type { LngLat, SceneLayer } from "../scene";
 import type { TwinFamily } from "../incident";
 import type { WhatIfCase } from "../whatif";
 import { FORECAST_BASE, FORECAST_DRAIN, RAIN120_COMBOS, WHATIF_RAIN120 } from "../../fixtures/seohang-flood/forecasts";
@@ -359,14 +359,35 @@ export function ringAreaHa(ring: LngLat[]): number {
 export const ringOf = (geometryId: string | null | undefined): LngLat[] | null => (geometryId ? GEOMETRIES[geometryId] ?? null : null);
 
 export type ImpactStatus = "영향" | "예상" | "영향 없음" | "범위 안";
-export interface ImpactObject { id: string; kind: string; label: string; status: ImpactStatus; at?: string; exposure?: string }
+export interface ImpactObject { id: string; kind: string; label: string; status: ImpactStatus; at?: string; exposure?: string; /** 공간 교차가 덧붙이는 한마디 — "범위 안 약 320 m" */ detail?: string }
+
+/** 두 점 사이 거리(m) — 위도 보정 평면 근사 */
+const distM = (a: LngLat, b: LngLat) => {
+  const lat = ((a[1] + b[1]) / 2) * (Math.PI / 180);
+  return Math.hypot((b[0] - a[0]) * 111_320 * Math.cos(lat), (b[1] - a[1]) * 110_540);
+};
+/** 선이 링 안에 든 길이(m) — 20 m 간격으로 잘라 안팎을 센다 */
+export function lineInsideM(coords: LngLat[], ring: LngLat[]): number {
+  let inside = 0;
+  for (let i = 1; i < coords.length; i += 1) {
+    const a = coords[i - 1], b = coords[i], len = distM(a, b);
+    const n = Math.max(1, Math.ceil(len / 20));
+    for (let k = 0; k < n; k += 1) {
+      const t = (k + 0.5) / n;
+      if (pointInRing([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], ring)) inside += len / n;
+    }
+  }
+  return inside;
+}
 
 /**
- * 그 시각의 영향 객체.
+ * 그 시각의 영향 객체 — 판의 대상 + 장면 층과 범위 링의 **공간 교차**. 수를 지어내지 않는다.
  *   판의 대상(`targets`)  도달 시각이 지났으면 `영향`, 아직이면 `예상`(시각), 도달이 없으면 `영향 없음`
- *   장면의 점 객체        범위 링 안에 들어온 것은 `범위 안` — 판이 대상으로 안 적었어도 공간 교차로 잡는다
+ *   장면의 점             링 안이면 `범위 안`
+ *   장면의 선(도로 구간)   링 안에 든 길이(m). 판의 대상과 이름이 같으면 그 줄에 "범위 안 약 N m" 로 붙고, 없으면 새 줄
+ *   장면의 면             꼭짓점 하나라도 링 안이면 `범위 안`
  */
-export function impactsAt(f: Forecast, atIso: string, scenePoints: { id: string; label: string; at: LngLat }[]): ImpactObject[] {
+export function impactsAt(f: Forecast, atIso: string, layers: SceneLayer[]): ImpactObject[] {
   const out: ImpactObject[] = f.targets.map((t) => ({
     id: t.id, kind: t.kind, label: t.label,
     status: t.arrivalAt ? (ms(t.arrivalAt) <= ms(atIso) ? "영향" : "예상") : "영향 없음",
@@ -374,9 +395,34 @@ export function impactsAt(f: Forecast, atIso: string, scenePoints: { id: string;
   }));
   const ring = ringOf(floorMarkAt(f, atIso)?.extentGeometryId);
   if (ring) {
-    const known = new Set(out.map((o) => o.label));
-    for (const p of scenePoints) {
-      if (!known.has(p.label) && pointInRing(p.at, ring)) out.push({ id: p.id, kind: "지점", label: p.label, status: "범위 안" });
+    const baseName = (s: string) => s.split(" · ")[0].replace(/\s*\d+\S*$/, "").trim();
+    /* 이름은 포함 관계로 맞춘다 — 장면의 "해안도로"와 판의 "해안도로 저지대 구간"은 같은 도로다 */
+    const findTarget = (label: string) => { const n = baseName(label); return out.find((o) => { const b = baseName(o.label); return b === n || b.includes(n) || n.includes(b); }); };
+    /* 도로는 토막(`cw-coast-wet-0/1/2`)으로 갈라져 있고 라벨은 첫 토막에만 있다 — id 의 꼬리 번호를 떼어 한 묶음으로 잰다 */
+    const groups = new Map<string, { label: string | null; m: number }>();
+    for (const l of layers) {
+      if (l.kind === "point") {
+        if (!findTarget(l.label) && pointInRing(l.at, ring)) out.push({ id: l.id, kind: "지점", label: l.label, status: "범위 안" });
+      } else if (l.kind === "line" && l.role === "도로") {
+        const key = l.id.replace(/-\d+$/, "");
+        const g = groups.get(key) ?? { label: null, m: 0 };
+        g.m += lineInsideM(l.coords, ring);
+        if (l.label) g.label ??= l.label;
+        groups.set(key, g);
+      } else if (l.kind === "area" && l.label) {
+        if (!findTarget(l.label) && l.ring.some((p) => pointInRing(p, ring))) out.push({ id: l.id, kind: "구역", label: l.label, status: "범위 안" });
+      }
+    }
+    for (const [key, g] of groups) {
+      /* 50 m 미만은 적지 않는다 — 20 m 간격 표본이라 그 아래는 잡음이다 */
+      if (!g.label || g.m < 50) continue;
+      const name = baseName(g.label);
+      const text = `범위 안 약 ${Math.round(g.m / 10) * 10} m`;
+      const t = findTarget(name);
+      /* 판이 이미 판정한 대상은 판이 이긴다 — 도달했을 때만 "얼마나"를 덧붙인다. 아직·없음인 줄에 기하 겹침을 붙이면
+         "영향 없음 · 범위 안 450 m" 처럼 모순으로 읽힌다(둔치 범람면이 도로 선과 겹칠 뿐 도로 침수는 아니다) */
+      if (t) { if (t.status === "영향") t.detail = t.detail ? `${t.detail} · ${text}` : text; }
+      else out.push({ id: `line-${key}`, kind: "도로 구간", label: name, status: "범위 안", detail: text });
     }
   }
   /* 영향 중인 것이 먼저, 예상이 그다음, 없음은 아래 */

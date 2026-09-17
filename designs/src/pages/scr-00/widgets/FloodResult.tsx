@@ -132,14 +132,18 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
         ) : (
           <ul className="flex flex-col text-caption">
             {impacts.map((i) => (
-              <li key={`${i.kind}-${i.id}`} className="flex items-baseline justify-between gap-2 border-b border-border py-1 last:border-0">
-                <span className="flex min-w-0 items-baseline gap-1.5">
-                  <Badge variant="outline" className="h-fit shrink-0 text-caption">{i.kind}</Badge>
-                  <span className="min-w-0 break-keep text-foreground">{i.label}</span>
+              <li key={`${i.kind}-${i.id}`} className="flex flex-col gap-0.5 border-b border-border py-1 last:border-0">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="flex min-w-0 items-baseline gap-1.5">
+                    <Badge variant="outline" className="h-fit shrink-0 text-caption">{i.kind}</Badge>
+                    <span className="min-w-0 break-keep text-foreground">{i.label}</span>
+                  </span>
+                  <span className={cn("shrink-0 font-mono", i.status === "영향" || i.status === "범위 안" ? "text-danger" : i.status === "예상" ? "text-warning" : "text-success")}>
+                    {i.status === "예상" && i.at ? `${formatClock(i.at)} 예상` : i.status === "영향" && i.exposure ? i.exposure : i.status}
+                  </span>
                 </span>
-                <span className={cn("shrink-0 font-mono", i.status === "영향" || i.status === "범위 안" ? "text-danger" : i.status === "예상" ? "text-warning" : "text-success")}>
-                  {i.status === "예상" && i.at ? `${formatClock(i.at)} 예상` : i.status === "영향" && i.exposure ? i.exposure : i.status}
-                </span>
+                {/* 공간 교차가 덧붙인 한마디 — 판의 대상 줄에도 "지금 얼마나 잠겼나"가 선다 */}
+                {i.detail && <span className="pl-1 text-caption text-foreground-subtle">{i.detail}</span>}
               </li>
             ))}
           </ul>
