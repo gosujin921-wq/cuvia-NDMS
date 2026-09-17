@@ -87,6 +87,15 @@ export function FloodSim() {
     if (at) next[id] = at; else delete next[id];
     setQuery({ sop: Object.entries(next).map(([k, v]) => `${k}@${v}`).join(",") || null });
   };
+  /* 전부 켜기 — 켤 수 있는 규정을 각자의 기본 시각으로. 끄면 그날 그대로다 */
+  const setSopAll = (on: boolean) => {
+    if (!on) return setQuery({ sop: null });
+    const apply = site.sopApply ?? {};
+    const all = Object.entries(apply)
+      .map(([id, v]) => { const t = v.times(picked.choice)[0]; return t ? `${id}@${t.at}` : null; })
+      .filter((x): x is string => Boolean(x));
+    setQuery({ sop: all.join(",") || null });
+  };
   /* 비교의 왼쪽 열 — 규정을 켰으면 "그 규정을 실제 시각에 했을 때"(고른 시나리오), 아니면 기준 시나리오. 표는 이 둘만 세운다 */
   const baseCol = sopIds.length ? picked : scenarios[0];
   const columns = useMemo(() => (baseCol.id === selected.id ? [baseCol] : [baseCol, selected]), [baseCol, selected]);
@@ -369,6 +378,7 @@ export function FloodSim() {
               sopApply={Object.fromEntries(Object.entries(site.sopApply ?? {}).map(([id, v]) => [id, { label: v.label, times: v.times(picked.choice), actualAt: v.actualAt }]))}
               sopOn={sopOn}
               onSop={setSop}
+              onSopAll={setSopAll}
               summaries={summaries}
               leadRows={leadRows}
               observed={site.observed}

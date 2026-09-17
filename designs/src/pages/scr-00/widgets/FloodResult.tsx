@@ -23,7 +23,7 @@ import { PANEL } from "./panel-style";
 const LEVEL_LABEL: Record<AlertLevel, string> = { advisory: "주의보", warning: "경보", evacuate: "대피" };
 const LEVEL_RANK: Record<AlertLevel, number> = { advisory: 1, warning: 2, evacuate: 3 };
 
-export function FloodResult({ base, selected, summaries, leadRows, observed, at, depthNow, headroomM, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, sopApply, sopOn, onSop, compare, onCompare }: {
+export function FloodResult({ base, selected, summaries, leadRows, observed, at, depthNow, headroomM, areaHa, impacts, marks, actions, sop, stage, focus, onFocus, sopApply, sopOn, onSop, onSopAll, compare, onCompare }: {
   /** 비교의 왼쪽 열 — 기준 시나리오. 규정 스위치를 켰으면 "그 규정을 실제 시각에 했을 때" */
   base: SimScenario;
   selected: SimScenario;
@@ -52,6 +52,8 @@ export function FloodResult({ base, selected, summaries, leadRows, observed, at,
   /** 켜진 규정 id → 고른 시각(HH:MM) */
   sopOn: Record<string, string>;
   onSop: (id: string, at: string | null) => void;
+  /** 켤 수 있는 규정을 한 번에 — "규정대로 다 했다면"과 "그날 그대로"를 오가며 결과를 견준다(2026-09-17 사용자) */
+  onSopAll: (on: boolean) => void;
   compare: boolean;
   onCompare: (v: boolean) => void;
 }) {
@@ -73,6 +75,9 @@ export function FloodResult({ base, selected, summaries, leadRows, observed, at,
       })}
     </>
   );
+  /* 켤 수 있는 규정 — 전체 스위치는 이것들을 한 번에 켠다(기본 시각). 하나라도 꺼져 있으면 스위치는 꺼짐이다 */
+  const switchable = sop.filter((s) => sopApply[s.id]).map((s) => s.id);
+  const allOn = switchable.length > 0 && switchable.every((id) => sopOn[id]);
   const flooded = marks?.floodedAt ? isPast(marks.floodedAt, at) : false;
   /* 집계에 과거 침수 지점도 한 줄로 센다 — 목록과 머리 숫자가 같아야 한다 */
   const hit = impacts.filter((i) => i.status === "영향" || i.status === "범위 안").length + (flooded ? 1 : 0);
@@ -178,9 +183,16 @@ export function FloodResult({ base, selected, summaries, leadRows, observed, at,
       <section className={PANEL.section} aria-label="해당 규정">
         <header className={PANEL.header}>
           <h2 className={PANEL.title}>해당 규정</h2>
-          {stage === "none"
-            ? <span className={PANEL.meta}>해당 단계 없음</span>
-            : <Tag tone={stage === "evacuate" ? "danger" : stage === "warning" ? "warning" : undefined}>{LEVEL_LABEL[stage]} 단계</Tag>}
+          {/* 단계는 해당될 때만 말한다("해당 단계 없음"은 빈 말이다 · 2026-09-17 사용자). 그 자리에 전체 스위치가 선다 */}
+          <span className="flex shrink-0 items-center gap-2">
+            {stage !== "none" && <Tag tone={stage === "evacuate" ? "danger" : stage === "warning" ? "warning" : undefined}>{LEVEL_LABEL[stage]} 단계</Tag>}
+            {switchable.length > 0 && (
+              <label className="flex cursor-pointer items-center gap-1.5 text-caption text-foreground-muted">
+                전부
+                <Switch checked={allOn} onCheckedChange={onSopAll} aria-label="규정 전부 켜기" />
+              </label>
+            )}
+          </span>
         </header>
         <ul className={cn(PANEL.box, PANEL.list)}>
           {sop.map((s) => {

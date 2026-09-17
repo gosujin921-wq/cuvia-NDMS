@@ -107,9 +107,8 @@ export function HeatResult({ base, selected, summaries, hotShareNow, stage, shel
       <section className={PANEL.section} aria-label="해당 규정">
         <header className={PANEL.header}>
           <h2 className={PANEL.title}>해당 규정</h2>
-          {stage === "none"
-            ? <span className={PANEL.meta}>해당 단계 없음</span>
-            : <Tag tone={stage === "warning" ? "danger" : "warning"}>폭염{LEVEL_LABEL[stage]} 기준</Tag>}
+          {/* 단계는 해당될 때만 — "해당 단계 없음"은 빈 말이다(2026-09-17 사용자) */}
+          {stage !== "none" && <Tag tone={stage === "warning" ? "danger" : "warning"}>폭염{LEVEL_LABEL[stage]} 기준</Tag>}
         </header>
         <ul className={cn(PANEL.box, PANEL.list)}>
           {sop.map((s) => {
