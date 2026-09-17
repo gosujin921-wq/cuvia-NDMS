@@ -54,13 +54,13 @@ export function HeatResult({ scenarios, selected, onSelect, summaries, at, rows,
                 {s.tag}
               </button>
             ))}
-            <span className="text-foreground-muted">최고 체감온도</span>
+            <span className="whitespace-nowrap text-foreground-muted">최고 체감온도</span>
             {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.maxFeel.toFixed(1)}°C · ${formatClock(sum.maxFeelAt)}` : "-", worse(sum?.maxFeel, base?.maxFeel), s.id === selected.id)}</span>)}
-            <span className="text-foreground-muted">{HEAT_ADVISORY}°C↑ 시간</span>
+            <span className="whitespace-nowrap text-foreground-muted">{HEAT_ADVISORY}°C↑ 시간</span>
             {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.advisoryHours}시간` : "-", worse(sum?.advisoryHours, base?.advisoryHours), s.id === selected.id)}</span>)}
-            <span className="text-foreground-muted">{HEAT_WARNING}°C↑ 시간</span>
+            <span className="whitespace-nowrap text-foreground-muted">{HEAT_WARNING}°C↑ 시간</span>
             {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.warningHours}시간` : "-", worse(sum?.warningHours, base?.warningHours), s.id === selected.id)}</span>)}
-            <span className="text-foreground-muted">고온 지속 지역</span>
+            <span className="whitespace-nowrap text-foreground-muted">고온 지속 지역</span>
             {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${Math.round(sum.hotShare * 100)} %` : "-", worse(sum?.hotShare, base?.hotShare), s.id === selected.id)}</span>)}
           </div>
         </div>

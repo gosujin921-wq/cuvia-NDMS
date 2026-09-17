@@ -74,13 +74,13 @@ export function FloodResult({ scenarios, selected, onSelect, summaries, observed
                 {s.tag}
               </button>
             ))}
-            <span className="text-foreground-muted">침수 시작</span>
+            <span className="whitespace-nowrap text-foreground-muted">침수 시작</span>
             {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum?.startAt ? formatClock(sum.startAt) : "없음", better(sum?.startAt ?? null, base?.startAt ?? null, false), s.id === selected.id)}</span>)}
-            <span className="text-foreground-muted">{base ? (base.metricLabel.startsWith("최대") ? base.metricLabel : `최대 ${base.metricLabel}`) : "최대 수심"}</span>
+            <span className="whitespace-nowrap text-foreground-muted">{base ? (base.metricLabel.startsWith("최대") ? base.metricLabel : `최대 ${base.metricLabel}`) : "최대 수심"}</span>
             {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.maxDepthM.toFixed(2)} m` : "-", better(sum?.maxDepthM ?? null, base?.maxDepthM ?? null, true), s.id === selected.id)}</span>)}
-            <span className="text-foreground-muted">침수 면적</span>
+            <span className="whitespace-nowrap text-foreground-muted">침수 면적</span>
             {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.maxAreaHa.toFixed(1)} ha` : "-", better(sum?.maxAreaHa ?? null, base?.maxAreaHa ?? null, true), s.id === selected.id)}</span>)}
-            <span className="text-foreground-muted">영향 시설</span>
+            <span className="whitespace-nowrap text-foreground-muted">영향 시설</span>
             {cols.map(({ s, sum }) => <span key={s.id} className="contents">{cell(sum ? `${sum.hitTargets}곳` : "-", better(sum?.hitTargets ?? null, base?.hitTargets ?? null, true), s.id === selected.id)}</span>)}
           </div>
         </div>
